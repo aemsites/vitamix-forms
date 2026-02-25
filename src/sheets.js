@@ -6,18 +6,20 @@
  * @returns {Promise<void>}
  */
 export async function updateSheet(ctx, path, json) {
+  const url = `https://admin.da.live/source/${ctx.env.ORG}/${ctx.env.SITE}${path}`;
+  ctx.log.info(`updating sheet: ${url}`);
   const body = new FormData();
   const blob = new Blob([JSON.stringify(json)], { type: 'application/json' });
   body.append('data', blob);
-  const resp = await fetch(`https://admin.da.live/source/${ctx.env.ORG}/${ctx.env.SITE}${path}`, {
+  const resp = await fetch(url, {
     method: 'PUT',
     body,
     headers: {
-      'Authorization': `Bearer ${process.env.DA_TOKEN}`
+      'Authorization': `Bearer ${ctx.events.token}`
     }
   });
   if (!resp.ok) {
-    console.error('failed to write sheet: ', resp.status, resp.headers.get('x-error'));
+    ctx.log.error('failed to write sheet: ', resp.status, resp.headers.get('x-error'));
     throw Error('failed to write sheet');
   }
   return;
@@ -30,14 +32,16 @@ export async function updateSheet(ctx, path, json) {
  * @returns {Promise<Sheet>}
  */
 export async function fetchSheet(ctx, path) {
-  const resp = await fetch(`https://admin.da.live/source/${ctx.env.ORG}/${ctx.env.SITE}${path}`, {
+  const url = `https://admin.da.live/source/${ctx.env.ORG}/${ctx.env.SITE}${path}`;
+  ctx.log.info(`fetching sheet: ${url}`);
+  const resp = await fetch(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${process.env.DA_TOKEN}`
+      'Authorization': `Bearer ${ctx.events.token}`
     }
   });
   if (!resp.ok) {
-    console.error('failed to fetch sheet: ', resp.status, resp.headers.get('x-error'));
+    ctx.log.error('failed to fetch sheet: ', resp.status, resp.headers.get('x-error'));
     throw Error('failed to fetch sheet');
   }
   return resp.json();
@@ -50,14 +54,16 @@ export async function fetchSheet(ctx, path) {
  * @returns {Promise<FolderList>}
  */
 export async function listFolder(ctx, path) {
-  const resp = await fetch(`https://admin.da.live/list/${ctx.env.ORG}/${ctx.env.SITE}${path}`, {
+  const url = `https://admin.da.live/list/${ctx.env.ORG}/${ctx.env.SITE}${path}`;
+  ctx.log.info(`fetching folder: ${url}`);
+  const resp = await fetch(url, {
     method: 'GET',
     headers: {
-      'Authorization': `Bearer ${process.env.DA_TOKEN}`
+      'Authorization': `Bearer ${ctx.events.token}`
     }
   });
   if (!resp.ok) {
-    console.error('failed to fetch folder: ', resp.status, resp.headers.get('x-error'));
+    ctx.log.error('failed to fetch folder: ', resp.status, resp.headers.get('x-error'));
     throw Error('failed to fetch folder');
   }
   return resp.json();

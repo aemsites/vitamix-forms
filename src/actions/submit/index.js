@@ -69,7 +69,26 @@ export async function main(params) {
       return errorResponse(400, error);
     }
 
-    const { formId, data } = ctx.data;
+    const { formId } = ctx.data;
+
+    // get submission data, it may be in the data object or the root of the payload
+    /** @type {Record<string, unknown>} */
+    // @ts-ignore
+    let data = ctx.data.data;
+    if (typeof data !== 'object') {
+      data = ctx.data;
+      delete data.formId;
+    }
+
+    // add timestamp and IP
+    // timestamp can be set by the payload, but IP cant
+    delete data.IP;
+    data = {
+      timestamp: new Date().toISOString(),
+      IP: ctx.info.headers['x-forwarded-for'] || ctx.info.headers['x-real-ip'] || ctx.info.headers['cf-connecting-ip'] || 'unknown',
+      ...data,
+    };
+
     log.info(`publishing form.submitted event for formId=${formId}`);
     await publishEvent(ctx, 'form.submitted', { formId, data });
 

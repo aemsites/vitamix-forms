@@ -28,7 +28,8 @@ function appendToSheet(sheet, record, sheetName = 'private-data') {
   let newCount = 0;
   if (sheetName.startsWith('private-')) {
     sheet[':private'][sheetName].data.push(record);
-    newCount = sheet[':private'][sheetName].total + 1;
+    sheet[':private'][sheetName].total = sheet[':private'][sheetName].data.length + 1;
+    newCount = sheet[':private'][sheetName].total;
   } else if (sheet[':type'] === 'multi-sheet') {
     if (!sheet[sheetName]) {
       sheet[sheetName] = {
@@ -39,13 +40,15 @@ function appendToSheet(sheet, record, sheetName = 'private-data') {
       }
     }
     sheet[sheetName].data.push(record);
-    newCount = sheet[sheetName].total + 1;
+    sheet[sheetName].total = sheet[sheetName].data.length + 1;
+    newCount = sheet[sheetName].total;
   } else {
     if (!sheet.data) {
       sheet.data = [];
     }
     sheet.data.push(record);
-    newCount = sheet.total + 1;
+    sheet.total = sheet.data.length + 1;
+    newCount = sheet.total;
   }
   return newCount;
 }
@@ -84,15 +87,13 @@ export async function main(params) {
     /** @type {Sheet} */
     let sheet;
     if (sheetExists) {
+      log.debug('sheet exists, fetching existing');
       sheet = await fetchSheet(ctx, sheetPath);
     } else {
+      log.debug('sheet does not exist, creating new');
       sheet = INITIAL_SHEET();
     }
-    const record = {
-      timestamp: new Date().toISOString(),
-      ...data,
-    };
-    const newCount = appendToSheet(sheet, record);
+    const newCount = appendToSheet(sheet, data);
     await updateSheet(ctx, sheetPath, sheet);
     log.info(sheetExists ? `appended 1 record to sheet: ${sheetPath} (total=${newCount})` : `created new sheet: ${sheetPath} (total=${newCount})`);
 
