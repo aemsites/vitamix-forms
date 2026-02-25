@@ -12,7 +12,6 @@ declare global {
     token: string;
     orgId: string;
     providerId: string;
-    journalUrl: string;
   }
 
   export interface Context {
@@ -29,32 +28,44 @@ declare global {
 
   export interface SheetRecord extends Record<string, string> { }
 
-  export interface Sheet {
+  export interface SheetBase {
+    ':private'?: {
+      [sheetName: string]: {
+        total?: number;
+        limit?: number;
+        offset?: number;
+        data: SheetRecord[];
+      }
+    }
+  }
+
+  export interface SingleSheet extends SheetBase {
     total?: number;
     limit?: number;
     offset?: number;
-    data: SheetRecord[];
-    ':sheetname': string;
-    ':type': 'sheet';
+    data?: SheetRecord[];
+    ':sheetname'?: string;
+    ':type'?: 'sheet';
     ':colWidths'?: number[];
   }
 
-  export interface JournalEvent {
-    position: string;
-    event: Record<string, unknown>;
+  export interface MultiSheet extends SheetBase {
+    ':version': number;
+    ':type': 'multi-sheet';
+    ':names'?: string[];
+    [sheetName: string]: Omit<SingleSheet, ':sheetname' | ':type'>;
   }
 
-  export interface JournalResponse {
-    events: JournalEvent[];
-    _page: { last?: string; count: number };
-    _links?: Record<string, string>;
+  export type Sheet = SingleSheet | MultiSheet;
+
+  export interface FolderRecord extends Record<string, string> {
+    path: string;
+    name: string;
+    ext: string;
+    lastModified: number;
   }
 
-  export interface JournalOptions {
-    since?: string;
-    latest?: boolean;
-    limit?: number;
-  }
+  export type FolderList = FolderRecord[];
 }
 
 export { }

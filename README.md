@@ -5,12 +5,8 @@ I/O Runtimes Action handlers for form submissions.
 ## Process
 1. Form submissions are sent via HTTP to `submit` action, body contains `formId` and `data` (submission)
   i. validates payload
-  ii. sends a `form.submitted` event to the Journal, contains `formId` and `data`
-3. `pump` action runs on a schedule (every 10 minutes)
-  i. reads Journal events
-  ii. groups by `formId`
-  iii. sends `form.grouped` event, containing `formId` and array of submissions
-4. `processor` action triggered by `form.grouped` event
+  ii. publishes a `form.submitted` event
+2. `processor` action triggered by `form.submitted` event, runs with concurrency=1
   i. reads destination sheet
   ii. appends submissions to sheet
   iii. writes sheet back to storage
@@ -28,12 +24,9 @@ These steps are performed once for each environment.
     - Response body contains `id` property, set `AIO_EVENTS_PROVIDER_ID` to that value
     
   ii. [Create Provider Metadata](./dev/create-event-meta-submitted.sh) for `form.submitted` event
-  iii. [Create Provider Metadata](./dev/create-event-meta-grouped.sh) for `form.grouped` event
-  iv. [Create Journal Registration](./dev/create-journal-registration.sh) for `form.submitted` event
-    - Response body contains `_links.["rel:events"].href` property, set `AIO_JOURNAL_URL` to that value
+  iii. [Register action handler](./dev/create-action-registration.sh) for `forms/processor` action on `form.submitted` event
 
 ### References
 - [Creating Runtime Actions](https://developer.adobe.com/app-builder/docs/guides/runtime_guides/creating-actions)
 - [Events Registration API](https://developer.adobe.com/events/docs/guides/api/registration-api)
-- [Events Journaling API](https://developer.adobe.com/events/docs/guides/api/journaling-api)
 - [Events Publishing API](https://developer.adobe.com/events/docs/guides/api/eventsingress-api)

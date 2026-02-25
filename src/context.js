@@ -1,4 +1,5 @@
 import { Core } from '@adobe/aio-sdk';
+import { getAccessToken } from './auth.js';
 
 /**
  * @param {Object} owParams 
@@ -14,12 +15,15 @@ export default async function createContext(owParams) {
     SHEET,
     LOG_LEVEL,
     AIO_S2S_API_KEY,
-    AIO_S2S_TOKEN,
+    AIO_S2S_CLIENT_SECRET,
+    AIO_S2S_SCOPES,
     AIO_ORG_ID,
     AIO_EVENTS_PROVIDER_ID,
-    AIO_JOURNAL_URL,
     ...data
   } = owParams;
+
+  const token = await getAccessToken(AIO_S2S_API_KEY, AIO_S2S_CLIENT_SECRET, AIO_S2S_SCOPES);
+
   return {
     env: { ORG, SITE, SHEET },
     // @ts-ignore
@@ -32,10 +36,9 @@ export default async function createContext(owParams) {
     },
     events: {
       apiKey: AIO_S2S_API_KEY,
-      token: AIO_S2S_TOKEN,
+      token,
       orgId: AIO_ORG_ID,
       providerId: AIO_EVENTS_PROVIDER_ID,
-      journalUrl: AIO_JOURNAL_URL,
     },
   }
 }

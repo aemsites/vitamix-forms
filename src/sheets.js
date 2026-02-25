@@ -42,3 +42,23 @@ export async function fetchSheet(ctx, path) {
   }
   return resp.json();
 }
+
+/**
+ * List folder contents
+ * @param {Context} ctx
+ * @param {string} path
+ * @returns {Promise<FolderList>}
+ */
+export async function listFolder(ctx, path) {
+  const resp = await fetch(`https://admin.da.live/list/${ctx.env.ORG}/${ctx.env.SITE}${path}`, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${process.env.DA_TOKEN}`
+    }
+  });
+  if (!resp.ok) {
+    console.error('failed to fetch folder: ', resp.status, resp.headers.get('x-error'));
+    throw Error('failed to fetch folder');
+  }
+  return resp.json();
+}

@@ -9,13 +9,12 @@ application:
         inputs:
           ORG: aemsites
           SITE: vitamix
-          SHEET: "/drafts/maxed/test/foo.json"
           LOG_LEVEL: info
           AIO_S2S_API_KEY: $AIO_S2S_API_KEY
-          AIO_S2S_TOKEN: $AIO_S2S_TOKEN
+          AIO_S2S_CLIENT_SECRET: $AIO_S2S_CLIENT_SECRET
+          AIO_S2S_SCOPES: $AIO_S2S_SCOPES
           AIO_ORG_ID: $AIO_ORG_ID
           AIO_EVENTS_PROVIDER_ID: $AIO_EVENTS_PROVIDER_ID
-          AIO_JOURNAL_URL: $AIO_JOURNAL_URL
         actions:
           submit:
             function: dist/actions/submit/index.js
@@ -24,25 +23,11 @@ application:
             annotations:
               require-adobe-auth: false
               final: true
-          pump:
-            function: dist/actions/pump/index.js
-            runtime: nodejs:22
-            annotations:
-              final: true
           processor:
             function: dist/actions/processor/index.js
             runtime: nodejs:22
-            web: 'yes'
+            limits:
+              concurrency: 1
             annotations:
-              require-adobe-auth: false
               final: true
-        triggers:
-          pumpTrigger:
-            feed: "/whisk.system/alarms/interval"
-            inputs:
-              minutes: 10
-        rules:
-          pumpRule:
-            trigger: pumpTrigger
-            action: pump
 
