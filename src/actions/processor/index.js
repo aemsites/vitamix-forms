@@ -2,7 +2,10 @@ import { listFolder, fetchSheet, updateSheet } from '../../sheets.js';
 import { errorResponse } from '../../utils.js';
 import makeContext from '../../context.js';
 
-/** @returns {SingleSheet} */
+
+/**
+ * @returns {SingleSheet} 
+ */
 const INITIAL_SHEET = () => {
   return {
     ":private": {
@@ -17,19 +20,61 @@ const INITIAL_SHEET = () => {
 }
 
 /**
+ * Order record keys by header row keys
+ * The order of the header row keys in the header row is the order of the keys in the record
+ * But timestamp and IP are always first and second
+ * 
+ * If any keys don't exist in the header row, they are added to the end of the record
+ * If headerRow is undefined, the record provided is used as the header row
+ * If headerRow is provided, it is mutated in place
+ * 
+ * @param {Context} ctx
+ * @param {Record<string, string>} record 
+ * @param {Record<string, string>} [headerRow] 
+ * @returns {Record<string, string>}
+ */
+function orderRecord(ctx, record, headerRow) {
+  const { log } = ctx;
+  const orderedKeys = Array.from(
+    new Set([...Object.keys(headerRow ?? {}), ...Object.keys(record)])
+  ).filter((key) => key !== 'timestamp' && key !== 'IP');
+
+  const orderedRecord = {
+    timestamp: record.timestamp ?? '',
+    IP: record.IP ?? '',
+    ...orderedKeys.reduce((acc, key) => {
+      acc[key] = record[key] ?? ''; // take the place of missing keys with empty string
+      return acc;
+    }, {}),
+  };
+
+  // add any new keys to the header row
+  if (headerRow) {
+    orderedKeys.forEach((key) => {
+      if (headerRow[key] === undefined) {
+        log.info(`adding key to header row: ${key}`);
+        headerRow[key] = '';
+      }
+    });
+  }
+
+  return orderedRecord;
+}
+
+/**
  * Appends record to sheet
  * 
+ * @param {Context} ctx 
  * @param {Sheet} sheet 
  * @param {SheetRecord} record 
  * @param {string} [sheetName = 'private-data']
  * @returns {number} new total count of records in sheet
  */
-function appendToSheet(sheet, record, sheetName = 'private-data') {
-  let newCount = 0;
+function appendToSheet(ctx, sheet, record, sheetName = 'private-data') {
+  /** @type {{ data: any[]; total?: number; limit?: number; }} */
+  let dest;
   if (sheetName.startsWith('private-')) {
-    sheet[':private'][sheetName].data.push(record);
-    sheet[':private'][sheetName].total = sheet[':private'][sheetName].data.length + 1;
-    newCount = sheet[':private'][sheetName].total;
+    dest = sheet[':private'][sheetName];
   } else if (sheet[':type'] === 'multi-sheet') {
     if (!sheet[sheetName]) {
       sheet[sheetName] = {
@@ -39,18 +84,30 @@ function appendToSheet(sheet, record, sheetName = 'private-data') {
         "data": []
       }
     }
-    sheet[sheetName].data.push(record);
-    sheet[sheetName].total = sheet[sheetName].data.length + 1;
-    newCount = sheet[sheetName].total;
+    // @ts-ignore
+    dest = sheet[sheetName];
   } else {
     if (!sheet.data) {
       sheet.data = [];
     }
-    sheet.data.push(record);
-    sheet.total = sheet.data.length + 1;
-    newCount = sheet.total;
+    // @ts-ignore
+    dest = sheet;
   }
-  return newCount;
+
+  // push the record, update total and limit
+  const orderedRecord = orderRecord(ctx, record, dest.data[0]);
+  // if all properties of the first record are empty, it's a new sheet with no data
+  // use the ordered record as the header row to avoid an empty row between the header and data
+  // otherwise, append the ordered record to the data array
+  if (Object.values(dest.data[0]).every((value) => value === '')) {
+    dest.data[0] = orderedRecord;
+  } else {
+    dest.data.push(orderedRecord);
+  }
+  dest.total = dest.data.length;
+  dest.limit = (dest.limit ?? 0) + 1;
+
+  return dest.total;
 }
 
 /**
@@ -93,7 +150,7 @@ export async function main(params) {
       log.debug('sheet does not exist, creating new');
       sheet = INITIAL_SHEET();
     }
-    const newCount = appendToSheet(sheet, data);
+    const newCount = appendToSheet(ctx, sheet, data);
     await updateSheet(ctx, sheetPath, sheet);
     log.info(sheetExists ? `appended 1 record to sheet: ${sheetPath} (total=${newCount})` : `created new sheet: ${sheetPath} (total=${newCount})`);
 

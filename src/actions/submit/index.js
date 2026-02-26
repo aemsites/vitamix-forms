@@ -80,9 +80,9 @@ export async function main(params) {
       delete data.formId;
     }
 
-    // add timestamp and IP
-    // timestamp can be set by the payload, but IP cant
+    // add timestamp and IP - these can't be set by the payload
     delete data.IP;
+    delete data.timestamp;
     data = {
       timestamp: new Date().toISOString(),
       IP: ctx.info.headers['x-forwarded-for'] || ctx.info.headers['x-real-ip'] || ctx.info.headers['cf-connecting-ip'] || 'unknown',
