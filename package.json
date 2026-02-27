@@ -26,7 +26,7 @@
     "typescript": "^5.5.4"
   },
   "scripts": {
-    "test": "jest --passWithNoTests ./test",
+    "test": "NODE_OPTIONS='--experimental-vm-modules' jest --passWithNoTests ./test",
     "e2e": "jest --collectCoverage=false --testRegex ./e2e",
     "build": "rollup -c rollup.config.mjs",
     "lint": "eslint --ignore-pattern web-src --no-error-on-unmatched-pattern test src actions",
