@@ -5,6 +5,8 @@ declare global {
     ORG: string;
     SITE: string;
     SHEET: string;
+    EMAIL_TOKEN: string;
+    EMAIL_RECIPIENT: string;
   }
 
   export interface EventsConfig {

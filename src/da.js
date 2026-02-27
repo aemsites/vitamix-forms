@@ -68,3 +68,28 @@ export async function listFolder(ctx, path) {
   }
   return resp.json();
 }
+
+/**
+ * Fetch HTML from DA file
+ * @param {Context} ctx 
+ * @param {string} path 
+ * @returns {Promise<string>}
+ */
+export async function fetchHTML(ctx, path) {
+  const url = `https://admin.da.live/source/${ctx.env.ORG}/${ctx.env.SITE}${path.endsWith('.html') ? path : `${path}.html`}`;
+  ctx.log.info(`fetching HTML: ${url}`);
+  const resp = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'Authorization': `Bearer ${ctx.events.token}`
+    }
+  });
+  if (!resp.ok) {
+    if (resp.status === 404) {
+      return null;
+    }
+    ctx.log.error('failed to fetch HTML: ', resp.status, resp.headers.get('x-error'));
+    throw Error('failed to fetch HTML');
+  }
+  return resp.text();
+}

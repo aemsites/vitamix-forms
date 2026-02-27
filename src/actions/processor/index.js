@@ -1,7 +1,7 @@
-import { listFolder, fetchSheet, updateSheet } from '../../sheets.js';
+import { listFolder, fetchSheet, updateSheet } from '../../da.js';
 import { errorResponse } from '../../utils.js';
 import makeContext from '../../context.js';
-
+import { resolveEmailTemplate, sendEmail } from '../../emails.js';
 
 /**
  * @returns {SingleSheet} 
@@ -153,6 +153,16 @@ export async function main(params) {
     const newCount = appendToSheet(ctx, sheet, data);
     await updateSheet(ctx, sheetPath, sheet);
     log.info(sheetExists ? `appended 1 record to sheet: ${sheetPath} (total=${newCount})` : `created new sheet: ${sheetPath} (total=${newCount})`);
+
+    // notify if email is configured
+    // get the email template for this form, which exists at the root of the folder
+    const hasEmailTemplate = entries.find((entry) => entry.path === `/${ctx.env.ORG}/${ctx.env.SITE}${folderPath}/email-template.html`);
+    if (hasEmailTemplate) {
+      const email = await resolveEmailTemplate(ctx, `${folderPath}/email-template.html`, data);
+      if (email) {
+        await sendEmail(ctx, email.toEmail, email.subject, email.html, email.cc, email.bcc);
+      }
+    }
 
     return { statusCode: 200 };
   } catch (error) {
