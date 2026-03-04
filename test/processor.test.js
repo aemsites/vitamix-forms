@@ -227,13 +227,24 @@ describe('processor action', () => {
     });
 
     test('uses deadletter path when folder has no entries', async () => {
-      mockMakeContext.mockResolvedValue(makeCtx());
+      const ctx = makeCtx();
+      mockMakeContext.mockResolvedValue(ctx);
       mockListFolder.mockResolvedValue([]);
 
       const result = await main({});
-      // empty entries → deadletter path; also means new sheet (INITIAL_SHEET)
-      // which has an empty data array, causing appendToSheet to error
-      expect(result.error.statusCode).toBe(500);
+      expect(result.statusCode).toBe(200);
+      expect(mockUpdateSheet).toHaveBeenCalledWith(
+        ctx,
+        `/incoming/deadletter/contact-us/${YEAR}.json`,
+        expect.objectContaining({
+          ':private': expect.objectContaining({
+            'private-data': expect.objectContaining({
+              total: 1,
+              data: [expect.objectContaining({ name: 'John' })],
+            }),
+          }),
+        }),
+      );
     });
   });
 
