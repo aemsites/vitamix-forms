@@ -14,20 +14,19 @@ export default async function createContext(owParams) {
     SITE,
     SHEET,
     LOG_LEVEL,
-    AIO_S2S_API_KEY,
-    AIO_S2S_CLIENT_SECRET,
-    AIO_S2S_SCOPES,
-    AIO_ORG_ID,
+    AIO_CLIENTID,
+    AIO_CLIENTSECRET,
+    AIO_SCOPES,
+    AIO_IMSORGID,
     AIO_EVENTS_PROVIDER_ID,
     EMAIL_TOKEN,
-    EMAIL_RECIPIENT,
     ...data
   } = owParams;
 
-  const token = await getAccessToken(AIO_S2S_API_KEY, AIO_S2S_CLIENT_SECRET, AIO_S2S_SCOPES);
+  const token = await getAccessToken(AIO_CLIENTID, AIO_CLIENTSECRET, AIO_SCOPES);
 
   return {
-    env: { ORG, SITE, SHEET, EMAIL_TOKEN, EMAIL_RECIPIENT },
+    env: { ORG, SITE, SHEET, EMAIL_TOKEN },
     // @ts-ignore
     log: Core.Logger('main', { level: LOG_LEVEL }),
     data,
@@ -37,9 +36,9 @@ export default async function createContext(owParams) {
       path,
     },
     events: {
-      apiKey: AIO_S2S_API_KEY,
+      apiKey: AIO_CLIENTID,
       token,
-      orgId: AIO_ORG_ID,
+      orgId: AIO_IMSORGID,
       providerId: AIO_EVENTS_PROVIDER_ID,
     },
   }
