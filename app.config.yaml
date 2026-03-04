@@ -10,13 +10,12 @@ application:
           ORG: aemsites
           SITE: vitamix
           LOG_LEVEL: info
-          AIO_S2S_API_KEY: $AIO_S2S_API_KEY
-          AIO_S2S_CLIENT_SECRET: $AIO_S2S_CLIENT_SECRET
-          AIO_S2S_SCOPES: $AIO_S2S_SCOPES
-          AIO_ORG_ID: $AIO_ORG_ID
+          AIO_CLIENTID: $AIO_CLIENTID
+          AIO_CLIENTSECRET: $AIO_CLIENTSECRET
+          AIO_SCOPES: $AIO_SCOPES
+          AIO_IMSORGID: $AIO_IMSORGID
           AIO_EVENTS_PROVIDER_ID: $AIO_EVENTS_PROVIDER_ID
           EMAIL_TOKEN: $EMAIL_TOKEN
-          EMAIL_RECIPIENT: $EMAIL_RECIPIENT
         actions:
           submit:
             function: dist/actions/submit/index.js
