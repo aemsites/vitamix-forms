@@ -75,18 +75,20 @@ describe('submit action', () => {
       expect(result.error.headers['x-error']).toBe('missing or invalid formId');
     });
 
-    test('rejects missing data', async () => {
-      mockMakeContext.mockResolvedValue(makeCtx({ data: { formId: 'test-form' } }));
+    test('accepts flat payload (no nested data object)', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        data: { formId: 'test-form', name: 'Alice', email: 'alice@test.com' },
+      }));
       const result = await main({});
-      expect(result.error.statusCode).toBe(400);
-      expect(result.error.headers['x-error']).toBe('missing or invalid data');
+      expect(result.statusCode).toBe(201);
     });
 
-    test('rejects non-object data', async () => {
-      mockMakeContext.mockResolvedValue(makeCtx({ data: { formId: 'test-form', data: 'string' } }));
+    test('accepts flat payload where data field is a non-object', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        data: { formId: 'test-form', data: 'string', name: 'Bob' },
+      }));
       const result = await main({});
-      expect(result.error.statusCode).toBe(400);
-      expect(result.error.headers['x-error']).toBe('missing or invalid data');
+      expect(result.statusCode).toBe(201);
     });
 
     test.each([
@@ -153,6 +155,19 @@ describe('submit action', () => {
           }),
         }),
       );
+    });
+
+    test('publishes flat payload properties as form data (formId stripped)', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        data: { formId: 'test-form', name: 'Alice', email: 'alice@test.com' },
+      }));
+      await main({});
+
+      const eventData = mockPublishEvent.mock.calls[0][2];
+      expect(eventData.formId).toBe('test-form');
+      expect(eventData.data.name).toBe('Alice');
+      expect(eventData.data.email).toBe('alice@test.com');
+      expect(eventData.data).not.toHaveProperty('formId');
     });
 
     test('adds server-generated timestamp and IP', async () => {
