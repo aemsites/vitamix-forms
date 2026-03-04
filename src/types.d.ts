@@ -6,6 +6,7 @@ declare global {
     SITE: string;
     SHEET: string;
     EMAIL_TOKEN: string;
+    PROXY_TOKEN: string;
   }
 
   export interface EventsConfig {
