@@ -18,9 +18,6 @@ function validatePayload(data) {
   if (!data.formId || typeof data.formId !== 'string') {
     return 'missing or invalid formId';
   }
-  if (!data.data || typeof data.data !== 'object') {
-    return 'missing or invalid data';
-  }
 
   // check that formId looks valid
   // these are further validated in the processor action
@@ -41,7 +38,7 @@ function validatePayload(data) {
   }
 
   // nested properties in data
-  Object.values(data.data).forEach((val) => {
+  Object.values(data.data ?? data ?? {}).forEach((val) => {
     if (typeof val === 'object' && val !== null) {
       return 'payload contains nested data';
     }

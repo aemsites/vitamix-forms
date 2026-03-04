@@ -20,13 +20,14 @@ export default async function createContext(owParams) {
     AIO_IMSORGID,
     AIO_EVENTS_PROVIDER_ID,
     EMAIL_TOKEN,
+    PROXY_TOKEN,
     ...data
   } = owParams;
 
   const token = await getAccessToken(AIO_CLIENTID, AIO_CLIENTSECRET, AIO_SCOPES);
 
   return {
-    env: { ORG, SITE, SHEET, EMAIL_TOKEN },
+    env: { ORG, SITE, SHEET, EMAIL_TOKEN, PROXY_TOKEN },
     // @ts-ignore
     log: Core.Logger('main', { level: LOG_LEVEL }),
     data,
