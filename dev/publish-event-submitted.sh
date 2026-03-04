@@ -2,13 +2,13 @@
 
 # Publish IO Events form.submitted event
 
-api_key=$AIO_S2S_API_KEY
+api_key=$AIO_CLIENTID
 provider_id=$AIO_EVENTS_PROVIDER_ID
 timestamp=$(date +%s)
 
 oauth_s2s_token=$(curl -s -X POST 'https://ims-na1.adobelogin.com/ims/token/v3' \
   -H 'Content-Type: application/x-www-form-urlencoded' \
-  -d "client_id=${AIO_S2S_API_KEY}&client_secret=${AIO_S2S_CLIENT_SECRET}&grant_type=client_credentials&scope=${AIO_S2S_SCOPES}" \
+  -d "client_id=${AIO_CLIENTID}&client_secret=${AIO_CLIENTSECRET}&grant_type=client_credentials&scope=${AIO_SCOPES}" \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
 
 echo "Publishing form.submitted event"
