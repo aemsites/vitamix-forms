@@ -99,7 +99,7 @@ function appendToSheet(ctx, sheet, record, sheetName = 'private-data') {
   // if all properties of the first record are empty, it's a new sheet with no data
   // use the ordered record as the header row to avoid an empty row between the header and data
   // otherwise, append the ordered record to the data array
-  if (Object.values(dest.data[0]).every((value) => value === '')) {
+  if (Object.values(dest.data[0] ?? {}).every((value) => value === '')) {
     dest.data[0] = orderedRecord;
   } else {
     dest.data.push(orderedRecord);
