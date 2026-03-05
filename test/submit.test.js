@@ -20,7 +20,7 @@ function makeCtx(overrides = {}) {
     data: { formId: 'contact-us', data: { name: 'John', email: 'john@test.com' } },
     info: {
       method: 'POST',
-      headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4' },
+      headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4', referer: 'https://www.vitamix.com' },
       path: '/submit',
     },
     events: { apiKey: 'key', token: 'token', orgId: 'org', providerId: 'provider' },
@@ -201,6 +201,26 @@ describe('submit action', () => {
       }));
       await main({});
       expect(mockPublishEvent.mock.calls[0][2].data.IP).toBe('unknown');
+    });
+
+    test('prefixes formId with stage/ when referer is not production origin', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        info: { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4', referer: 'https://staging.vitamix.com' }, path: '/submit' },
+      }));
+      await main({});
+
+      const eventData = mockPublishEvent.mock.calls[0][2];
+      expect(eventData.formId).toBe('stage/contact-us');
+    });
+
+    test('prefixes formId with stage/ when referer is absent', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        info: { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4' }, path: '/submit' },
+      }));
+      await main({});
+
+      const eventData = mockPublishEvent.mock.calls[0][2];
+      expect(eventData.formId).toBe('stage/contact-us');
     });
 
     test('overrides client-supplied IP and timestamp', async () => {
