@@ -31,4 +31,11 @@ application:
               concurrency: 1
             annotations:
               final: true
+          version:
+            function: dist/actions/version/index.js
+            runtime: nodejs:22
+            web: 'yes'
+            annotations:
+              require-adobe-auth: false
+              final: true
 
