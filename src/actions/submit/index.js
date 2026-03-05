@@ -11,6 +11,11 @@ const MAX_PAYLOAD_SIZE = 16_000; // 16KB
 const FORM_ID_PATTERN = /^[a-zA-Z0-9]+[\/a-zA-Z0-9_-]*[a-zA-Z0-9]+$/;
 
 /**
+ * Origin of the production site, as seen in referer header
+ */
+const PROD_ORIGIN = 'https://www.vitamix.com';
+
+/**
  * @param {Record<string, unknown>} data
  * @returns {string|undefined} error message if invalid
  */
@@ -66,7 +71,16 @@ export async function main(params) {
       return errorResponse(400, error);
     }
 
-    const { formId } = ctx.data;
+    /** @type {string} */
+    // @ts-ignore
+    let formId = ctx.data.formId;
+
+    // if the origin of the submission isn't the production origin
+    // add the `stage` prefix to the formId (if not present)
+    if (ctx.info.headers['referer'] !== PROD_ORIGIN && !formId.startsWith('stage/')) {
+      log.info(`adding stage prefix to formId=${formId} because origin is not production`);
+      formId = `stage/${formId}`;
+    }
 
     // get submission data, it may be in the data object or the root of the payload
     /** @type {Record<string, unknown>} */
