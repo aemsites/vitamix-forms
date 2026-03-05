@@ -1,5 +1,5 @@
 const NAMESPACE = process.env.AIO_RUNTIME_NAMESPACE;
-const BASE_URL = `https://${NAMESPACE}.adobeioruntime.net/api/v1/web/forms`;
+const BASE_URL = `https://${NAMESPACE ?? '60038-161ivoryjackal-stage'}.adobeioruntime.net/api/v1/web/forms`;
 
 describe('Post-Deploy Tests', () => {
   it('returns the deployed version', async () => {

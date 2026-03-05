@@ -36,7 +36,7 @@
     "lint": "eslint --ignore-pattern web-src --no-error-on-unmatched-pattern test src actions",
     "lint:fix": "npm run lint -- --fix",
     "deploy": "aio app deploy",
-    "test-postdeploy": "NODE_OPTIONS='--experimental-vm-modules' jest --testMatch '**/test/post-deploy.test.js'",
+    "test-postdeploy": "NODE_OPTIONS='--experimental-vm-modules' jest --config '{\"transform\":{},\"testEnvironment\":\"node\",\"testTimeout\":10000}' test/post-deploy.test.js",
     "semantic-release": "semantic-release",
     "semantic-release-dry": "semantic-release --dry-run"
   },
