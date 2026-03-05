@@ -84,6 +84,7 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+      - run: npm install
       - name: Post-Deploy Tests
         run: npm run test-postdeploy
         env:
