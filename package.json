@@ -17,22 +17,28 @@
     "@rollup/plugin-commonjs": "29.0.0",
     "@rollup/plugin-node-resolve": "16.0.3",
     "@rollup/plugin-replace": "6.0.3",
+    "@semantic-release/changelog": "^6.0.3",
+    "@semantic-release/exec": "^7.0.3",
+    "@semantic-release/git": "^10.0.1",
     "dotenv": "17.3.1",
     "dotenv-cli": "11.0.0",
     "eslint": "^8",
     "eslint-plugin-jest": "^27.2.3",
     "jest": "^29",
     "rollup": "4.57.1",
+    "semantic-release": "^24.2.3",
     "ts-loader": "^9.5.1",
     "typescript": "^5.5.4"
   },
   "scripts": {
     "test": "NODE_OPTIONS='--experimental-vm-modules' jest --passWithNoTests ./test",
-    "e2e": "jest --collectCoverage=false --testRegex ./e2e",
     "build": "rollup -c rollup.config.mjs",
     "lint": "eslint --ignore-pattern web-src --no-error-on-unmatched-pattern test src actions",
     "lint:fix": "npm run lint -- --fix",
-    "deploy": "aio app deploy"
+    "deploy": "aio app deploy",
+    "test-postdeploy": "NODE_OPTIONS='--experimental-vm-modules' jest --config '{\"transform\":{},\"testEnvironment\":\"node\",\"testTimeout\":10000}' test/post-deploy.test.js",
+    "semantic-release": "semantic-release",
+    "semantic-release-dry": "semantic-release --dry-run"
   },
   "engines": {
     "node": ">=18"

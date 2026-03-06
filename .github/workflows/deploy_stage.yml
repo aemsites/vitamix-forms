@@ -1,36 +1,43 @@
-name: AIO App CI
+name: Stage
 
 on:
-  push:
-    branches:
-      - main
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [main]
+
 jobs:
-  deploy:
-    name: Deploy to Stage
-    runs-on: ${{ matrix.os }}
-    strategy:
-      max-parallel: 1
-      matrix:
-        node-version: ['22']
-        os: [ubuntu-latest]
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Use Node.js ${{ matrix.node-version }}
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-      - name: npm install
-        run: npm i
+          node-version: '24'
+      - run: npm install
+      - run: npm test
+
+  deploy:
+    name: Deploy to Stage
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install
       - name: Setup CLI
         uses: adobe/aio-cli-setup-action@1.3.0
         with:
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           version: 11.x.x
       - name: Auth
         uses: adobe/aio-apps-action@3.3.0
         with:
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           command: oauth_sts
           CLIENTID: ${{ secrets.CLIENTID_STAGE }}
           CLIENTSECRET: ${{ secrets.CLIENTSECRET_STAGE }}
@@ -43,7 +50,7 @@ jobs:
           AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_STAGE }}
         uses: adobe/aio-apps-action@3.3.0
         with:
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           command: build
       - name: Deploy
         env:
@@ -63,6 +70,22 @@ jobs:
           EMAIL_TOKEN: ${{ secrets.EMAIL_TOKEN_STAGE }}
         uses: adobe/aio-apps-action@3.3.0
         with:
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           command: deploy
           noPublish: true
+
+  post-deploy-test:
+    name: Post-Deploy Tests
+    runs-on: ubuntu-latest
+    needs: deploy
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install
+      - name: Post-Deploy Tests
+        run: npm run test-postdeploy
+        env:
+          AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_STAGE }}

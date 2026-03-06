@@ -2,9 +2,10 @@ import path from 'path';
 import fs from 'fs';
 import replace from '@rollup/plugin-replace';
 import { configDotenv } from 'dotenv';
-import nodeResolve from '@rollup/plugin-node-resolve';
 
 configDotenv();
+
+const pkg = JSON.parse(fs.readFileSync('package.json', 'utf-8'));
 
 /**
  * @param {string} srcpath 
@@ -29,6 +30,7 @@ export default actions.map(
     plugins: [
       replace({
         'process.env.DA_TOKEN': JSON.stringify(process.env.DA_TOKEN),
+        'process.env.VERSION': JSON.stringify(pkg.version),
         preventAssignment: true
       })
     ]

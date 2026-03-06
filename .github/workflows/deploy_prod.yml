@@ -1,35 +1,48 @@
-name: AIO App CI
+name: Production
 
 on:
-  release:
-    types: [released]
+  push:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: write
+  issues: read
+  pull-requests: write
+
 jobs:
-  deploy:
-    name: Deploy to Prod
-    runs-on: ${{ matrix.os }}
-    strategy:
-      max-parallel: 1
-      matrix:
-        node-version: ['22']
-        os: [ubuntu-latest]
+  test:
+    name: Test
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Use Node.js ${{ matrix.node-version }}
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24.x
         uses: actions/setup-node@v4
         with:
-          node-version: ${{ matrix.node-version }}
-      - name: npm install
-        run: npm i
+          node-version: '24'
+      - run: npm install
+      - run: npm test
+
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - name: Use Node.js 24.x
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - run: npm install
       - name: Setup CLI
         uses: adobe/aio-cli-setup-action@1.3.0
         with:
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           version: 11.x.x
       - name: Auth
         uses: adobe/aio-apps-action@3.3.0
         with:
-          os: ${{ matrix.os }}
+          os: ubuntu-latest
           command: oauth_sts
           CLIENTID: ${{ secrets.CLIENTID_PROD }}
           CLIENTSECRET: ${{ secrets.CLIENTSECRET_PROD }}
@@ -37,15 +50,10 @@ jobs:
           TECHNICALACCOUNTEMAIL: ${{ secrets.TECHNICALACCEMAIL_PROD }}
           IMSORGID: ${{ secrets.IMSORGID_PROD }}
           SCOPES: ${{ secrets.SCOPES_PROD }}
-      - name: Build
+      - name: Semantic Release
+        run: npm run semantic-release
         env:
-          AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_PROD }}
-        uses: adobe/aio-apps-action@3.3.0
-        with:
-          os: ${{ matrix.os }}
-          command: build
-      - name: Deploy
-        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_PROD }}
           AIO_RUNTIME_AUTH: ${{ secrets.AIO_RUNTIME_AUTH_PROD }}
           AIO_PROJECT_ID: ${{ secrets.AIO_PROJECT_ID_PROD }}
@@ -60,7 +68,3 @@ jobs:
           AIO_IMSORGID: ${{ secrets.IMSORGID_PROD }}
           AIO_EVENTS_PROVIDER_ID: ${{ secrets.EVENTS_PROVIDER_ID_PROD }}
           EMAIL_TOKEN: ${{ secrets.EMAIL_TOKEN_PROD }}
-        uses: adobe/aio-apps-action@3.3.0
-        with:
-          os: ${{ matrix.os }}
-          command: deploy
