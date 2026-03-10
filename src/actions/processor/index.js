@@ -133,13 +133,23 @@ export async function main(params) {
       folderPath = `/incoming/deadletter/${formId}`;
     }
 
-    // sheets are named by year
-    const year = new Date().getFullYear();
-    const sheetPath = `${folderPath}/${year}.json`;
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const sheetPath = `${folderPath}/${year}/${month}.json`;
     log.info(`processing submission for formId=${formId} to sheet=${sheetPath}`);
 
-    // if entries contains the destination sheet, append to it, otherwise create a new sheet
-    const sheetExists = !!entries.find((entry) => entry.path === `/${ctx.env.ORG}/${ctx.env.SITE}${sheetPath}`);
+    // check if the month sheet exists inside the year subfolder
+    let sheetExists = false;
+    const yearFolderExists = entries.some(
+      (entry) => entry.path === `/${ctx.env.ORG}/${ctx.env.SITE}${folderPath}/${year}`
+    );
+    if (yearFolderExists) {
+      const yearEntries = await listFolder(ctx, `${folderPath}/${year}`);
+      sheetExists = yearEntries.some(
+        (entry) => entry.path === `/${ctx.env.ORG}/${ctx.env.SITE}${sheetPath}`
+      );
+    }
 
     /** @type {Sheet} */
     let sheet;
