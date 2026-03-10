@@ -1,3 +1,10 @@
+## [1.0.1](https://github.com/aemsites/vitamix-forms/compare/v1.0.0...v1.0.1) (2026-03-10)
+
+
+### Bug Fixes
+
+* split forms by month ([615a7a1](https://github.com/aemsites/vitamix-forms/commit/615a7a1f7f66ca17c366958661089099dfd9ab37))
+
 # 1.0.0 (2026-03-06)
 
 
