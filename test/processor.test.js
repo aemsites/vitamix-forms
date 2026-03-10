@@ -24,7 +24,9 @@ jest.unstable_mockModule('../src/emails.js', () => ({
 
 const { main } = await import('../src/actions/processor/index.js');
 
-const YEAR = new Date().getFullYear();
+const NOW = new Date();
+const YEAR = NOW.getFullYear();
+const MONTH = String(NOW.getMonth() + 1).padStart(2, '0');
 
 function makeCtx(overrides = {}) {
   return {
@@ -45,16 +47,16 @@ function makeCtx(overrides = {}) {
 function makeEntries({ sheetExists = true, emailTemplate = false } = {}) {
   const entries = [];
   entries.push({
-    path: '/test-org/test-site/incoming/contact-us/2024.json',
-    name: '2024.json',
-    ext: 'json',
+    path: '/test-org/test-site/incoming/contact-us/2024',
+    name: '2024',
+    ext: '',
     lastModified: 0,
   });
   if (sheetExists) {
     entries.push({
-      path: `/test-org/test-site/incoming/contact-us/${YEAR}.json`,
-      name: `${YEAR}.json`,
-      ext: 'json',
+      path: `/test-org/test-site/incoming/contact-us/${YEAR}`,
+      name: `${YEAR}`,
+      ext: '',
       lastModified: 0,
     });
   }
@@ -63,6 +65,19 @@ function makeEntries({ sheetExists = true, emailTemplate = false } = {}) {
       path: '/test-org/test-site/incoming/contact-us/email-template.html',
       name: 'email-template.html',
       ext: 'html',
+      lastModified: 0,
+    });
+  }
+  return entries;
+}
+
+function makeYearEntries({ sheetExists = true } = {}) {
+  const entries = [];
+  if (sheetExists) {
+    entries.push({
+      path: `/test-org/test-site/incoming/contact-us/${YEAR}/${MONTH}.json`,
+      name: `${MONTH}.json`,
+      ext: 'json',
       lastModified: 0,
     });
   }
@@ -125,7 +140,9 @@ describe('processor action', () => {
     test('accepts event data nested under ctx.data.data', async () => {
       const ctx = makeCtx();
       mockMakeContext.mockResolvedValue(ctx);
-      mockListFolder.mockResolvedValue(makeEntries());
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries());
       mockFetchSheet.mockResolvedValue(makeExistingSheet([
         { timestamp: '', IP: '', name: '', email: '' },
       ]));
@@ -133,6 +150,7 @@ describe('processor action', () => {
       const result = await main({});
       expect(result.statusCode).toBe(200);
       expect(mockListFolder).toHaveBeenCalledWith(ctx, '/incoming/contact-us');
+      expect(mockListFolder).toHaveBeenCalledWith(ctx, `/incoming/contact-us/${YEAR}`);
     });
   });
 
@@ -142,7 +160,9 @@ describe('processor action', () => {
     test('fetches existing sheet and appends record', async () => {
       const ctx = makeCtx();
       mockMakeContext.mockResolvedValue(ctx);
-      mockListFolder.mockResolvedValue(makeEntries());
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries());
 
       const existingSheet = makeExistingSheet([
         { timestamp: '2024-01-01', IP: '0.0.0.0', name: 'Jane', email: 'jane@test.com' },
@@ -152,10 +172,10 @@ describe('processor action', () => {
       const result = await main({});
 
       expect(result.statusCode).toBe(200);
-      expect(mockFetchSheet).toHaveBeenCalledWith(ctx, `/incoming/contact-us/${YEAR}.json`);
+      expect(mockFetchSheet).toHaveBeenCalledWith(ctx, `/incoming/contact-us/${YEAR}/${MONTH}.json`);
       expect(mockUpdateSheet).toHaveBeenCalledWith(
         ctx,
-        `/incoming/contact-us/${YEAR}.json`,
+        `/incoming/contact-us/${YEAR}/${MONTH}.json`,
         expect.objectContaining({
           ':private': expect.objectContaining({
             'private-data': expect.objectContaining({
@@ -172,7 +192,9 @@ describe('processor action', () => {
 
     test('preserves key order from first record (header row)', async () => {
       mockMakeContext.mockResolvedValue(makeCtx());
-      mockListFolder.mockResolvedValue(makeEntries());
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries());
 
       const existingSheet = makeExistingSheet([
         { timestamp: '2024-01-01', IP: '0.0.0.0', name: 'Jane', email: 'jane@test.com' },
@@ -197,7 +219,9 @@ describe('processor action', () => {
         },
       });
       mockMakeContext.mockResolvedValue(ctx);
-      mockListFolder.mockResolvedValue(makeEntries());
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries());
 
       const existingSheet = makeExistingSheet([
         { timestamp: '2024-01-01', IP: '0.0.0.0', name: 'Jane', email: 'jane@test.com' },
@@ -212,7 +236,9 @@ describe('processor action', () => {
 
     test('replaces header row when all values are empty (first submission)', async () => {
       mockMakeContext.mockResolvedValue(makeCtx());
-      mockListFolder.mockResolvedValue(makeEntries());
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries());
 
       const existingSheet = makeExistingSheet([
         { timestamp: '', IP: '', name: '', email: '' },
@@ -235,7 +261,7 @@ describe('processor action', () => {
       expect(result.statusCode).toBe(200);
       expect(mockUpdateSheet).toHaveBeenCalledWith(
         ctx,
-        `/incoming/deadletter/contact-us/${YEAR}.json`,
+        `/incoming/deadletter/contact-us/${YEAR}/${MONTH}.json`,
         expect.objectContaining({
           ':private': expect.objectContaining({
             'private-data': expect.objectContaining({
@@ -246,6 +272,90 @@ describe('processor action', () => {
         }),
       );
     });
+
+    test('creates new sheet when year folder does not exist', async () => {
+      const ctx = makeCtx();
+      mockMakeContext.mockResolvedValue(ctx);
+      mockListFolder.mockResolvedValueOnce(makeEntries({ sheetExists: false }));
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(mockListFolder).toHaveBeenCalledTimes(1);
+      expect(mockFetchSheet).not.toHaveBeenCalled();
+      expect(mockUpdateSheet).toHaveBeenCalledWith(
+        ctx,
+        `/incoming/contact-us/${YEAR}/${MONTH}.json`,
+        expect.objectContaining({
+          ':private': expect.objectContaining({
+            'private-data': expect.objectContaining({
+              total: 1,
+            }),
+          }),
+        }),
+      );
+    });
+
+    test('creates new sheet when year folder exists but month file does not', async () => {
+      const ctx = makeCtx();
+      mockMakeContext.mockResolvedValue(ctx);
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries({ sheetExists: false }));
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(mockListFolder).toHaveBeenCalledTimes(2);
+      expect(mockFetchSheet).not.toHaveBeenCalled();
+      expect(mockUpdateSheet).toHaveBeenCalledWith(
+        ctx,
+        `/incoming/contact-us/${YEAR}/${MONTH}.json`,
+        expect.objectContaining({
+          ':private': expect.objectContaining({
+            'private-data': expect.objectContaining({
+              total: 1,
+            }),
+          }),
+        }),
+      );
+    });
+
+    test('creates new year folder and january sheet on year rollover', async () => {
+      const newYear = YEAR + 1;
+      jest.useFakeTimers({ now: new Date(`${newYear}-01-15T12:00:00Z`) });
+
+      try {
+        const ctx = makeCtx();
+        mockMakeContext.mockResolvedValue(ctx);
+        // form folder exists with only the previous year
+        mockListFolder.mockResolvedValueOnce([
+          {
+            path: `/test-org/test-site/incoming/contact-us/${YEAR}`,
+            name: `${YEAR}`,
+            ext: '',
+            lastModified: 0,
+          },
+        ]);
+
+        const result = await main({});
+        expect(result.statusCode).toBe(200);
+        expect(mockListFolder).toHaveBeenCalledTimes(1);
+        expect(mockFetchSheet).not.toHaveBeenCalled();
+        expect(mockUpdateSheet).toHaveBeenCalledWith(
+          ctx,
+          `/incoming/contact-us/${newYear}/01.json`,
+          expect.objectContaining({
+            ':private': expect.objectContaining({
+              'private-data': expect.objectContaining({
+                total: 1,
+                data: [expect.objectContaining({ name: 'John' })],
+              }),
+            }),
+          }),
+        );
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   // -- email notifications -------------------------------------------------
@@ -254,7 +364,9 @@ describe('processor action', () => {
     test('sends email when email-template.html entry exists', async () => {
       const ctx = makeCtx();
       mockMakeContext.mockResolvedValue(ctx);
-      mockListFolder.mockResolvedValue(makeEntries({ emailTemplate: true }));
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries({ emailTemplate: true }))
+        .mockResolvedValueOnce(makeYearEntries());
       mockFetchSheet.mockResolvedValue(makeExistingSheet([
         { timestamp: '', IP: '', name: '', email: '' },
       ]));
@@ -285,7 +397,9 @@ describe('processor action', () => {
 
     test('skips email when no email-template.html entry', async () => {
       mockMakeContext.mockResolvedValue(makeCtx());
-      mockListFolder.mockResolvedValue(makeEntries({ emailTemplate: false }));
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries({ emailTemplate: false }))
+        .mockResolvedValueOnce(makeYearEntries());
       mockFetchSheet.mockResolvedValue(makeExistingSheet([
         { timestamp: '', IP: '', name: '', email: '' },
       ]));
@@ -298,7 +412,9 @@ describe('processor action', () => {
 
     test('skips sendEmail when resolveEmailTemplate returns null', async () => {
       mockMakeContext.mockResolvedValue(makeCtx());
-      mockListFolder.mockResolvedValue(makeEntries({ emailTemplate: true }));
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries({ emailTemplate: true }))
+        .mockResolvedValueOnce(makeYearEntries());
       mockFetchSheet.mockResolvedValue(makeExistingSheet([
         { timestamp: '', IP: '', name: '', email: '' },
       ]));
@@ -333,7 +449,9 @@ describe('processor action', () => {
 
     test('returns 500 when updateSheet fails', async () => {
       mockMakeContext.mockResolvedValue(makeCtx());
-      mockListFolder.mockResolvedValue(makeEntries());
+      mockListFolder
+        .mockResolvedValueOnce(makeEntries())
+        .mockResolvedValueOnce(makeYearEntries());
       mockFetchSheet.mockResolvedValue(makeExistingSheet([
         { timestamp: '', IP: '', name: '', email: '' },
       ]));
