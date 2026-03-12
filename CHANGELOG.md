@@ -1,3 +1,10 @@
+## [1.0.2](https://github.com/aemsites/vitamix-forms/compare/v1.0.1...v1.0.2) (2026-03-12)
+
+
+### Bug Fixes
+
+* force deploy, historical import script ([960bf6c](https://github.com/aemsites/vitamix-forms/commit/960bf6cab89f107f42158cb239617a28f2cf527e))
+
 ## [1.0.1](https://github.com/aemsites/vitamix-forms/compare/v1.0.0...v1.0.1) (2026-03-10)
 
 
