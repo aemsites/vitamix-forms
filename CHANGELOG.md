@@ -1,3 +1,12 @@
+## [1.0.4](https://github.com/aemsites/vitamix-forms/compare/v1.0.3...v1.0.4) (2026-03-13)
+
+
+### Bug Fixes
+
+* guard undefined referer ([f303f96](https://github.com/aemsites/vitamix-forms/commit/f303f96940098b11fa1df2ef17d69bb74a7f6bb8))
+* more lax prod origin ([a884bb4](https://github.com/aemsites/vitamix-forms/commit/a884bb42354ce90e4dc278afae0c5faf695a3831))
+* tweak condition ([2edd0af](https://github.com/aemsites/vitamix-forms/commit/2edd0afa454504e0b77ec98e5c1e659b2d30cda5))
+
 ## [1.0.3](https://github.com/aemsites/vitamix-forms/compare/v1.0.2...v1.0.3) (2026-03-13)
 
 
