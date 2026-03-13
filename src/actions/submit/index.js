@@ -77,7 +77,7 @@ export async function main(params) {
 
     // if the origin of the submission isn't the production origin
     // add the `stage` prefix to the formId (if not present)
-    if (ctx.info.headers['referer']?.includes(PROD_ORIGIN) && !formId.startsWith('stage/')) {
+    if (!ctx.info.headers['referer']?.includes(PROD_ORIGIN) && !formId.startsWith('stage/')) {
       log.info(`adding stage prefix to formId=${formId} because origin is not production: ${ctx.info.headers['referer']}`);
       formId = `stage/${formId}`;
     }
