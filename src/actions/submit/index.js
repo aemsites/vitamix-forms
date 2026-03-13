@@ -13,7 +13,7 @@ const FORM_ID_PATTERN = /^[a-zA-Z0-9]+[\/a-zA-Z0-9_-]*[a-zA-Z0-9]+$/;
 /**
  * Origin of the production site, as seen in referer header
  */
-const PROD_ORIGIN = 'https://www.vitamix.com';
+const PROD_ORIGIN = 'www.vitamix.com';
 
 /**
  * @param {Record<string, unknown>} data
@@ -77,7 +77,7 @@ export async function main(params) {
 
     // if the origin of the submission isn't the production origin
     // add the `stage` prefix to the formId (if not present)
-    if (ctx.info.headers['referer'] !== PROD_ORIGIN && !formId.startsWith('stage/')) {
+    if (!ctx.info.headers['referer']?.includes(PROD_ORIGIN) && !formId.startsWith('stage/')) {
       log.info(`adding stage prefix to formId=${formId} because origin is not production: ${ctx.info.headers['referer']}`);
       formId = `stage/${formId}`;
     }
