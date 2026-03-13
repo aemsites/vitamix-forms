@@ -1,3 +1,10 @@
+## [1.0.3](https://github.com/aemsites/vitamix-forms/compare/v1.0.2...v1.0.3) (2026-03-13)
+
+
+### Bug Fixes
+
+* tweak log ([c551422](https://github.com/aemsites/vitamix-forms/commit/c5514228c906bbee9ae1228f7534db560c79b63e))
+
 ## [1.0.2](https://github.com/aemsites/vitamix-forms/compare/v1.0.1...v1.0.2) (2026-03-12)
 
 
