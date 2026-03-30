@@ -1,3 +1,10 @@
+## [1.0.5](https://github.com/aemsites/vitamix-forms/compare/v1.0.4...v1.0.5) (2026-03-30)
+
+
+### Bug Fixes
+
+* order email data ([e52dcbc](https://github.com/aemsites/vitamix-forms/commit/e52dcbc57b1913f26548550cea2f4e4dab2c6a9e))
+
 ## [1.0.4](https://github.com/aemsites/vitamix-forms/compare/v1.0.3...v1.0.4) (2026-03-13)
 
 
