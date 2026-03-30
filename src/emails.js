@@ -1,6 +1,7 @@
 import { fetchHTML } from "./da.js";
 
 const EMAIL_API_URL = 'https://api.adobecommerce.live';
+const PREFERRED_MESSAGE_KEYS = ['firstName', 'lastName', 'email', 'timestamp'];
 
 /**
  * @typedef {{
@@ -95,8 +96,18 @@ export async function resolveEmailTemplate(ctx, path, variables) {
   templateElements.forEach((element) => {
     const variable = element.replace(/{{/g, '').replace(/}}/g, '');
     if (variable === 'message') {
-      const messageTable = Object.entries(variables).map(([key, value]) => `<tr><td>${key}</td><td>${value}</td></tr>`).join('');
-      html += `<table>${messageTable}</table>`;
+      const rows = [];
+      for (const key of PREFERRED_MESSAGE_KEYS) {
+        if (variables[key]) {
+          rows.push(`<tr><td>${key}</td><td>${variables[key]}</td></tr>`);
+        }
+      }
+      Object.entries(variables).forEach(([key, value]) => {
+        if (!PREFERRED_MESSAGE_KEYS.includes(key)) {
+          rows.push(`<tr><td>${key}</td><td>${value}</td></tr>`);
+        }
+      })
+      html += `<table>${rows.join('')}</table>`;
     } else {
       // for regular variables, just insert as a <p> element
       html += `<p>${variables[variable]}</p>`;
