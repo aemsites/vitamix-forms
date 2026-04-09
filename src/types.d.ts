@@ -7,6 +7,14 @@ declare global {
     SHEET: string;
     EMAIL_TOKEN: string;
     PROXY_TOKEN: string;
+
+    // === EBS settings ===
+    // BASE_URL points to prod only for the production action & production endpoint
+    EBS_BASE_URL: string;
+    EBS_BASE_URL_STAGE: string;
+
+    EBS_API_KEY: string;
+    EBS_API_KEY_STAGE: string;
   }
 
   export interface EventsConfig {

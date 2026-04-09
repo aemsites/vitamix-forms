@@ -68,6 +68,10 @@ jobs:
           AIO_IMSORGID: ${{ secrets.IMSORGID_STAGE }}
           AIO_EVENTS_PROVIDER_ID: ${{ secrets.EVENTS_PROVIDER_ID_STAGE }}
           EMAIL_TOKEN: ${{ secrets.EMAIL_TOKEN_STAGE }}
+          EBS_BASE_URL: ${{ secrets.EBS_BASE_URL_STAGE }}
+          EBS_BASE_URL_STAGE: ${{ secrets.EBS_BASE_URL_STAGE }}
+          EBS_API_KEY: ${{ secrets.EBS_API_KEY_STAGE }}
+          EBS_API_KEY_STAGE: ${{ secrets.EBS_API_KEY_STAGE }}
         uses: adobe/aio-apps-action@3.3.0
         with:
           os: ubuntu-latest
