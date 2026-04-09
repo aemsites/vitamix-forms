@@ -22,7 +22,7 @@ export function errorResponse(statusCode, xError, body) {
 }
 
 /**
- * 
+ * @param {string} message - the error message
  * @param {number} statusCode 
  * @param {string} xError 
  * @param {string | Record<string, unknown>} [body] 
