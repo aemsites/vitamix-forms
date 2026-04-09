@@ -1,3 +1,10 @@
+## [1.0.15](https://github.com/aemsites/vitamix-forms/compare/v1.0.14...v1.0.15) (2026-04-09)
+
+
+### Bug Fixes
+
+* await in try ([2fcf2c0](https://github.com/aemsites/vitamix-forms/commit/2fcf2c01e2faaa88fc874e7787ca1d57ce9c7fc8))
+
 ## [1.0.14](https://github.com/aemsites/vitamix-forms/compare/v1.0.13...v1.0.14) (2026-04-09)
 
 
