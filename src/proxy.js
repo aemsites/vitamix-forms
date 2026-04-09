@@ -1,3 +1,5 @@
+import { errorWithResponse } from "./utils.js";
+
 /**
  * Proxy URL for the org/site
  * @param {string} org 
@@ -28,7 +30,7 @@ export async function proxyFetch(ctx, url, opts) {
     }),
   })
   if (!resp.ok) {
-    throw new Error(`Proxy fetch failed: ${resp.status} ${resp.statusText} - ${resp.headers.get('x-error') ?? ''}`);
+    throw errorWithResponse(`failed to proxyFetch ${url}: ${resp.status} ${resp.statusText}`, resp.status, resp.statusText, await resp.text());
   }
   return resp;
 }
