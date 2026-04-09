@@ -2,9 +2,9 @@ import { XMLParser } from 'fast-xml-parser';
 import { proxyFetch } from './proxy.js';
 
 const PATHS = {
-  queryOrder: '/soa-infra/services/OTC/VITOTCQueryOrder/vitotcqueryorderbpel_client_ep',
-  validateSerialNumber: '/soa-infra/services/OTC/VITOTCValidateSerialNum/vitotcvalidateserialnumbpel_client_ep',
-  createRegistration: '/soa-infra/services/OTC/VITOTCProdRegistration/vitotcproductregbpel_client_ep',
+  queryOrder: '/VITOTCQueryOrder',
+  validateSerialNumber: '/VITOTCValidateSerialNum',
+  createRegistration: '/VITOTCProdRegistration',
 };
 
 const parser = new XMLParser({
@@ -40,16 +40,20 @@ function parseResponse(xml) {
 /**
  * @param {Context} ctx
  * @param {string} baseUrl
+ * @param {string} apiKey
  * @param {string} path
  * @param {string} xml
  * @returns {Promise<{ status: number, body: object, raw: string }>}
  */
-async function soapFetch(ctx, baseUrl, path, xml) {
+async function soapFetch(ctx, baseUrl, apiKey, path, xml) {
   const url = `${baseUrl}${path}`;
   const resp = await proxyFetch(ctx, url, {
     method: 'POST',
-    headers: { 'Content-Type': 'text/xml; charset=utf-8' },
-    body: xml,
+    headers: {
+      'Content-Type': 'text/xml; charset=utf-8',
+      'x-api-key': apiKey,
+    },
+    body: encodeURIComponent(xml),
   });
   const raw = await resp.text();
   const body = parseResponse(raw);
@@ -59,11 +63,13 @@ async function soapFetch(ctx, baseUrl, path, xml) {
 /**
  * Query an order by key via VITOTCQueryOrder SOAP API
  * @param {Context} ctx
- * @param {string} baseUrl - EBS SOAP base URL
  * @param {string} orderKey - order key (e.g. "omstg1000031076")
+ * @param {object} options - options
+ * @param {string} options.baseUrl - EBS SOAP base URL
+ * @param {string} options.apiKey - EBS API key
  * @returns {Promise<{ status: number, body: object, raw: string }>}
  */
-export async function queryOrder(ctx, baseUrl, orderKey) {
+export async function queryOrder(ctx, orderKey, { baseUrl, apiKey }) {
   const requestId = crypto.randomUUID();
   const xml = [
     '<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"',
@@ -82,17 +88,19 @@ export async function queryOrder(ctx, baseUrl, orderKey) {
     '</soapenv:Envelope>',
   ].join('\n');
   console.log('querying order:', xml);
-  return soapFetch(ctx, baseUrl, PATHS.queryOrder, xml);
+  return soapFetch(ctx, baseUrl, apiKey, PATHS.queryOrder, xml);
 }
 
 /**
  * Validate a product serial number via VITOTCValidateSerialNum SOAP API
  * @param {Context} ctx
- * @param {string} baseUrl - EBS SOAP base URL
  * @param {string} serialNumber - serial number (e.g. "067881201029626223")
+ * @param {object} options - options
+ * @param {string} options.baseUrl - EBS SOAP base URL
+ * @param {string} options.apiKey - EBS API key
  * @returns {Promise<{ status: number, body: object, raw: string }>}
  */
-export async function validateSerialNumber(ctx, baseUrl, serialNumber) {
+export async function validateSerialNumber(ctx, serialNumber, { baseUrl, apiKey }) {
   const requestId = crypto.randomUUID();
   const xml = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -107,7 +115,7 @@ export async function validateSerialNumber(ctx, baseUrl, serialNumber) {
     '  </soapenv:Body>',
     '</soapenv:Envelope>',
   ].join('\n');
-  return soapFetch(ctx, baseUrl, PATHS.validateSerialNumber, xml);
+  return soapFetch(ctx, baseUrl, apiKey, PATHS.validateSerialNumber, xml);
 }
 
 /**
@@ -134,11 +142,13 @@ export async function validateSerialNumber(ctx, baseUrl, serialNumber) {
 /**
  * Create a product registration via VITOTCProdRegistration SOAP API
  * @param {Context} ctx
- * @param {string} baseUrl - EBS SOAP base URL
  * @param {RegistrationData} data
+ * @param {object} options - options
+ * @param {string} options.baseUrl - EBS SOAP base URL
+ * @param {string} options.apiKey - EBS API key
  * @returns {Promise<{ status: number, body: object, raw: string }>}
  */
-export async function createProductRegistration(ctx, baseUrl, data) {
+export async function createProductRegistration(ctx, data, { baseUrl, apiKey }) {
   const requestId = crypto.randomUUID();
   const e = escapeXml;
   const xml = [
@@ -172,5 +182,5 @@ export async function createProductRegistration(ctx, baseUrl, data) {
     '  </soapenv:Body>',
     '</soapenv:Envelope>',
   ].join('\n');
-  return soapFetch(ctx, baseUrl, PATHS.createRegistration, xml);
+  return soapFetch(ctx, baseUrl, apiKey, PATHS.createRegistration, xml);
 }

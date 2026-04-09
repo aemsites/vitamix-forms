@@ -19,10 +19,11 @@ export async function updateSheet(ctx, path, json) {
     }
   });
   if (!resp.ok) {
-    ctx.log.error('failed to write sheet: ', resp.status, resp.headers.get('x-error'));
+    const xError = resp.headers.get('x-error');
+    ctx.log.error(`PUT ${resp.status}${xError ? ` ${xError}` : ''}: ${url}`);
     throw Error('failed to write sheet');
   }
-  return;
+  ctx.log.info(`PUT ${resp.status}: ${url}`);
 }
 
 /**

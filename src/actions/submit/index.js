@@ -1,6 +1,7 @@
 import { errorResponse } from '../../utils.js';
 import { publishEvent } from '../../events.js';
 import makeContext from '../../context.js';
+import { createProductRegistration, queryOrder } from '../../ebs.js';
 
 const MAX_PAYLOAD_SIZE = 16_000; // 16KB
 
@@ -20,6 +21,10 @@ const PROD_ORIGIN = 'www.vitamix.com';
  * @returns {string|undefined} error message if invalid
  */
 function validatePayload(data) {
+  if (!data || typeof data !== 'object') {
+    return 'invalid payload';
+  }
+
   if (!data.formId || typeof data.formId !== 'string') {
     return 'missing or invalid formId';
   }
@@ -51,6 +56,67 @@ function validatePayload(data) {
 }
 
 /**
+ * Get EBS settings for the given formId
+ * @param {Context} ctx 
+ * @param {string} formId 
+ * @returns {Object}
+ */
+function getEbsSettings(ctx, formId) {
+  const baseUrl = formId.includes('stage/')
+    ? ctx.env.EBS_BASE_URL_STAGE
+    : ctx.env.EBS_BASE_URL;
+  const apiKey = formId.includes('stage/')
+    ? ctx.env.EBS_API_KEY_STAGE
+    : ctx.env.EBS_API_KEY;
+  return { baseUrl, apiKey };
+}
+
+/**
+ * Handle product registration submission
+ * @param {Context} ctx 
+ * @param {string} formId
+ * @param {Object} data 
+ * @returns {Promise<Response>}
+ */
+async function handleProductRegistration(ctx, formId, data) {
+  const { log } = ctx;
+  log.info(`handling product registration for formId=${formId}`);
+  // TODO: validate payload
+  const opts = getEbsSettings(ctx, formId);
+  const resp = await createProductRegistration(ctx, data, opts);
+  // TODO: parse response into HTTP status codes and appropriate messages
+  return new Response(
+    JSON.stringify(resp.body), {
+    status: resp.status,
+    headers: { 'content-type': 'application/json' }
+  });
+}
+
+/** 
+ * Handle order status submission
+ * @param {Context} ctx 
+ * @param {string} formId
+ * @param {Object} data 
+ * @returns {Promise<Response>}
+ */
+async function handleOrderStatus(ctx, formId, data) {
+  const { log } = ctx;
+  if (!data.orderKey || typeof data.orderKey !== 'string') {
+    return errorResponse(400, 'missing or invalid orderKey');
+  }
+
+  log.info(`handling order status for formId=${formId}`);
+  const opts = getEbsSettings(ctx, formId);
+  const resp = await queryOrder(ctx, data.orderKey, opts);
+  // TODO: parse response into HTTP status codes and appropriate messages
+  return new Response(
+    JSON.stringify(resp.body), {
+    status: resp.status,
+    headers: { 'content-type': 'application/json' }
+  });
+}
+
+/**
  * HTTP action: receives form submissions, validates, and publishes a `form.submitted` event.
  * @param {Object} params
  */
@@ -71,15 +137,23 @@ export async function main(params) {
       return errorResponse(400, error);
     }
 
+    const isProdReferer = ctx.info.headers['referer']?.includes(PROD_ORIGIN) || false;
+
     /** @type {string} */
     // @ts-ignore
     let formId = ctx.data.formId;
 
     // if the origin of the submission isn't the production origin
     // add the `stage` prefix to the formId (if not present)
-    if (!ctx.info.headers['referer']?.includes(PROD_ORIGIN) && !formId.startsWith('stage/')) {
+    if (!isProdReferer && !formId.startsWith('stage/')) {
       log.info(`adding stage prefix to formId=${formId} because origin is not production: ${ctx.info.headers['referer']}`);
       formId = `stage/${formId}`;
+    }
+
+    if (formId.endsWith('/product-registration')) {
+      return handleProductRegistration(ctx, formId);
+    } else if (formId.endsWith('/order-status')) {
+      return handleOrderStatus(ctx, formId);
     }
 
     // get submission data, it may be in the data object or the root of the payload
