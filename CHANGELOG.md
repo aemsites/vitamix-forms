@@ -1,3 +1,10 @@
+## [1.0.10](https://github.com/aemsites/vitamix-forms/compare/v1.0.9...v1.0.10) (2026-04-09)
+
+
+### Bug Fixes
+
+* handle ebs after fixing data object ([2179869](https://github.com/aemsites/vitamix-forms/commit/2179869bda21f06d01b60a57b6cea7572e1c2c5a))
+
 ## [1.0.9](https://github.com/aemsites/vitamix-forms/compare/v1.0.8...v1.0.9) (2026-04-09)
 
 
