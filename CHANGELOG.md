@@ -1,3 +1,10 @@
+## [1.0.12](https://github.com/aemsites/vitamix-forms/compare/v1.0.11...v1.0.12) (2026-04-09)
+
+
+### Bug Fixes
+
+* add to env ([f3fedf7](https://github.com/aemsites/vitamix-forms/commit/f3fedf746e08936da47c775d4dc382d54a23af57))
+
 ## [1.0.11](https://github.com/aemsites/vitamix-forms/compare/v1.0.10...v1.0.11) (2026-04-09)
 
 
