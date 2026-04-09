@@ -155,12 +155,6 @@ export async function main(params) {
       formId = `stage/${formId}`;
     }
 
-    if (formId.endsWith('/product-registration')) {
-      return handleProductRegistration(ctx, formId);
-    } else if (formId.endsWith('/order-status')) {
-      return handleOrderStatus(ctx, formId);
-    }
-
     // get submission data, it may be in the data object or the root of the payload
     /** @type {Record<string, unknown>} */
     // @ts-ignore
@@ -168,6 +162,12 @@ export async function main(params) {
     if (typeof data !== 'object') {
       data = ctx.data;
       delete data.formId;
+    }
+
+    if (formId.endsWith('/product-registration')) {
+      return handleProductRegistration(ctx, formId, data);
+    } else if (formId.endsWith('/order-status')) {
+      return handleOrderStatus(ctx, formId, data);
     }
 
     // add timestamp and IP - these can't be set by the payload
