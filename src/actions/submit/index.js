@@ -165,9 +165,9 @@ export async function main(params) {
     }
 
     if (formId.endsWith('/product-registration')) {
-      return handleProductRegistration(ctx, formId, data);
+      return await handleProductRegistration(ctx, formId, data);
     } else if (formId.endsWith('/order-status')) {
-      return handleOrderStatus(ctx, formId, data);
+      return await handleOrderStatus(ctx, formId, data);
     }
 
     // add timestamp and IP - these can't be set by the payload
