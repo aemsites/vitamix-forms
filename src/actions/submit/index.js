@@ -56,6 +56,30 @@ function validatePayload(data) {
 }
 
 /**
+ * Recursively transform SOAP XML parsed keys:
+ * - Strip `@_` attribute prefix
+ * - Lowercase first character of each key
+ * - Convert "true"/"false" strings to booleans
+ * @param {unknown} obj
+ * @returns {unknown}
+ */
+function transformSoapKeys(obj) {
+  if (Array.isArray(obj)) return obj.map(transformSoapKeys);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.entries(obj).map(([key, val]) => {
+        const clean = key.startsWith('@_') ? key.slice(2) : key;
+        const camel = clean.charAt(0).toLowerCase() + clean.slice(1);
+        return [camel, transformSoapKeys(val)];
+      })
+    );
+  }
+  if (obj === 'true') return true;
+  if (obj === 'false') return false;
+  return obj;
+}
+
+/**
  * Get EBS settings for the given formId
  * @param {Context} ctx 
  * @param {string} formId 
@@ -110,13 +134,18 @@ async function handleOrderStatus(ctx, formId, data) {
   log.info(`handling order status for formId=${formId}`);
   const opts = getEbsSettings(ctx, formId);
   const resp = await queryOrder(ctx, data.orderNumber, opts);
-  // TODO: parse response into HTTP status codes and appropriate messages
+
+  const response = resp.body?.Response;
+  if (response?.['@_Succeeded'] !== 'true') {
+    const message = response?.Details?.['@_Message'] ?? 'unknown error';
+    const status = /no results found/i.test(message) ? 404 : 400;
+    return errorResponse(status, message, { error: message });
+  }
+
   return {
-    body: resp.body,
-    statusCode: resp.status,
-    headers: {
-      'content-type': 'application/json'
-    }
+    body: transformSoapKeys(response),
+    statusCode: 200,
+    headers: { 'content-type': 'application/json' },
   };
 }
 

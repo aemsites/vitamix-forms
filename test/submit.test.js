@@ -2,6 +2,7 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 
 const mockPublishEvent = jest.fn();
 const mockMakeContext = jest.fn();
+const mockQueryOrder = jest.fn();
 
 jest.unstable_mockModule('../src/events.js', () => ({
   publishEvent: mockPublishEvent,
@@ -9,6 +10,11 @@ jest.unstable_mockModule('../src/events.js', () => ({
 
 jest.unstable_mockModule('../src/context.js', () => ({
   default: mockMakeContext,
+}));
+
+jest.unstable_mockModule('../src/ebs.js', () => ({
+  queryOrder: mockQueryOrder,
+  createProductRegistration: jest.fn(),
 }));
 
 const { main } = await import('../src/actions/submit/index.js');
@@ -232,6 +238,118 @@ describe('submit action', () => {
       const eventData = mockPublishEvent.mock.calls[0][2];
       expect(eventData.data.IP).not.toBe('spoofed');
       expect(eventData.data.timestamp).not.toBe('spoofed');
+    });
+  });
+
+  // -- order-status --------------------------------------------------------
+
+  describe('order-status', () => {
+    function makeOrderCtx(orderNumber = 'om2101481269') {
+      return makeCtx({
+        data: { formId: 'vitamix/order-status', data: { orderNumber } },
+        env: {
+          ORG: 'test-org', SITE: 'test-site',
+          EBS_BASE_URL: 'https://ebs.example.com',
+          EBS_API_KEY: 'key',
+        },
+      });
+    }
+
+    const successBody = {
+      Response: {
+        '@_Id': 'abc-123',
+        '@_Outcome': 'Success',
+        '@_Succeeded': 'true',
+        'Order': {
+          '@_Key': 'om2101481269',
+          '@_Currency': 'USD',
+          'Customer': { '@_Key': '12186251', 'First': 'RACHEL', 'Last': 'NATAL' },
+          'Delivery': [{ '@_SystemOfRecordKey': '13024544' }],
+          'LineItem': [{ '@_Key': '19213953', '@_Quantity': '1' }],
+        },
+      },
+    };
+
+    const notFoundBody = {
+      Response: {
+        '@_Id': 'd5824822',
+        '@_Outcome': 'ValidationError',
+        '@_Succeeded': 'false',
+        'Details': { '@_Key': 'ORDER-ERR-201', '@_Message': 'No results found' },
+      },
+    };
+
+    test('returns 400 for missing orderNumber', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        data: { formId: 'vitamix/order-status', data: {} },
+      }));
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('missing or invalid orderNumber');
+    });
+
+    test('returns transformed body on success', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx());
+      mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(result.body.id).toBe('abc-123');
+      expect(result.body.outcome).toBe('Success');
+      expect(result.body.succeeded).toBe(true);
+      expect(result.body.order.key).toBe('om2101481269');
+      expect(result.body.order.currency).toBe('USD');
+      expect(result.body.order.customer.key).toBe('12186251');
+      expect(result.body.order.customer.first).toBe('RACHEL');
+      expect(result.body.order.delivery).toHaveLength(1);
+      expect(result.body.order.lineItem[0].key).toBe('19213953');
+      expect(result.body.order.lineItem[0].quantity).toBe('1');
+    });
+
+    test('returns 404 for "No results found" validation error', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx('unknown-order'));
+      mockQueryOrder.mockResolvedValue({ status: 200, body: notFoundBody });
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(404);
+      expect(result.error.headers['x-error']).toBe('No results found');
+      expect(result.error.body.error).toBe('No results found');
+    });
+
+    test('returns 400 for other validation errors', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx('bad-order'));
+      mockQueryOrder.mockResolvedValue({
+        status: 200,
+        body: {
+          Response: {
+            '@_Outcome': 'ValidationError',
+            '@_Succeeded': 'false',
+            'Details': { '@_Key': 'ORDER-ERR-999', '@_Message': 'Invalid order key format' },
+          },
+        },
+      });
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('Invalid order key format');
+    });
+
+    test('strips @_ prefix from all keys recursively', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx());
+      mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+      const json = JSON.stringify(result.body);
+      expect(json).not.toContain('@_');
+    });
+
+    test('converts succeeded string to boolean', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx());
+      mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+      expect(typeof result.body.succeeded).toBe('boolean');
+      expect(result.body.succeeded).toBe(true);
     });
   });
 
