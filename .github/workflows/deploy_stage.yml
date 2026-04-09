@@ -68,6 +68,7 @@ jobs:
           AIO_IMSORGID: ${{ secrets.IMSORGID_STAGE }}
           AIO_EVENTS_PROVIDER_ID: ${{ secrets.EVENTS_PROVIDER_ID_STAGE }}
           EMAIL_TOKEN: ${{ secrets.EMAIL_TOKEN_STAGE }}
+          PROXY_TOKEN: ${{ secrets.PROXY_TOKEN }}
           EBS_BASE_URL: ${{ secrets.EBS_BASE_URL_STAGE }}
           EBS_BASE_URL_STAGE: ${{ secrets.EBS_BASE_URL_STAGE }}
           EBS_API_KEY: ${{ secrets.EBS_API_KEY_STAGE }}
