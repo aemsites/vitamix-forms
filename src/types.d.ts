@@ -17,6 +17,17 @@ declare global {
     EBS_API_KEY_STAGE: string;
   }
 
+  export interface RuntimeResponse {
+    error?: {
+      statusCode: number;
+      headers?: Record<string, string>;
+      body?: string | Record<string, unknown>;
+    };
+    body?: string | Record<string, unknown>;
+    statusCode?: number;
+    headers?: Record<string, string>;
+  }
+
   export interface EventsConfig {
     apiKey: string;
     token: string;
