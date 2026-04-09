@@ -101,13 +101,13 @@ async function handleProductRegistration(ctx, formId, data) {
  */
 async function handleOrderStatus(ctx, formId, data) {
   const { log } = ctx;
-  if (!data.orderKey || typeof data.orderKey !== 'string') {
-    return errorResponse(400, 'missing or invalid orderKey');
+  if (!data.orderNumber || typeof data.orderNumber !== 'string') {
+    return errorResponse(400, 'missing or invalid orderNumber');
   }
 
   log.info(`handling order status for formId=${formId}`);
   const opts = getEbsSettings(ctx, formId);
-  const resp = await queryOrder(ctx, data.orderKey, opts);
+  const resp = await queryOrder(ctx, data.orderNumber, opts);
   // TODO: parse response into HTTP status codes and appropriate messages
   return new Response(
     JSON.stringify(resp.body), {
