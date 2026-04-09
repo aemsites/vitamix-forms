@@ -188,7 +188,9 @@ export async function main(params) {
       body: { formId },
     };
   } catch (error) {
-    if (error.response) return error.response;
+    if (error.response) {
+      return error.response;
+    }
     console.error('fatal error: ', error);
     return errorResponse(500, 'server error');
   }

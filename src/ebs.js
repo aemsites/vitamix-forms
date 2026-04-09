@@ -1,5 +1,6 @@
 import { XMLParser } from 'fast-xml-parser';
 import { proxyFetch } from './proxy.js';
+import { errorWithResponse } from './utils.js';
 
 const PATHS = {
   queryOrder: '/VITOTCQueryOrder',
@@ -55,6 +56,9 @@ async function soapFetch(ctx, baseUrl, apiKey, path, xml) {
     },
     body: encodeURIComponent(xml),
   });
+  if (!resp.ok) {
+    throw errorWithResponse(`failed to fetch ${url}: ${resp.status} ${resp.statusText}`, resp.status, resp.statusText, await resp.text());
+  }
   const raw = await resp.text();
   const body = parseResponse(raw);
   return { status: resp.status, body, raw };
