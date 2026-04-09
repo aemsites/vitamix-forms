@@ -1,3 +1,10 @@
+## [1.0.6](https://github.com/aemsites/vitamix-forms/compare/v1.0.5...v1.0.6) (2026-04-09)
+
+
+### Bug Fixes
+
+* add ebs ([f4eb751](https://github.com/aemsites/vitamix-forms/commit/f4eb751496a87abab8fa40093d8b14cfb6e03fad))
+
 ## [1.0.5](https://github.com/aemsites/vitamix-forms/compare/v1.0.4...v1.0.5) (2026-03-30)
 
 
