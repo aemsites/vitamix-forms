@@ -1,3 +1,10 @@
+## [1.0.7](https://github.com/aemsites/vitamix-forms/compare/v1.0.6...v1.0.7) (2026-04-09)
+
+
+### Bug Fixes
+
+* tweak input ([aa5ba10](https://github.com/aemsites/vitamix-forms/commit/aa5ba10f9c994b805fca37bcba7293d5da649f24))
+
 ## [1.0.6](https://github.com/aemsites/vitamix-forms/compare/v1.0.5...v1.0.6) (2026-04-09)
 
 
