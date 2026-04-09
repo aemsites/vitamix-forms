@@ -76,7 +76,7 @@ function getEbsSettings(ctx, formId) {
  * @param {Context} ctx 
  * @param {string} formId
  * @param {Object} data 
- * @returns {Promise<{ body: string, status: number, headers: Record<string, string> }>}
+ * @returns {Promise<RuntimeResponse>}
  */
 async function handleProductRegistration(ctx, formId, data) {
   const { log } = ctx;
@@ -87,7 +87,7 @@ async function handleProductRegistration(ctx, formId, data) {
   // TODO: parse response into HTTP status codes and appropriate messages
   return {
     body: JSON.stringify(resp.body),
-    status: resp.status,
+    statusCode: resp.status,
     headers: {
       'content-type': 'application/json'
     }
@@ -99,7 +99,7 @@ async function handleProductRegistration(ctx, formId, data) {
  * @param {Context} ctx 
  * @param {string} formId
  * @param {Object} data 
- * @returns {Promise<{ body: string, status: number, headers: Record<string, string> }>}
+ * @returns {Promise<RuntimeResponse>}
  */
 async function handleOrderStatus(ctx, formId, data) {
   const { log } = ctx;
@@ -112,8 +112,8 @@ async function handleOrderStatus(ctx, formId, data) {
   const resp = await queryOrder(ctx, data.orderNumber, opts);
   // TODO: parse response into HTTP status codes and appropriate messages
   return {
-    body: JSON.stringify(resp.body),
-    status: resp.status,
+    body: resp.body,
+    statusCode: resp.status,
     headers: {
       'content-type': 'application/json'
     }
@@ -123,6 +123,7 @@ async function handleOrderStatus(ctx, formId, data) {
 /**
  * HTTP action: receives form submissions, validates, and publishes a `form.submitted` event.
  * @param {Object} params
+ * @returns {Promise<RuntimeResponse>}
  */
 export async function main(params) {
   try {
