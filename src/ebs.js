@@ -57,6 +57,7 @@ async function soapFetch(ctx, baseUrl, apiKey, path, xml) {
     body: encodeURIComponent(xml),
   });
   if (!resp.ok) {
+    ctx.log.error(`failed to soapFetch ${url}: ${resp.status} ${resp.statusText}`);
     throw errorWithResponse(`failed to soapFetch ${url}: ${resp.status} ${resp.statusText}`, resp.status, resp.statusText, await resp.text());
   }
   const raw = await resp.text();

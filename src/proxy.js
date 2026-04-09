@@ -30,6 +30,7 @@ export async function proxyFetch(ctx, url, opts) {
     }),
   })
   if (!resp.ok) {
+    ctx.log.error(`failed to proxyFetch ${url}: ${resp.status} ${resp.statusText}`);
     throw errorWithResponse(`failed to proxyFetch ${url}: ${resp.status} ${resp.statusText}`, resp.status, resp.statusText, await resp.text());
   }
   return resp;
