@@ -1,3 +1,10 @@
+## [1.0.11](https://github.com/aemsites/vitamix-forms/compare/v1.0.10...v1.0.11) (2026-04-09)
+
+
+### Bug Fixes
+
+* add missing vars to deployment ([0be3481](https://github.com/aemsites/vitamix-forms/commit/0be3481ee050840303d267e0d00c228c854655a9))
+
 ## [1.0.10](https://github.com/aemsites/vitamix-forms/compare/v1.0.9...v1.0.10) (2026-04-09)
 
 
