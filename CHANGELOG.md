@@ -1,3 +1,10 @@
+## [1.0.17](https://github.com/aemsites/vitamix-forms/compare/v1.0.16...v1.0.17) (2026-04-09)
+
+
+### Bug Fixes
+
+* transform responses ([66d9abd](https://github.com/aemsites/vitamix-forms/commit/66d9abd69c60a25d39fbbf94158aa6ef8fe26d61))
+
 ## [1.0.16](https://github.com/aemsites/vitamix-forms/compare/v1.0.15...v1.0.16) (2026-04-09)
 
 
