@@ -1,3 +1,10 @@
+## [1.0.14](https://github.com/aemsites/vitamix-forms/compare/v1.0.13...v1.0.14) (2026-04-09)
+
+
+### Bug Fixes
+
+* handle errors in proxyFetch ([7ee4aac](https://github.com/aemsites/vitamix-forms/commit/7ee4aac38662f6962e620c0930d7ec73a0fbb5f6))
+
 ## [1.0.13](https://github.com/aemsites/vitamix-forms/compare/v1.0.12...v1.0.13) (2026-04-09)
 
 
