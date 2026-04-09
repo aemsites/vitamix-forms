@@ -76,7 +76,7 @@ function getEbsSettings(ctx, formId) {
  * @param {Context} ctx 
  * @param {string} formId
  * @param {Object} data 
- * @returns {Promise<Response>}
+ * @returns {Promise<{ body: string, status: number, headers: Record<string, string> }>}
  */
 async function handleProductRegistration(ctx, formId, data) {
   const { log } = ctx;
@@ -85,11 +85,13 @@ async function handleProductRegistration(ctx, formId, data) {
   const opts = getEbsSettings(ctx, formId);
   const resp = await createProductRegistration(ctx, data, opts);
   // TODO: parse response into HTTP status codes and appropriate messages
-  return new Response(
-    JSON.stringify(resp.body), {
+  return {
+    body: JSON.stringify(resp.body),
     status: resp.status,
-    headers: { 'content-type': 'application/json' }
-  });
+    headers: {
+      'content-type': 'application/json'
+    }
+  };
 }
 
 /** 
@@ -97,7 +99,7 @@ async function handleProductRegistration(ctx, formId, data) {
  * @param {Context} ctx 
  * @param {string} formId
  * @param {Object} data 
- * @returns {Promise<Response>}
+ * @returns {Promise<{ body: string, status: number, headers: Record<string, string> }>}
  */
 async function handleOrderStatus(ctx, formId, data) {
   const { log } = ctx;
@@ -109,11 +111,13 @@ async function handleOrderStatus(ctx, formId, data) {
   const opts = getEbsSettings(ctx, formId);
   const resp = await queryOrder(ctx, data.orderNumber, opts);
   // TODO: parse response into HTTP status codes and appropriate messages
-  return new Response(
-    JSON.stringify(resp.body), {
+  return {
+    body: JSON.stringify(resp.body),
     status: resp.status,
-    headers: { 'content-type': 'application/json' }
-  });
+    headers: {
+      'content-type': 'application/json'
+    }
+  };
 }
 
 /**
