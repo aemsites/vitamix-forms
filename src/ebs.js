@@ -127,7 +127,7 @@ export async function validateSerialNumber(ctx, serialNumber, { baseUrl, apiKey 
  * @typedef {object} RegistrationData
  * @property {string} formCode
  * @property {string} formId
- * @property {string} purchasedFrom
+ * @property {string} purchasedFrom - eg. Amazon
  * @property {string} purchasedOn - ISO date string (e.g. "2026-02-22T00:00:00")
  * @property {string} [prefix]
  * @property {string} [suffix]
@@ -136,7 +136,6 @@ export async function validateSerialNumber(ctx, serialNumber, { baseUrl, apiKey 
  * @property {string} city
  * @property {string} province - state/province code (e.g. "OH")
  * @property {string} postalCode
- * @property {string} geoCode
  * @property {string} country - country code (e.g. "US")
  * @property {string} phone
  * @property {string} email
@@ -144,6 +143,7 @@ export async function validateSerialNumber(ctx, serialNumber, { baseUrl, apiKey 
  * @property {string} lastName
  * @property {string} [middleName]
  * @property {string} serialNumber
+ * unused property {string} geoCode - actually used for "purchasedFrom" (e.g. "Amazon")
  */
 
 /**
@@ -175,7 +175,7 @@ export async function createProductRegistration(ctx, data, { baseUrl, apiKey }) 
     `            <ent:City>${e(data.city)}</ent:City>`,
     `            <ent:Region>${e(data.province)}</ent:Region>`,
     `            <ent:PostalCode>${e(data.postalCode)}</ent:PostalCode>`,
-    `            <ent:GeoCode>${e(data.geoCode)}</ent:GeoCode>`,
+    `            <ent:GeoCode>${e(data.purchasedFrom)}</ent:GeoCode>`,
     `            <ent:Country>${e(data.country)}</ent:Country>`,
     '          </ent:BillTo>',
     `          <ent:Mobile>${e(data.phone)}</ent:Mobile>`,
