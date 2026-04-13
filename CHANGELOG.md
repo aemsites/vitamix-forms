@@ -1,3 +1,10 @@
+## [1.0.19](https://github.com/aemsites/vitamix-forms/compare/v1.0.18...v1.0.19) (2026-04-13)
+
+
+### Bug Fixes
+
+* handle stage formIds ([48e6e3c](https://github.com/aemsites/vitamix-forms/commit/48e6e3c60bfe1a33cf14b41744cd5ff373ae8db3))
+
 ## [1.0.18](https://github.com/aemsites/vitamix-forms/compare/v1.0.17...v1.0.18) (2026-04-13)
 
 
