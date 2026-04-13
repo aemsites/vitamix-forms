@@ -126,7 +126,7 @@ async function handleProductRegistration(ctx, formId, data) {
   }
 
   // pull country from formId
-  const country = formId.split('/').shift();
+  const country = formId.replace(/^stage\//, '').split('/').shift();
   if (!['us', 'ca', 'mx', 'vr'].includes(country)) {
     return errorResponse(400, 'invalid country');
   }
