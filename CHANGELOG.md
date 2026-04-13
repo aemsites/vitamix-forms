@@ -1,3 +1,12 @@
+## [1.0.18](https://github.com/aemsites/vitamix-forms/compare/v1.0.17...v1.0.18) (2026-04-13)
+
+
+### Bug Fixes
+
+* product registration validation ([2487f62](https://github.com/aemsites/vitamix-forms/commit/2487f629b5eba9a885fc69e1afe344f10b760857))
+* purchasedOn date string ([b6107ea](https://github.com/aemsites/vitamix-forms/commit/b6107eaa7ff784c17a42db6c6fac882c35c3fb73))
+* remove PII from order data ([8a827c6](https://github.com/aemsites/vitamix-forms/commit/8a827c66c08da8c607bd600a708f4a9d5697c351))
+
 ## [1.0.17](https://github.com/aemsites/vitamix-forms/compare/v1.0.16...v1.0.17) (2026-04-09)
 
 
