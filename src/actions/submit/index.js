@@ -130,7 +130,7 @@ async function handleProductRegistration(ctx, formId, data) {
   if (!['us', 'ca', 'mx', 'vr'].includes(country)) {
     return errorResponse(400, 'invalid country');
   }
-  data.country = country;
+  data.country = country.toUpperCase();
 
   // convert dd-mm-yyyy to ISO date string
   const purchasedOn = new Date(data.purchasedOn);
