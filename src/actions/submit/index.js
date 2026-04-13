@@ -180,8 +180,18 @@ async function handleOrderStatus(ctx, formId, data) {
     return errorResponse(status, message, { error: message });
   }
 
+  // remove PII from data
+  const body = transformSoapKeys(response);
+  delete body.order?.customer;
+  delete body.order?.lineItem;
+  delete body.order?.systemOfRecordKey;
+  body.order?.delivery?.forEach(delivery => {
+    delete delivery.systemOfRecordKey;
+    delete delivery.trackingDetail;
+  });
+
   return {
-    body: transformSoapKeys(response),
+    body,
     statusCode: 200,
     headers: { 'content-type': 'application/json' },
   };
