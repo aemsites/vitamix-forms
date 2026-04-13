@@ -263,8 +263,9 @@ describe('submit action', () => {
         'Order': {
           '@_Key': 'om2101481269',
           '@_Currency': 'USD',
+          '@_SystemOfRecordKey': '14192624',
           'Customer': { '@_Key': '12186251', 'First': 'RACHEL', 'Last': 'NATAL' },
-          'Delivery': [{ '@_SystemOfRecordKey': '13024544' }],
+          'Delivery': [{ '@_SystemOfRecordKey': '13024544', 'TrackingDetail': { 'TrackingNumber': '1Z88Y66W' } }],
           'LineItem': [{ '@_Key': '19213953', '@_Quantity': '1' }],
         },
       },
@@ -299,11 +300,19 @@ describe('submit action', () => {
       expect(result.body.succeeded).toBe(true);
       expect(result.body.order.key).toBe('om2101481269');
       expect(result.body.order.currency).toBe('USD');
-      expect(result.body.order.customer.key).toBe('12186251');
-      expect(result.body.order.customer.first).toBe('RACHEL');
       expect(result.body.order.delivery).toHaveLength(1);
-      expect(result.body.order.lineItem[0].key).toBe('19213953');
-      expect(result.body.order.lineItem[0].quantity).toBe('1');
+    });
+
+    test('omits PII fields from response', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx());
+      mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+      expect(result.body.order).not.toHaveProperty('customer');
+      expect(result.body.order).not.toHaveProperty('lineItem');
+      expect(result.body.order).not.toHaveProperty('systemOfRecordKey');
+      expect(result.body.order.delivery[0]).not.toHaveProperty('systemOfRecordKey');
+      expect(result.body.order.delivery[0]).not.toHaveProperty('trackingDetail');
     });
 
     test('returns 404 for "No results found" validation error', async () => {

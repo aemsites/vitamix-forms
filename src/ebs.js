@@ -126,17 +126,19 @@ export async function validateSerialNumber(ctx, serialNumber, { baseUrl, apiKey 
 /**
  * @typedef {object} RegistrationData
  * @property {string} formCode
- * @property {string} purchaseLocation
- * @property {string} purchaseDate - ISO date string (e.g. "2026-02-22T00:00:00")
+ * @property {string} formId
+ * @property {string} purchasedFrom
+ * @property {string} purchasedOn - ISO date string (e.g. "2026-02-22T00:00:00")
  * @property {string} [prefix]
  * @property {string} [suffix]
- * @property {string} address1
+ * @property {string} address
+ * @property {string} [addressLine2]
  * @property {string} city
- * @property {string} region - state/province code (e.g. "OH")
+ * @property {string} province - state/province code (e.g. "OH")
  * @property {string} postalCode
  * @property {string} geoCode
  * @property {string} country - country code (e.g. "US")
- * @property {string} mobile
+ * @property {string} phone
  * @property {string} email
  * @property {string} firstName
  * @property {string} lastName
@@ -165,17 +167,18 @@ export async function createProductRegistration(ctx, data, { baseUrl, apiKey }) 
     '  <soapenv:Header/>',
     '  <soapenv:Body>',
     `    <prod:CreateRegistration Id="${requestId}">`,
-    `      <prod:Registration FormCode="${e(data.formCode)}" PurchaseLocation="${e(data.purchaseLocation)}" PurchaseDate="${e(data.purchaseDate)}">`,
+    `      <prod:Registration FormCode="${e(data.formCode || data.formId)}" PurchaseLocation="${e(data.purchasedFrom)}" PurchaseDate="${e(data.purchasedOn)}">`,
     `        <prod:Person Prefix="${e(data.prefix ?? '')}" Suffix="${e(data.suffix ?? '')}">`,
     '          <ent:BillTo>',
-    `            <ent:Address1>${e(data.address1)}</ent:Address1>`,
+    `            <ent:Address1>${e(data.address)}</ent:Address1>`,
+    `            <ent:Address2>${e(data.addressLine2 ?? '')}</ent:Address2>`,
     `            <ent:City>${e(data.city)}</ent:City>`,
-    `            <ent:Region>${e(data.region)}</ent:Region>`,
+    `            <ent:Region>${e(data.province)}</ent:Region>`,
     `            <ent:PostalCode>${e(data.postalCode)}</ent:PostalCode>`,
     `            <ent:GeoCode>${e(data.geoCode)}</ent:GeoCode>`,
     `            <ent:Country>${e(data.country)}</ent:Country>`,
     '          </ent:BillTo>',
-    `          <ent:Mobile>${e(data.mobile)}</ent:Mobile>`,
+    `          <ent:Mobile>${e(data.phone)}</ent:Mobile>`,
     `          <ent:Email>${e(data.email)}</ent:Email>`,
     `          <ent:First>${e(data.firstName)}</ent:First>`,
     `          <ent:Last>${e(data.lastName)}</ent:Last>`,
