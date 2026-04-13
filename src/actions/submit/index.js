@@ -132,6 +132,13 @@ async function handleProductRegistration(ctx, formId, data) {
   }
   data.country = country;
 
+  // convert dd-mm-yyyy to ISO date string
+  const purchasedOn = new Date(data.purchasedOn);
+  if (isNaN(purchasedOn.getTime())) {
+    return errorResponse(400, 'invalid purchasedOn');
+  }
+  data.purchasedOn = purchasedOn.toISOString();
+
   const opts = getEbsSettings(ctx, formId);
   const resp = await createProductRegistration(ctx, data, opts);
   const response = resp.body?.Response;
