@@ -61,7 +61,7 @@ function validatePayload(data) {
  * - Lowercase first character of each key
  * - Convert "true"/"false" strings to booleans
  * @param {unknown} obj
- * @returns {unknown}
+ * @returns {any}
  */
 function transformSoapKeys(obj) {
   if (Array.isArray(obj)) return obj.map(transformSoapKeys);
@@ -105,12 +105,43 @@ function getEbsSettings(ctx, formId) {
 async function handleProductRegistration(ctx, formId, data) {
   const { log } = ctx;
   log.info(`handling product registration for formId=${formId}`);
-  // TODO: validate payload
+  if (!data || typeof data !== 'object') {
+    return errorResponse(400, 'missing or invalid data');
+  }
+
+  const requiredFields = ['acceptTerms', 'address', 'city', 'postalCode', 'province', 'email', 'firstName', 'lastName', 'phone', 'purchasedFrom', 'purchasedOn', 'serialNumber'];
+  for (const field of requiredFields) {
+    if (!data[field]) {
+      return errorResponse(400, `missing or invalid ${field}`);
+    }
+  }
+  // accept terms must be 'yes'
+  if (data.acceptTerms !== 'yes') {
+    return errorResponse(400, 'acceptTerms must be "yes"');
+  }
+
+  // check serial number, should be 18 digits
+  if (!/^[0-9]{18}$/.test(data.serialNumber)) {
+    return errorResponse(400, 'serialNumber must be 18 digits');
+  }
+
+  // pull country from formId
+  const country = formId.split('/').shift();
+  if (!['us', 'ca', 'mx', 'vr'].includes(country)) {
+    return errorResponse(400, 'invalid country');
+  }
+  data.country = country;
+
   const opts = getEbsSettings(ctx, formId);
   const resp = await createProductRegistration(ctx, data, opts);
-  // TODO: parse response into HTTP status codes and appropriate messages
+  const response = resp.body?.Response;
+  if (response?.['@_Succeeded'] !== 'true') {
+    const message = response?.Details?.['@_Message'] ?? 'unknown error';
+    const status = /no results found/i.test(message) ? 404 : 400;
+    return errorResponse(status, message, { error: message });
+  }
   return {
-    body: JSON.stringify(resp.body),
+    body: transformSoapKeys(resp.body),
     statusCode: resp.status,
     headers: {
       'content-type': 'application/json'
