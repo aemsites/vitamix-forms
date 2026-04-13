@@ -143,6 +143,7 @@ async function handleProductRegistration(ctx, formId, data) {
   const resp = await createProductRegistration(ctx, data, opts);
   const response = resp.body?.Response;
   if (response?.['@_Succeeded'] !== 'true') {
+    log.error(`failed to create product registration for formId=${formId}: ${response?.Details?.['@_Message'] ?? 'unknown error'}`, response);
     const message = response?.Details?.['@_Message'] ?? 'unknown error';
     const status = /no results found/i.test(message) ? 404 : 400;
     return errorResponse(status, message, { error: message });
