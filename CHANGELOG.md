@@ -1,3 +1,10 @@
+## [1.0.23](https://github.com/aemsites/vitamix-forms/compare/v1.0.22...v1.0.23) (2026-04-14)
+
+
+### Bug Fixes
+
+* include details in 400 response body ([497c5f2](https://github.com/aemsites/vitamix-forms/commit/497c5f2a601d1d1b9bb7e131e2169f9c4fc49143))
+
 ## [1.0.22](https://github.com/aemsites/vitamix-forms/compare/v1.0.21...v1.0.22) (2026-04-14)
 
 
