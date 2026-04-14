@@ -1,3 +1,10 @@
+## [1.0.24](https://github.com/aemsites/vitamix-forms/compare/v1.0.23...v1.0.24) (2026-04-14)
+
+
+### Bug Fixes
+
+* clean details in error response body ([dd7b012](https://github.com/aemsites/vitamix-forms/commit/dd7b012f0a3846acf46643127119160bbf9e7517))
+
 ## [1.0.23](https://github.com/aemsites/vitamix-forms/compare/v1.0.22...v1.0.23) (2026-04-14)
 
 
