@@ -1,3 +1,10 @@
+## [1.0.21](https://github.com/aemsites/vitamix-forms/compare/v1.0.20...v1.0.21) (2026-04-14)
+
+
+### Bug Fixes
+
+* log error response ([99e3ce9](https://github.com/aemsites/vitamix-forms/commit/99e3ce9f3fbe28d5cc00c23ef414d3e12e60acd4))
+
 ## [1.0.20](https://github.com/aemsites/vitamix-forms/compare/v1.0.19...v1.0.20) (2026-04-13)
 
 
