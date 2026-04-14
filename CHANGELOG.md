@@ -1,3 +1,10 @@
+## [1.0.22](https://github.com/aemsites/vitamix-forms/compare/v1.0.21...v1.0.22) (2026-04-14)
+
+
+### Bug Fixes
+
+* correct response object ([26a091a](https://github.com/aemsites/vitamix-forms/commit/26a091a272c33e3c06fa31aa5c51d2e49495f7ca))
+
 ## [1.0.21](https://github.com/aemsites/vitamix-forms/compare/v1.0.20...v1.0.21) (2026-04-14)
 
 
