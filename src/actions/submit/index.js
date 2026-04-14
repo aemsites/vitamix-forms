@@ -112,23 +112,23 @@ async function handleProductRegistration(ctx, formId, data) {
   const requiredFields = ['acceptTerms', 'address', 'city', 'postalCode', 'province', 'email', 'firstName', 'lastName', 'phone', 'purchasedFrom', 'purchasedOn', 'serialNumber'];
   for (const field of requiredFields) {
     if (!data[field]) {
-      return errorResponse(400, `missing or invalid ${field}`);
+      return errorResponse(400, `missing or invalid ${field}`, { details: [{ message: `missing or invalid ${field}` }] });
     }
   }
   // accept terms must be 'yes'
   if (data.acceptTerms !== 'yes') {
-    return errorResponse(400, 'acceptTerms must be "yes"');
+    return errorResponse(400, 'acceptTerms must be "yes"', { details: [{ message: 'acceptTerms must be "yes"' }] });
   }
 
   // check serial number, should be 18 digits
   if (!/^[0-9]{18}$/.test(data.serialNumber)) {
-    return errorResponse(400, 'serialNumber must be 18 digits');
+    return errorResponse(400, 'serialNumber must be 18 digits', { details: [{ message: 'invalid serial number' }] });
   }
 
   // pull country from formId
   const country = formId.replace(/^stage\//, '').split('/').shift();
   if (!['us', 'ca', 'mx', 'vr'].includes(country)) {
-    return errorResponse(400, 'invalid country');
+    return errorResponse(400, 'invalid country', { details: [{ message: 'invalid country' }] });
   }
   data.country = country.toUpperCase();
 
@@ -146,7 +146,13 @@ async function handleProductRegistration(ctx, formId, data) {
     log.error(`failed to create product registration for formId=${formId}: ${response?.Details?.['@_Message'] ?? 'unknown error'}`, resp.body);
     const message = response?.Details?.['@_Message'] ?? 'unknown error';
     const status = /no results found/i.test(message) ? 404 : 400;
-    return errorResponse(status, message, { error: message, details: response?.Details });
+    const details = response?.Details ? transformSoapKeys(response?.Details) : null;
+    if (Array.isArray(details)) {
+      details.forEach(detail => {
+        delete detail.key;
+      });
+    }
+    return errorResponse(status, message, { error: message, details });
   }
   return {
     body: transformSoapKeys(resp.body),
