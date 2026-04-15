@@ -131,4 +131,38 @@ async function updateOrderCustom(params, orderId, custom) {
   return res.json();
 }
 
-export { getJournalEntries, getOrder, updateOrderCustom };
+/**
+ * Fetch all journal entries for a specific order within a time window.
+ *
+ * Used as a fallback when the main journal window does not contain a
+ * payment_completed entry — queries the order-specific endpoint for a
+ * targeted window (typically 30 minutes from order creation).
+ *
+ * @param {object} params
+ * @param {string} orderId
+ * @param {string} since - ISO 8601 start timestamp
+ * @param {string} until - ISO 8601 end timestamp
+ * @returns {Promise<object[]>}
+ */
+async function getOrderJournalEntries(params, orderId, since, until) {
+  const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
+  const url = new URL(
+    `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/${encodeURIComponent(orderId)}/journal`,
+  );
+  url.searchParams.set('since', since);
+  url.searchParams.set('until', until);
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+  });
+
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`Order journal API ${res.status}: ${body}`);
+  }
+
+  const data = await res.json();
+  return data.entries ?? [];
+}
+
+export { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom };
