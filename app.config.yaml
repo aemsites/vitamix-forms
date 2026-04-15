@@ -15,14 +15,18 @@ application:
           AIO_SCOPES: $AIO_SCOPES
           AIO_IMSORGID: $AIO_IMSORGID
           AIO_EVENTS_PROVIDER_ID: $AIO_EVENTS_PROVIDER_ID
+          # email token for sending form submission notification emails
           EMAIL_TOKEN: $EMAIL_TOKEN
+
+          # token for access to static IP proxy, allowlisted by EBS' API GW
           PROXY_TOKEN: $PROXY_TOKEN
+
           # need both prod and stage vars, since the action depends on the formId
           # not just the deployment's env
           EBS_BASE_URL: $EBS_BASE_URL
           EBS_BASE_URL_STAGE: $EBS_BASE_URL_STAGE
           EBS_API_KEY: $EBS_API_KEY
-          EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
+          EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE          
         actions:
           submit:
             function: dist/actions/submit/index.js
@@ -45,4 +49,32 @@ application:
             annotations:
               require-adobe-auth: false
               final: true
+          ebs-sync:
+            function: dist/actions/ebs-sync/index.js
+            web: 'yes'
+            runtime: 'nodejs:18'
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 600000  # 10 minutes (ms) — must match DEADLINE_MS in sync.js
+              memory: 256
+              concurrency: 1   # platform-level guard: only one active invocation per container
+            inputs:
+              LOG_LEVEL: $LOG_LEVEL
+              SYNC_STATUS_TOKEN: $SYNC_STATUS_TOKEN
+              EDGE_COMMERCE_API_ORDERS_TOKEN: $EDGE_COMMERCE_API_ORDERS_TOKEN
+              EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
+
+        # triggers:
+        #   ebs-sync-schedule:
+        #     feed: /whisk.system/alarms/alarm
+        #     inputs:
+        #       cron: '*/10 * * * *'
+        #       timezone: UTC
+
+        # rules:
+        #   ebs-sync-rule:
+        #     trigger: ebs-sync-schedule
+        #     action: ebs-sync
 

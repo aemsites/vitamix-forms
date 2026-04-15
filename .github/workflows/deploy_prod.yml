@@ -73,3 +73,7 @@ jobs:
           EBS_BASE_URL_STAGE: ${{ secrets.EBS_BASE_URL_STAGE }}
           EBS_API_KEY: ${{ secrets.EBS_API_KEY_PROD }}
           EBS_API_KEY_STAGE: ${{ secrets.EBS_API_KEY_STAGE }}
+          SYNC_STATUS_TOKEN: ${{ secrets.SYNC_STATUS_TOKEN_PROD }}
+          EDGE_COMMERCE_API_ORDERS_TOKEN: ${{ secrets.EDGE_COMMERCE_API_ORDERS_TOKEN_PROD }}
+          EDGE_COMMERCE_API_BASE: ${{ secrets.EDGE_COMMERCE_API_BASE_PROD }}
+          EBS_CREATE_ORDER_ENDPOINT: ${{ secrets.EBS_CREATE_ORDER_ENDPOINT_PROD }}

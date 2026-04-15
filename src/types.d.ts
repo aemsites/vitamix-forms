@@ -15,6 +15,11 @@ declare global {
 
     EBS_API_KEY: string;
     EBS_API_KEY_STAGE: string;
+
+    // === sync settings (also relies on EBS_BASE_URL and EBS_API_KEY) ===
+    SYNC_STATUS_TOKEN: string;
+    EDGE_COMMERCE_API_ORDERS_TOKEN: string;
+    EDGE_COMMERCE_API_BASE: string;
   }
 
   export interface RuntimeResponse {
