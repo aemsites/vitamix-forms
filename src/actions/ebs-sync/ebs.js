@@ -71,7 +71,7 @@ const EBS_TIMEOUT_MS = 120_000; // 2 minutes per order
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
  */
-async function syncOrderToEbs(params, order, orderJournal) {
+export async function syncOrderToEbs(params, order, orderJournal) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
   if (!paymentSnapshot) {
     throw new Error(
@@ -114,7 +114,7 @@ function parseEbsSuccess(xml) {
 function extractEbsErrorMessage(xml) {
   const m =
     xml.match(/<Details[^>]+Message="([^"]*)"/) ||
-    xml.match(/<Details[^>]+Message='([^']*)'/) ;
+    xml.match(/<Details[^>]+Message='([^']*)'/);
   return m ? m[1] : `Unknown EBS error (first 300 chars): ${xml.slice(0, 300)}`;
 }
 
@@ -138,7 +138,7 @@ function extractEbsErrorMessage(xml) {
  * @param {object[]} orderJournal
  * @returns {object | null}
  */
-function buildPaymentSnapshot(order, orderJournal) {
+export function buildPaymentSnapshot(order, orderJournal) {
   const completed = orderJournal.find((e) => e.event === 'payment_completed');
   if (!completed) return null;
 
@@ -533,8 +533,8 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
             <ns3:Phone>${shippingPhone}</ns3:Phone>
             <ns3:PostalCode>${escapeXml(shipping.zip || '')}</ns3:PostalCode>
             <ns3:AddressStatus>${escapeXml(
-              (paymentSnapshot.shippingAddressStatus || '').toUpperCase(),
-            )}</ns3:AddressStatus>
+    (paymentSnapshot.shippingAddressStatus || '').toUpperCase(),
+  )}</ns3:AddressStatus>
           </ns3:ShipToAddress>
           <ns3:BillingAddress>
             <ns3:Street1>${escapeXml(sanitizeAddress(billing.address1 || ''))}</ns3:Street1>
@@ -544,8 +544,8 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
             <ns3:Country>${escapeXml((billing.country || '').toUpperCase())}</ns3:Country>
             <ns3:Phone>${billingPhone}</ns3:Phone>
             <ns3:AddressStatus>${escapeXml(
-              (paymentSnapshot.billingAddressStatus || '').toUpperCase(),
-            )}</ns3:AddressStatus>
+    (paymentSnapshot.billingAddressStatus || '').toUpperCase(),
+  )}</ns3:AddressStatus>
           </ns3:BillingAddress>
           <ns3:TransactionID>${escapeXml(paymentSnapshot.transactionId)}</ns3:TransactionID>
           <ns3:Amount>${paymentSnapshot.amount}</ns3:Amount>
@@ -553,11 +553,11 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
           <ns3:AuthorizationInfo>
             <ns3:PendingReason>${escapeXml(paymentSnapshot.pendingReason)}</ns3:PendingReason>
             <ns3:ProtectionEligibility>${escapeXml(
-              paymentSnapshot.protectionEligibility,
-            )}</ns3:ProtectionEligibility>
+    paymentSnapshot.protectionEligibility,
+  )}</ns3:ProtectionEligibility>
             <ns3:ProtectionEligibilityType>${escapeXml(
-              paymentSnapshot.protectionEligibilityType,
-            )}</ns3:ProtectionEligibilityType>
+    paymentSnapshot.protectionEligibilityType,
+  )}</ns3:ProtectionEligibilityType>
           </ns3:AuthorizationInfo>
         </ns2:PaymentTransactionLogger>`;
 }
@@ -674,6 +674,7 @@ function resolveEbsMethod(provider) {
  */
 function parseSafetech(response) {
   if (!response) return {};
+  /** @type {Record<string, string>} */
   const result = {};
   for (const pair of String(response).split('|')) {
     const colonIdx = pair.indexOf(':');
@@ -753,5 +754,3 @@ function escapeXml(value) {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
 }
-
-export { syncOrderToEbs, buildPaymentSnapshot };

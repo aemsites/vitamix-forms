@@ -53,7 +53,7 @@ const DEFAULT_STATE = {
 };
 
 /** Load the current sync state, returning defaults if none exists. */
-async function loadState() {
+export async function loadState() {
   const c = await client();
   const result = await c.get(STATE_KEY);
   if (!result) return { ...DEFAULT_STATE };
@@ -71,7 +71,7 @@ async function loadState() {
  * Merge `updates` into the stored state and persist.
  * @param {Partial<SyncState>} updates
  */
-async function saveState(updates) {
+export async function saveState(updates) {
   const c = await client();
   const current = await loadState();
   const next = { ...current, ...updates };
@@ -83,7 +83,7 @@ async function saveState(updates) {
  * Try to acquire the distributed lock.
  * Returns true if the lock was acquired, false if already locked.
  */
-async function acquireLock() {
+export async function acquireLock() {
   const c = await client();
   const existing = await c.get(LOCK_KEY);
   if (existing) {
@@ -100,9 +100,7 @@ async function acquireLock() {
 }
 
 /** Release the distributed lock. */
-async function releaseLock() {
+export async function releaseLock() {
   const c = await client();
   await c.delete(LOCK_KEY);
 }
-
-export { loadState, saveState, acquireLock, releaseLock };

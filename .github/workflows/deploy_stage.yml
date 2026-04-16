@@ -76,7 +76,6 @@ jobs:
           SYNC_STATUS_TOKEN: ${{ secrets.SYNC_STATUS_TOKEN_STAGE }}
           EDGE_COMMERCE_API_ORDERS_TOKEN: ${{ secrets.EDGE_COMMERCE_API_ORDERS_TOKEN_STAGE }}
           EDGE_COMMERCE_API_BASE: ${{ secrets.EDGE_COMMERCE_API_BASE_STAGE }}
-          EBS_CREATE_ORDER_ENDPOINT: ${{ secrets.EBS_CREATE_ORDER_ENDPOINT_STAGE }}
         uses: adobe/aio-apps-action@3.3.0
         with:
           os: ubuntu-latest

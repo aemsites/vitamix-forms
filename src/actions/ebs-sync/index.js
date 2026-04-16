@@ -24,7 +24,7 @@
 import { run } from './sync.js';
 import { loadState } from './state.js';
 
-async function main(params) {
+export async function main(params) {
   // Web-action invocations carry __ow_method; scheduled invocations do not.
   if (params.__ow_method) {
     return handleStatusRequest(params);
@@ -77,5 +77,3 @@ function jsonResponse(statusCode, body) {
     body: JSON.stringify(body),
   };
 }
-
-export { main };

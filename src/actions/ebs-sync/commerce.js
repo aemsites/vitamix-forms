@@ -1,10 +1,11 @@
 /**
  * Commerce API client for the EBS sync job.
  *
- * Wraps the three operations needed:
- *   1. Read the orders journal (with chunking for windows > 11 hours)
- *   2. Fetch a single order by ID
- *   3. PATCH an order's custom data
+ * Wraps the four operations needed:
+ *   1. Read the global orders journal (with chunking for windows > 11 hours)
+ *   2. Read the per-order journal for a specific order
+ *   3. Fetch a single order by ID
+ *   4. PATCH an order's custom data
  */
 
 /** Journal API enforces a 12-hour max range. Stay safely under it. */
@@ -18,7 +19,7 @@ const JOURNAL_CHUNK_HOURS = 11;
  * @param {string | null} since - ISO 8601 timestamp, or null to default to 1h ago
  * @returns {Promise<object[]>} Flat array of journal entries, oldest first
  */
-async function getJournalEntries(params, since) {
+export async function getJournalEntries(params, since) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const baseUrl = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/journal`;
 
@@ -84,7 +85,7 @@ async function fetchJournalChunk(baseUrl, token, since, until) {
  * @param {string} orderId
  * @returns {Promise<object | null>} Order object or null if not found
  */
-async function getOrder(params, orderId) {
+export async function getOrder(params, orderId) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/${encodeURIComponent(orderId)}`;
 
@@ -110,7 +111,7 @@ async function getOrder(params, orderId) {
  * @param {Record<string, string>} custom - Key/value pairs to merge (all values must be strings)
  * @returns {Promise<object>} Updated order
  */
-async function updateOrderCustom(params, orderId, custom) {
+export async function updateOrderCustom(params, orderId, custom) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/${encodeURIComponent(orderId)}/custom`;
 
@@ -134,17 +135,16 @@ async function updateOrderCustom(params, orderId, custom) {
 /**
  * Fetch all journal entries for a specific order within a time window.
  *
- * Used as a fallback when the main journal window does not contain a
- * payment_completed entry — queries the order-specific endpoint for a
- * targeted window (typically 30 minutes from order creation).
+ * Called for orders confirmed to be in a terminal state (payment_completed)
+ * to retrieve the complete journal needed for building the EBS XML payload.
  *
  * @param {object} params
  * @param {string} orderId
- * @param {string} since - ISO 8601 start timestamp
- * @param {string} until - ISO 8601 end timestamp
+ * @param {string} since - ISO 8601 start timestamp (typically order.createdAt)
+ * @param {string} until - ISO 8601 end timestamp (typically now)
  * @returns {Promise<object[]>}
  */
-async function getOrderJournalEntries(params, orderId, since, until) {
+export async function getOrderJournalEntries(params, orderId, since, until) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const url = new URL(
     `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/${encodeURIComponent(orderId)}/journal`,
@@ -164,5 +164,3 @@ async function getOrderJournalEntries(params, orderId, since, until) {
   const data = await res.json();
   return data.entries ?? [];
 }
-
-export { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom };
