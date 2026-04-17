@@ -66,15 +66,15 @@ application:
               EDGE_COMMERCE_API_ORDERS_TOKEN: $EDGE_COMMERCE_API_ORDERS_TOKEN
               EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
 
-        # triggers:
-        #   ebs-sync-schedule:
-        #     feed: /whisk.system/alarms/alarm
-        #     inputs:
-        #       cron: '*/10 * * * *'
-        #       timezone: UTC
+        triggers:
+          ebs-sync-schedule:
+            feed: /whisk.system/alarms/alarm
+            inputs:
+              cron: '*/10 * * * *'
+              timezone: UTC
 
-        # rules:
-        #   ebs-sync-rule:
-        #     trigger: ebs-sync-schedule
-        #     action: ebs-sync
+        rules:
+          ebs-sync-rule:
+            trigger: ebs-sync-schedule
+            action: ebs-sync
 
