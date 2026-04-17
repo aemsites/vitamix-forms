@@ -26,7 +26,7 @@ application:
           EBS_BASE_URL: $EBS_BASE_URL
           EBS_BASE_URL_STAGE: $EBS_BASE_URL_STAGE
           EBS_API_KEY: $EBS_API_KEY
-          EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE          
+          EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
         actions:
           submit:
             function: dist/actions/submit/index.js
@@ -49,10 +49,14 @@ application:
             annotations:
               require-adobe-auth: false
               final: true
+
+      ebs-sync:
+        license: Apache-2.0
+        actions:
           ebs-sync:
             function: dist/actions/ebs-sync/index.js
             web: 'yes'
-            runtime: 'nodejs:18'
+            runtime: nodejs:22
             annotations:
               require-adobe-auth: false
               final: true
@@ -61,10 +65,18 @@ application:
               memory: 256
               concurrency: 1   # platform-level guard: only one active invocation per container
             inputs:
+              ORG: aemsites
+              SITE: vitamix
               LOG_LEVEL: $LOG_LEVEL
               SYNC_STATUS_TOKEN: $SYNC_STATUS_TOKEN
               EDGE_COMMERCE_API_ORDERS_TOKEN: $EDGE_COMMERCE_API_ORDERS_TOKEN
               EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
+              # need both prod and stage vars, since the action depends on the formId
+              # not just the deployment's env
+              EBS_BASE_URL: $EBS_BASE_URL
+              EBS_BASE_URL_STAGE: $EBS_BASE_URL_STAGE
+              EBS_API_KEY: $EBS_API_KEY
+              EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
 
         triggers:
           ebs-sync-schedule:
@@ -77,4 +89,3 @@ application:
           ebs-sync-rule:
             trigger: ebs-sync-schedule
             action: ebs-sync
-
