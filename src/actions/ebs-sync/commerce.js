@@ -2,8 +2,9 @@
  * Commerce API client for the EBS sync job.
  *
  * Wraps the four operations needed:
- *   1. Read the global orders journal (with chunking for windows > 11 hours)
- *   2. Read the per-order journal for a specific order
+ *   1. Read the global orders journal — used to discover terminal events
+ *      (payment_completed / payment_cancelled) and their orderIds
+ *   2. Read the per-order journal for a specific order (complete entries)
  *   3. Fetch a single order by ID
  *   4. PATCH an order's custom data
  */

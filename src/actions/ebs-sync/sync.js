@@ -4,17 +4,17 @@
  * Each scheduled invocation:
  *   1. Acquires a distributed lock (bails if already held)
  *   2. Loads the persisted `since` cursor from state
- *   3. Reads the global journal to discover orderIds from the time range
- *   4. Fetches each order to check its authoritative state:
- *        a. Skips if already synced (custom.syncedToEbs is set)
- *        b. Skips if cancelled (payment_cancelled) — advances cursor
- *        c. Skips if still in-flight (no terminal state yet) — does NOT advance cursor
- *        d. For payment_completed orders: queries the per-order journal for
- *           complete entries, then syncs to EBS with retries
- *        e. On success: patches custom.syncedToEbs, advances cursor
- *        f. On max-retries exhausted: records the error, halts
+ *   3. Reads the global journal and filters to terminal events
+ *      (payment_completed / payment_cancelled) to discover resolved orderIds
+ *   4. For each resolved orderId (oldest first):
+ *        a. Fetches the order — skips if already synced (custom.syncedToEbs)
+ *        b. Skips cancelled orders (including fraud-declined) — no EBS sync needed
+ *        c. For payment_completed: queries complete per-order journal
+ *        d. Calls syncOrderToEbs(params, order, orderJournal), retrying up to MAX_RETRIES
+ *        e. On success: patches custom.syncedToEbs
+ *        f. On max-retries exhausted: records the error, halts without advancing cursor
  *   5. Checks a 9.5-minute deadline before each order
- *   6. Advances the cursor only past fully-resolved orders
+ *   6. On success/deadline: advances cursor to the latest journal entry timestamp
  *   7. Saves updated state and releases the lock
  */
 
@@ -52,7 +52,6 @@ export async function run(params) {
   const summary = {
     since: state.since,
     processedOrders: [],
-    skippedOrders: [],
     lastProcessedOrderId: state.lastProcessedOrderId,
     lastError: null,
     halted: false,
@@ -62,36 +61,38 @@ export async function run(params) {
   };
 
   try {
-    // ── 1. Discover orderIds from the global journal ────────────────────
+    // ── 1. Fetch journal entries and find the batch boundary ────────────
     const entries = await getJournalEntries(params, state.since);
     console.log(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'}`);
 
-    // Build per-order metadata: earliest timestamp (for processing order)
-    // and latest timestamp (for cursor advancement).
-    const orderMeta = new Map();
+    // The cursor advances to the latest timestamp in the batch — not
+    // Date.now(), since time passes during processing.
+    let batchLatestTimestamp = state.since;
     for (const e of entries) {
-      if (!e.orderId) continue;
-      const meta = orderMeta.get(e.orderId);
-      if (!meta) {
-        orderMeta.set(e.orderId, { earliest: e.timestamp, latest: e.timestamp });
-      } else {
-        if (e.timestamp < meta.earliest) meta.earliest = e.timestamp;
-        if (e.timestamp > meta.latest) meta.latest = e.timestamp;
+      if (e.timestamp > batchLatestTimestamp) batchLatestTimestamp = e.timestamp;
+    }
+
+    // ── 2. Filter to terminal events, collect unique orderIds ──────────
+    const TERMINAL_EVENTS = new Set(['payment_completed', 'payment_cancelled']);
+    const terminalEntries = entries.filter(
+      (e) => e.orderId && TERMINAL_EVENTS.has(e.event),
+    );
+
+    // Deduplicate to unique orderIds, preserving oldest-first order.
+    const seen = new Set();
+    const orderIds = [];
+    for (const e of terminalEntries) {
+      if (!seen.has(e.orderId)) {
+        seen.add(e.orderId);
+        orderIds.push(e.orderId);
       }
     }
 
-    // Process oldest orders first.
-    const orderIds = [...orderMeta.keys()].sort(
-      (a, b) => orderMeta.get(a).earliest.localeCompare(orderMeta.get(b).earliest),
+    console.log(
+      `[ebs-sync] ${terminalEntries.length} terminal entries, ${orderIds.length} unique order IDs to evaluate`,
     );
 
-    console.log(`[ebs-sync] ${orderIds.length} unique order IDs to evaluate`);
-
-    // Track the latest timestamp for orders we've fully resolved (synced,
-    // cancelled, or permanently skipped). The cursor only advances past
-    // resolved orders — in-flight orders keep the cursor in place so they
-    // are re-evaluated once they reach a terminal state.
-    let maxResolvedTimestamp = state.since;
+    let halted = false;
 
     for (const orderId of orderIds) {
       // ── Deadline guard ──────────────────────────────────────────────
@@ -102,21 +103,17 @@ export async function run(params) {
         break;
       }
 
-      const latestTimestamp = orderMeta.get(orderId).latest;
-
-      // ── 2. Fetch the order and check its authoritative state ────────
+      // ── 3. Fetch the order ──────────────────────────────────────────
       let order;
       try {
         order = await getOrder(params, orderId);
       } catch (fetchErr) {
         console.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
-        maxResolvedTimestamp = latestTimestamp;
         continue;
       }
 
       if (!order) {
         console.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
-        maxResolvedTimestamp = latestTimestamp;
         continue;
       }
 
@@ -125,29 +122,16 @@ export async function run(params) {
         console.log(
           `[ebs-sync] Order ${orderId} already synced at ${order.custom.syncedToEbs} — skipping.`,
         );
-        maxResolvedTimestamp = latestTimestamp;
         continue;
       }
 
-      // ── Cancelled — skip and advance cursor ────────────────────────
+      // ── Cancelled (including fraud-declined) — no EBS sync needed ──
       if (order.state === 'payment_cancelled') {
         console.log(`[ebs-sync] Order ${orderId} is payment_cancelled — skipping.`);
-        summary.skippedOrders.push(orderId);
-        maxResolvedTimestamp = latestTimestamp;
         continue;
       }
 
-      // ── Not in a terminal state — still in-flight ──────────────────
-      if (order.state !== 'payment_completed') {
-        console.log(
-          `[ebs-sync] Order ${orderId} is not terminal (state=${order.state})`
-          + ' — will retry in next window.',
-        );
-        // Do NOT advance cursor past in-flight orders.
-        continue;
-      }
-
-      // ── 3. Terminal & unsynced: query complete per-order journal ────
+      // ── 4. Fetch complete per-order journal ─────────────────────────
       let orderJournal;
       try {
         const since = order.createdAt
@@ -159,11 +143,10 @@ export async function run(params) {
         console.warn(
           `[ebs-sync] Could not fetch journal for ${orderId}: ${journalErr.message}`,
         );
-        // Don't advance cursor — we'll retry this order next invocation.
         continue;
       }
 
-      // ── 4. Sync to EBS (with retries) ──────────────────────────────
+      // ── 5. Sync to EBS (with retries) ──────────────────────────────
       let lastErr = null;
       let synced = false;
 
@@ -174,7 +157,6 @@ export async function run(params) {
           const syncedAt = new Date().toISOString();
           await updateOrderCustom(params, orderId, { syncedToEbs: syncedAt });
 
-          maxResolvedTimestamp = latestTimestamp;
           state.lastProcessedOrderId = orderId;
           state.processedCount = (state.processedCount || 0) + 1;
           state.lastError = null;
@@ -205,6 +187,7 @@ export async function run(params) {
         summary.lastError = errStack;
         summary.halted = true;
         summary.haltReason = 'max-retries';
+        halted = true;
 
         console.error(
           `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.\n${errStack}`,
@@ -213,13 +196,15 @@ export async function run(params) {
       }
     }
 
-    // ── Persist state ──────────────────────────────────────────────────
-    if (maxResolvedTimestamp && maxResolvedTimestamp !== state.since) {
-      state.since = maxResolvedTimestamp;
+    // ── 8. Advance cursor ──────────────────────────────────────────────
+    // On success or deadline: advance to the latest journal entry timestamp.
+    // On halt (max-retries): do NOT advance — the batch will be re-fetched
+    // next invocation and already-synced orders are skipped cheaply.
+    if (!halted && batchLatestTimestamp && batchLatestTimestamp !== state.since) {
+      state.since = batchLatestTimestamp;
     }
     state.lastRun = new Date().toISOString();
-    state.status =
-      summary.halted && summary.haltReason !== 'deadline' ? 'error' : 'idle';
+    state.status = halted ? 'error' : 'idle';
     await saveState(state);
   } finally {
     await releaseLock();
