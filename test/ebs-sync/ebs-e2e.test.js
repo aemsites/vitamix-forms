@@ -115,7 +115,7 @@ const CC_DECLINE_ORDER = {
   },
 };
 
-/** Order matching journal-pp-approvde.ndjson (PayPal, Forter approved). */
+/** Order matching journal-pp-approved.ndjson (PayPal, Forter approved). */
 const PP_APPROVED_ORDER = {
   id: '2026-05-04T20-11-14.494Z-rpzhksxV',
   friendlyId: 'rpzhksxV',
@@ -125,18 +125,18 @@ const PP_APPROVED_ORDER = {
   customer: {
     firstName: 'Test',
     lastName: 'Shopper',
-    email: 'maxed@adobe.com',
-    phone: '6479728542',
+    email: 'fake@adobe.com',
+    phone: '5555555555',
   },
   shipping: {
     name: 'Test Shopper',
-    address1: '46 Mosley St',
+    address1: '46 Fake St',
     city: 'Aurora',
     state: 'ON',
-    zip: 'L4G1G9',
+    zip: 'L1K1K1',
     country: 'ca',
-    phone: '6479728542',
-    email: 'maxed@adobe.com',
+    phone: '5555555555',
+    email: 'fake@adobe.com',
   },
   items: [
     {
@@ -244,8 +244,8 @@ describe('ebs-sync e2e', () => {
 
   // ── PayPal — approved by Forter ─────────────────────────────────────────
 
-  describe('PP approved (journal-pp-approvde)', () => {
-    const journal = loadJournal('journal-pp-approvde.ndjson');
+  describe('PP approved (journal-pp-approved)', () => {
+    const journal = loadJournal('journal-pp-approved.ndjson');
 
     test('buildPaymentSnapshot extracts PayPal payment fields', () => {
       const snap = buildPaymentSnapshot(PP_APPROVED_ORDER, journal);
