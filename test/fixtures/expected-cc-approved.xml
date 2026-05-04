@@ -1,0 +1,89 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ord="http://xmlns.vitamix.com/Erp/Orders"
+    xmlns:ent="http://xmlns.vitamix.com/Enterprise"
+    xmlns:pay="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+    xmlns:ship="http://xmlns.vitamix.com/Erp/Shipments">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ns2:CreateRequest
+        xmlns="http://xmlns.vitamix.com/Enterprise"
+        xmlns:ns2="http://xmlns.vitamix.com/Erp/Orders"
+        xmlns:ns3="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+        xmlns:ns4="http://xmlns.vitamix.com/Erp/Shipments"
+        xmlns:ns5="http://xmlns.oracle.com/pcbpel/adapter/db/sp/DbCallXXOTC_CREATE_SALES_ORDER_PKG"
+        Id="2026-05-04T19-47-57.113Z-M4Z6Y6PC">
+      <ns2:Order
+          Shipping="Standard"
+          PriceList="CAN HH END CUSTOMER"
+          Source="CA"
+          Type="Household"
+          State="Booked"
+          TaxHolidayInEffect="false"
+          ReferrerCode=""
+          Key="M4Z6Y6PC"
+          Created="2026-05-04T19:47">
+        <ns2:Customer
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="Person"
+          Key="approve@forter.com"
+          Action="U">
+          <BillTo IsValidated="true" Key="approve@forter.com-0">
+            <Address1>123 Main St</Address1>
+            <Address2></Address2>
+            <City>Toronto</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>M5V2T6</PostalCode>
+            <Country>CA</Country>
+          </BillTo>
+          <ShipTo IsValidated="true" Key="approve@forter.com-0">
+            <Address1>123 Main St</Address1>
+            <Address2></Address2>
+            <City>Toronto</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>M5V2T6</PostalCode>
+            <Country>CA</Country>
+          </ShipTo>
+          <Mobile>4165551234</Mobile>
+          <Email>approve@forter.com</Email>
+          <First>Test</First>
+          <Last>Buyer</Last>
+        </ns2:Customer>
+        <ns2:OrderPayment PaymentTerms="Immediate">
+          <ns2:CreditCard
+              CardId=""
+              Expiration="2028-01-28T00:00"
+              Approval="2026-05-04T19:48"
+              FraudScore=""
+              AuthCode="tst401"
+              CardBrand="Visa"
+              FraudStatusCode=""
+              FraudRiskInquiryTransactionID=""
+              FraudAutoDecisionResponse=""
+              CardLast4Digits="1881"
+              MITMsgType="CGEN"
+              StoredCredentials="N"
+              TransactionId="69F8F8131B061CE600000FFA0000796C41565367"
+              Amount="540.15">
+              <NameOnCard>Test Buyer</NameOnCard>
+            </ns2:CreditCard>
+        </ns2:OrderPayment>
+        <ns2:Tax Amount="58.49" Provisional="true" />
+        <ns2:Message></ns2:Message>
+        
+        
+        <ns2:Charge Type="Shipping" Value="31.71" />
+        <ns2:LineItem
+            Sku="068051-04"
+            Quantity="1"
+            UnitSellingPrice="449.95"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="0.00" Provisional="true" />
+          </ns2:LineItem>
+      </ns2:Order>
+    </ns2:CreateRequest>
+  </soapenv:Body>
+</soapenv:Envelope>

@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ord="http://xmlns.vitamix.com/Erp/Orders"
+    xmlns:ent="http://xmlns.vitamix.com/Enterprise"
+    xmlns:pay="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+    xmlns:ship="http://xmlns.vitamix.com/Erp/Shipments">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ns2:CreateRequest
+        xmlns="http://xmlns.vitamix.com/Enterprise"
+        xmlns:ns2="http://xmlns.vitamix.com/Erp/Orders"
+        xmlns:ns3="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+        xmlns:ns4="http://xmlns.vitamix.com/Erp/Shipments"
+        xmlns:ns5="http://xmlns.oracle.com/pcbpel/adapter/db/sp/DbCallXXOTC_CREATE_SALES_ORDER_PKG"
+        Id="2026-05-04T20-11-14.494Z-rpzhksxV">
+      <ns2:Order
+          Shipping="Standard"
+          PriceList="CAN HH END CUSTOMER"
+          Source="CA"
+          Type="Household"
+          State="Booked"
+          TaxHolidayInEffect="false"
+          ReferrerCode=""
+          Key="rpzhksxV"
+          Created="2026-05-04T20:11">
+        <ns2:Customer
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="Person"
+          Key="maxed@adobe.com"
+          Action="U">
+          <BillTo IsValidated="true" Key="maxed@adobe.com-0">
+            <Address1>46 Mosley St</Address1>
+            <Address2></Address2>
+            <City>Aurora</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>L4G1G9</PostalCode>
+            <Country>CA</Country>
+          </BillTo>
+          <ShipTo IsValidated="true" Key="maxed@adobe.com-0">
+            <Address1>46 Mosley St</Address1>
+            <Address2></Address2>
+            <City>Aurora</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>L4G1G9</PostalCode>
+            <Country>CA</Country>
+          </ShipTo>
+          <Mobile>6479728542</Mobile>
+          <Email>maxed@adobe.com</Email>
+          <First>Test</First>
+          <Last>Shopper</Last>
+        </ns2:Customer>
+        <ns2:OrderPayment>
+          <ns2:PayPalExpressCheckout
+                PayPalEmailAddress="sb-bruwa26923093@personal.example.com"
+                Approval="2026-05-04T20:11"
+                PaymentStatus=""
+                PendingReason=""
+                ProtectionEligibility="ELIGIBLE"
+                AuthCode="9AR333349R915513J"
+                PayerId="RV6HF5GVYA4D8"
+                TransactionId="9AR333349R915513J"
+                Amount="540.15" />
+        </ns2:OrderPayment>
+        <ns2:PaymentTransactionLogger>
+          <ns3:Token>6B3711486D865245E</ns3:Token>
+          <ns3:PayerInfo>
+            <ns3:Payer>sb-bruwa26923093@personal.example.com</ns3:Payer>
+            <ns3:PayerID>RV6HF5GVYA4D8</ns3:PayerID>
+            <ns3:PayerStatus></ns3:PayerStatus>
+            <ns3:PayerName>
+              <ns3:FirstName>Test</ns3:FirstName>
+              <ns3:LastName>Shopper</ns3:LastName>
+            </ns3:PayerName>
+            <ns3:PayerCountry>CA</ns3:PayerCountry>
+          </ns3:PayerInfo>
+          <ns3:PaymentInfo>
+              <ns3:IsFinancing>false</ns3:IsFinancing>
+              <ns3:PaymentType>instant</ns3:PaymentType>
+            </ns3:PaymentInfo>
+          <ns3:InvoiceID>rpzhksxV</ns3:InvoiceID>
+          <ns3:ContactPhone>6479728542</ns3:ContactPhone>
+          <ns3:PaymentDetails>
+            <ns3:OrderTotal>540.15</ns3:OrderTotal>
+            <ns3:ItemTotal>449.95</ns3:ItemTotal>
+            <ns3:AllowedPaymentMethodType>InstantFundingSource</ns3:AllowedPaymentMethodType>
+            <ns3:ShippingDiscount>0.00</ns3:ShippingDiscount>
+          </ns3:PaymentDetails>
+          <ns3:ShipToAddress>
+            <ns3:Street1>46 Mosley St</ns3:Street1>
+            <ns3:CityName>Aurora</ns3:CityName>
+            <ns3:StateOrProvince>ON</ns3:StateOrProvince>
+            <ns3:Country>CA</ns3:Country>
+            <ns3:Phone>6479728542</ns3:Phone>
+            <ns3:PostalCode>L4G1G9</ns3:PostalCode>
+            <ns3:AddressStatus></ns3:AddressStatus>
+          </ns3:ShipToAddress>
+          <ns3:BillingAddress>
+            <ns3:Street1>46 Mosley St</ns3:Street1>
+            <ns3:CityName>Aurora</ns3:CityName>
+            <ns3:StateOrProvince>ON</ns3:StateOrProvince>
+            <ns3:PostalCode>L4G1G9</ns3:PostalCode>
+            <ns3:Country>CA</ns3:Country>
+            <ns3:Phone>6479728542</ns3:Phone>
+            <ns3:AddressStatus></ns3:AddressStatus>
+          </ns3:BillingAddress>
+          <ns3:TransactionID>9AR333349R915513J</ns3:TransactionID>
+          <ns3:Amount>540.15</ns3:Amount>
+          <ns3:MsgSubId></ns3:MsgSubId>
+          <ns3:AuthorizationInfo>
+            <ns3:PendingReason></ns3:PendingReason>
+            <ns3:ProtectionEligibility>ELIGIBLE</ns3:ProtectionEligibility>
+            <ns3:ProtectionEligibilityType></ns3:ProtectionEligibilityType>
+          </ns3:AuthorizationInfo>
+        </ns2:PaymentTransactionLogger>
+        <ns2:Tax Amount="58.49" Provisional="true" />
+        <ns2:Message></ns2:Message>
+        
+        
+        <ns2:Charge Type="Shipping" Value="31.71" />
+        <ns2:LineItem
+            Sku="068051-04"
+            Quantity="1"
+            UnitSellingPrice="449.95"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="0.00" Provisional="true" />
+          </ns2:LineItem>
+      </ns2:Order>
+    </ns2:CreateRequest>
+  </soapenv:Body>
+</soapenv:Envelope>
