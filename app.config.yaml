@@ -27,6 +27,10 @@ application:
           EBS_BASE_URL_STAGE: $EBS_BASE_URL_STAGE
           EBS_API_KEY: $EBS_API_KEY
           EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
+          NEWSLETTER_BASE_URL: $NEWSLETTER_BASE_URL
+          NEWSLETTER_BASE_URL_STAGE: $NEWSLETTER_BASE_URL_STAGE
+          NEWSLETTER_API_KEY: $NEWSLETTER_API_KEY
+          NEWSLETTER_API_KEY_STAGE: $NEWSLETTER_API_KEY_STAGE
         actions:
           submit:
             function: dist/actions/submit/index.js
