@@ -3,6 +3,8 @@ import { jest, describe, test, expect, beforeEach } from '@jest/globals';
 const mockPublishEvent = jest.fn();
 const mockMakeContext = jest.fn();
 const mockQueryOrder = jest.fn();
+const mockCreateProductRegistration = jest.fn();
+const mockProxyFetch = jest.fn();
 
 jest.unstable_mockModule('../src/events.js', () => ({
   publishEvent: mockPublishEvent,
@@ -14,7 +16,11 @@ jest.unstable_mockModule('../src/context.js', () => ({
 
 jest.unstable_mockModule('../src/ebs.js', () => ({
   queryOrder: mockQueryOrder,
-  createProductRegistration: jest.fn(),
+  createProductRegistration: mockCreateProductRegistration,
+}));
+
+jest.unstable_mockModule('../src/proxy.js', () => ({
+  proxyFetch: mockProxyFetch,
 }));
 
 const { main } = await import('../src/actions/submit/index.js');
@@ -359,6 +365,279 @@ describe('submit action', () => {
       const result = await main({});
       expect(typeof result.body.succeeded).toBe('boolean');
       expect(result.body.succeeded).toBe(true);
+    });
+  });
+
+  // -- product-registration ------------------------------------------------
+
+  describe('product-registration', () => {
+    const validData = {
+      acceptTerms: 'yes',
+      serialNumber: '067881201029626223',
+      firstName: 'Jane',
+      lastName: 'Doe',
+      email: 'jane@test.com',
+      phone: '2165551212',
+      address: '123 Main St',
+      city: 'Cleveland',
+      province: 'OH',
+      postalCode: '44101',
+      purchasedFrom: 'Amazon',
+      purchasedOn: '2026-01-15',
+    };
+
+    function makeRegistrationCtx(dataOverride = {}) {
+      return makeCtx({
+        data: { formId: 'us/product-registration', data: { ...validData, ...dataOverride } },
+        env: {
+          ORG: 'test-org', SITE: 'test-site',
+          EBS_BASE_URL: 'https://ebs.example.com',
+          EBS_API_KEY: 'prod-key',
+          EBS_BASE_URL_STAGE: 'https://ebs-stage.example.com',
+          EBS_API_KEY_STAGE: 'stage-key',
+        },
+      });
+    }
+
+    const successBody = {
+      RegistrationResponse: {
+        '@_Succeeded': 'true',
+        '@_Outcome': 'Success',
+        '@_Id': 'reg-abc123',
+      },
+    };
+
+    test.each([
+      'acceptTerms', 'address', 'city', 'postalCode', 'province',
+      'email', 'firstName', 'lastName', 'phone', 'purchasedFrom',
+      'purchasedOn', 'serialNumber',
+    ])('returns 400 for missing %s', async (field) => {
+      const ctx = makeRegistrationCtx();
+      delete ctx.data.data[field];
+      mockMakeContext.mockResolvedValue(ctx);
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toMatch(field);
+    });
+
+    test('returns 400 when acceptTerms is not "yes"', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx({ acceptTerms: 'no' }));
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('acceptTerms must be "yes"');
+    });
+
+    test.each(['12345', '12345678901234567x', '1234567890123456789'])(
+      'returns 400 for invalid serial number: %s',
+      async (serialNumber) => {
+        mockMakeContext.mockResolvedValue(makeRegistrationCtx({ serialNumber }));
+        const result = await main({});
+        expect(result.error.statusCode).toBe(400);
+        expect(result.error.headers['x-error']).toBe('serialNumber must be 18 digits');
+      },
+    );
+
+    test('returns 400 for invalid country in formId', async () => {
+      mockMakeContext.mockResolvedValue(makeCtx({
+        data: { formId: 'invalid/product-registration', data: validData },
+        env: { ORG: 'test-org', SITE: 'test-site', EBS_BASE_URL: 'https://ebs.example.com', EBS_API_KEY: 'key' },
+      }));
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('invalid country');
+    });
+
+    test('returns 400 for invalid purchasedOn date', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx({ purchasedOn: 'not-a-date' }));
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('invalid purchasedOn');
+    });
+
+    test('returns transformed body on success', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx());
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(result.headers['content-type']).toBe('application/json');
+      expect(result.body.registrationResponse.succeeded).toBe(true);
+      expect(result.body.registrationResponse.outcome).toBe('Success');
+      expect(result.body.registrationResponse.id).toBe('reg-abc123');
+    });
+
+    test('returns 404 for "no results found" API error', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx());
+      mockCreateProductRegistration.mockResolvedValue({
+        status: 200,
+        body: {
+          RegistrationResponse: {
+            '@_Succeeded': 'false',
+            'Details': { '@_Key': 'ERR-001', '@_Message': 'No results found for serial number' },
+          },
+        },
+      });
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(404);
+      expect(result.error.headers['x-error']).toBe('No results found for serial number');
+    });
+
+    test('returns 400 with error message and details for other API errors', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx());
+      mockCreateProductRegistration.mockResolvedValue({
+        status: 200,
+        body: {
+          RegistrationResponse: {
+            '@_Succeeded': 'false',
+            'Details': { '@_Key': 'ERR-002', '@_Message': 'Duplicate registration' },
+          },
+        },
+      });
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('Duplicate registration');
+      expect(result.error.body.error).toBe('Duplicate registration');
+    });
+
+    test('uses stage EBS settings when referer is not production', async () => {
+      const ctx = makeRegistrationCtx();
+      ctx.info.headers.referer = 'https://staging.vitamix.com';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+
+      await main({});
+
+      expect(mockCreateProductRegistration).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        { baseUrl: 'https://ebs-stage.example.com', apiKey: 'stage-key' },
+      );
+    });
+
+    test('uses prod EBS settings when referer is production', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx());
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+
+      await main({});
+
+      expect(mockCreateProductRegistration).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.anything(),
+        { baseUrl: 'https://ebs.example.com', apiKey: 'prod-key' },
+      );
+    });
+  });
+
+  // -- newsletter ----------------------------------------------------------
+
+  describe('newsletter', () => {
+    function makeNewsletterCtx(dataOverride = {}) {
+      return makeCtx({
+        data: { formId: 'us/newsletter', data: { emailAddress: 'test@example.com', emailOptIn: true, ...dataOverride } },
+        env: {
+          ORG: 'test-org', SITE: 'test-site',
+          NEWSLETTER_BASE_URL: 'https://newsletter.example.com/prod',
+          NEWSLETTER_API_KEY: 'prod-key',
+          NEWSLETTER_BASE_URL_STAGE: 'https://newsletter.example.com/stage',
+          NEWSLETTER_API_KEY_STAGE: 'stage-key',
+        },
+      });
+    }
+
+    test('returns 400 for missing emailAddress', async () => {
+      const ctx = makeNewsletterCtx();
+      delete ctx.data.data.emailAddress;
+      mockMakeContext.mockResolvedValue(ctx);
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('missing or invalid emailAddress');
+    });
+
+    test('returns 400 for non-string emailAddress', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ emailAddress: 12345 }));
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('missing or invalid emailAddress');
+    });
+
+    test('returns 400 when emailOptIn is missing', async () => {
+      const ctx = makeNewsletterCtx();
+      delete ctx.data.data.emailOptIn;
+      mockMakeContext.mockResolvedValue(ctx);
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('missing or invalid emailOptIn');
+    });
+
+    test('returns 400 when emailOptIn is a string instead of boolean', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ emailOptIn: 'true' }));
+      const result = await main({});
+      expect(result.error.statusCode).toBe(400);
+      expect(result.error.headers['x-error']).toBe('missing or invalid emailOptIn');
+    });
+
+    test('accepts emailOptIn: false', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ emailOptIn: false }));
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+    });
+
+    test('sends correctly mapped JSON payload via proxy', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx());
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, url, opts] = mockProxyFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(url).toBe('https://newsletter.example.com/prod');
+      expect(opts.method).toBe('POST');
+      expect(opts.headers['content-type']).toBe('application/json');
+      expect(opts.headers['x-api-key']).toBe('prod-key');
+      expect(body.EmailAddress).toBe('test@example.com');
+      expect(body.EmailOptIn).toBe(true);
+      expect(body.workFlowName).toBe('subscription');
+    });
+
+    test('returns proxied response body and status', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx());
+      const apiResponse = { subscriptionId: 'sub-123', status: 'subscribed' };
+      mockProxyFetch.mockResolvedValue({ status: 201, json: jest.fn().mockResolvedValue(apiResponse) });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(201);
+      expect(result.body).toEqual(apiResponse);
+    });
+
+    test('uses stage endpoint when referer is not production', async () => {
+      const ctx = makeNewsletterCtx();
+      ctx.info.headers.referer = 'https://staging.vitamix.com';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, url, opts] = mockProxyFetch.mock.calls[0];
+      expect(url).toBe('https://newsletter.example.com/stage');
+      expect(opts.headers['x-api-key']).toBe('stage-key');
+    });
+
+    test('uses prod endpoint when referer is production', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx());
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, url, opts] = mockProxyFetch.mock.calls[0];
+      expect(url).toBe('https://newsletter.example.com/prod');
+      expect(opts.headers['x-api-key']).toBe('prod-key');
     });
   });
 

@@ -2,6 +2,7 @@ import { errorResponse } from '../../utils.js';
 import { publishEvent } from '../../events.js';
 import makeContext from '../../context.js';
 import { createProductRegistration, queryOrder } from '../../ebs.js';
+import { proxyFetch } from '../../proxy.js';
 
 const MAX_PAYLOAD_SIZE = 16_000; // 16KB
 
@@ -81,8 +82,8 @@ function transformSoapKeys(obj) {
 
 /**
  * Get EBS settings for the given formId
- * @param {Context} ctx 
- * @param {string} formId 
+ * @param {Context} ctx
+ * @param {string} formId
  * @returns {Object}
  */
 function getEbsSettings(ctx, formId) {
@@ -205,6 +206,79 @@ async function handleOrderStatus(ctx, formId, data) {
 }
 
 /**
+ * Get newsletter API settings for the given formId
+ * @param {Context} ctx
+ * @param {string} formId
+ * @returns {Object}
+ */
+function getNewsletterSettings(ctx, formId) {
+  const baseUrl = formId.includes('stage/')
+    ? ctx.env.NEWSLETTER_BASE_URL_STAGE
+    : ctx.env.NEWSLETTER_BASE_URL;
+  const apiKey = formId.includes('stage/')
+    ? ctx.env.NEWSLETTER_API_KEY_STAGE
+    : ctx.env.NEWSLETTER_API_KEY;
+  return { baseUrl, apiKey };
+}
+
+/**
+ * Handle newsletter subscription submission
+ * @param {Context} ctx
+ * @param {string} formId
+ * @param {Object} data
+ * @returns {Promise<RuntimeResponse>}
+ */
+async function handleNewsletter(ctx, formId, data) {
+  const { log } = ctx;
+  log.info(`handling newsletter for formId=${formId}`);
+
+  if (!data || typeof data !== 'object') {
+    return errorResponse(400, 'missing or invalid data');
+  }
+  if (!data.emailAddress || typeof data.emailAddress !== 'string') {
+    return errorResponse(400, 'missing or invalid emailAddress');
+  }
+  if (typeof data.emailOptIn !== 'boolean') {
+    return errorResponse(400, 'missing or invalid emailOptIn');
+  }
+
+  const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
+
+  const payload = {
+    EBSPartyNumber: '',
+    FirstName: '',
+    MiddleName: '',
+    LastName: '',
+    LeadSource: 'aerogarden',
+    Country: 'US',
+    Company: 'HOUSEHOLD',
+    EmailAddress: data.emailAddress,
+    EmailOptIn: data.emailOptIn,
+    EmailPreferenceDate: '',
+    Mobile: '',
+    SMSOptIn: false,
+    SMSPreferenceDate: '',
+    Title: '',
+    workFlowName: 'subscription',
+  };
+
+  const resp = await proxyFetch(ctx, baseUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  return {
+    statusCode: resp.status,
+    headers: { 'content-type': 'application/json' },
+    body: await resp.json().catch(() => ({})),
+  };
+}
+
+/**
  * HTTP action: receives form submissions, validates, and publishes a `form.submitted` event.
  * @param {Object} params
  * @returns {Promise<RuntimeResponse>}
@@ -252,6 +326,8 @@ export async function main(params) {
       return await handleProductRegistration(ctx, formId, data);
     } else if (formId.endsWith('/order-status')) {
       return await handleOrderStatus(ctx, formId, data);
+    } else if (formId.endsWith('/newsletter')) {
+      return await handleNewsletter(ctx, formId, data);
     }
 
     // add timestamp and IP - these can't be set by the payload
