@@ -1,3 +1,11 @@
+## [1.1.2](https://github.com/aemsites/vitamix-forms/compare/v1.1.1...v1.1.2) (2026-05-11)
+
+
+### Bug Fixes
+
+* only retry on retriable errors ([e6fe820](https://github.com/aemsites/vitamix-forms/commit/e6fe820491cf6e526e33b339924fb49b9e8857d8))
+* use proxyFetch for sync to ebs ([bfe385a](https://github.com/aemsites/vitamix-forms/commit/bfe385afca439d33a10e48856e47fc68d3fefd85))
+
 ## [1.1.1](https://github.com/aemsites/vitamix-forms/compare/v1.1.0...v1.1.1) (2026-05-11)
 
 
