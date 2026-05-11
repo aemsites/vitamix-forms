@@ -157,6 +157,10 @@ const PP_APPROVED_ORDER = {
 };
 
 const MOCK_PARAMS = { EBS_BASE_URL: 'https://ebs.test.example.com' };
+const MOCK_CTX = {
+  env: { ORG: 'test-org', SITE: 'test-site', PROXY_TOKEN: 'test-token' },
+  log: { error: () => {} },
+};
 
 // ---------------------------------------------------------------------------
 // Test suite
@@ -167,8 +171,12 @@ describe('ebs-sync e2e', () => {
   const origFetch = globalThis.fetch;
 
   beforeAll(() => {
+    // proxyFetch wraps the destination request inside a JSON envelope:
+    //   POST <proxy>  body: { url, method, headers, body: <SOAP XML> }
+    // Tests assert against the inner SOAP XML.
     globalThis.fetch = async (_url, opts) => {
-      capturedXml = opts.body;
+      const wrapped = JSON.parse(opts.body);
+      capturedXml = wrapped.body;
       return { ok: true, text: async () => '<Response Succeeded="true" />' };
     };
   });
@@ -220,7 +228,7 @@ describe('ebs-sync e2e', () => {
     });
 
     test('syncOrderToEbs produces expected SOAP XML', async () => {
-      await syncOrderToEbs(MOCK_PARAMS, CC_APPROVED_ORDER, journal);
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, CC_APPROVED_ORDER, journal);
       expect(capturedXml).toBeTruthy();
       assertXmlFixture('expected-cc-approved.xml', capturedXml);
     });
@@ -237,7 +245,7 @@ describe('ebs-sync e2e', () => {
     });
 
     test('syncOrderToEbs throws for declined order', async () => {
-      await expect(syncOrderToEbs(MOCK_PARAMS, CC_DECLINE_ORDER, journal))
+      await expect(syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, CC_DECLINE_ORDER, journal))
         .rejects.toThrow('cannot build payment snapshot');
     });
   });
@@ -264,7 +272,7 @@ describe('ebs-sync e2e', () => {
     });
 
     test('syncOrderToEbs produces expected SOAP XML', async () => {
-      await syncOrderToEbs(MOCK_PARAMS, PP_APPROVED_ORDER, journal);
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_APPROVED_ORDER, journal);
       expect(capturedXml).toBeTruthy();
       assertXmlFixture('expected-pp-approved.xml', capturedXml);
     });
