@@ -81,6 +81,7 @@ application:
               EBS_BASE_URL_STAGE: $EBS_BASE_URL_STAGE
               EBS_API_KEY: $EBS_API_KEY
               EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
+              PROXY_TOKEN: $PROXY_TOKEN
 
         triggers:
           ebs-sync-schedule:
