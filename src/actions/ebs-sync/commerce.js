@@ -153,8 +153,9 @@ export async function updateOrderCustom(params, orderId, custom) {
 export async function getOrderJournalEntries(params, orderId, since, until) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const url = new URL(
-    `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/${encodeURIComponent(orderId)}/journal`,
+    `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/journal`,
   );
+  url.searchParams.set('orderId', orderId);
   url.searchParams.set('since', since);
   url.searchParams.set('until', until);
 
