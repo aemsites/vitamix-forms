@@ -1,3 +1,10 @@
+## [1.1.4](https://github.com/aemsites/vitamix-forms/compare/v1.1.3...v1.1.4) (2026-05-11)
+
+
+### Bug Fixes
+
+* add proxy token to ebs-sync ([a1160b0](https://github.com/aemsites/vitamix-forms/commit/a1160b0e7e58f5339f439164576249f84a458f27))
+
 ## [1.1.3](https://github.com/aemsites/vitamix-forms/compare/v1.1.2...v1.1.3) (2026-05-11)
 
 
