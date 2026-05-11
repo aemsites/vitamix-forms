@@ -1,3 +1,20 @@
+# [1.1.0](https://github.com/aemsites/vitamix-forms/compare/v1.0.24...v1.1.0) (2026-05-11)
+
+
+### Bug Fixes
+
+* deploy to stage ([ab28066](https://github.com/aemsites/vitamix-forms/commit/ab28066643840ef4edb95f21f1e9e249a32d04d1))
+* derive order data from journal, flag missing properties ([f118859](https://github.com/aemsites/vitamix-forms/commit/f1188590902044e8ecbee5a0c13b79aa5a29c1c6))
+* newsletter api ([90fa740](https://github.com/aemsites/vitamix-forms/commit/90fa740a9dd3440ceb7964c246404bf1a89efd12))
+* refactor to use order list API ([c36e316](https://github.com/aemsites/vitamix-forms/commit/c36e316ccdaa7d5c1275cdd8b24f173a260e2d74))
+* rework sync action ([726497a](https://github.com/aemsites/vitamix-forms/commit/726497a74eb381260e7ec4ffd0d665ff98d809d8))
+* separate packages ([37cdde8](https://github.com/aemsites/vitamix-forms/commit/37cdde84b11f714ef8ce4f9d2daea4f6c728e68e))
+
+
+### Features
+
+* add order sync ([3dc826a](https://github.com/aemsites/vitamix-forms/commit/3dc826a069c671984c9a7b321906fde459512006))
+
 ## [1.0.24](https://github.com/aemsites/vitamix-forms/compare/v1.0.23...v1.0.24) (2026-04-14)
 
 
