@@ -114,6 +114,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal) {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml; charset=utf-8',
+      'x-api-key': params.EBS_API_KEY,
       SOAPAction: 'POST',
       Accept: 'text/xml',
       'Cache-Control': 'no-cache',

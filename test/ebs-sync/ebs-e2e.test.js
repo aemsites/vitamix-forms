@@ -156,7 +156,10 @@ const PP_APPROVED_ORDER = {
   },
 };
 
-const MOCK_PARAMS = { EBS_BASE_URL: 'https://ebs.test.example.com' };
+const MOCK_PARAMS = {
+  EBS_BASE_URL: 'https://ebs.test.example.com',
+  EBS_API_KEY: 'test-api-key',
+};
 const MOCK_CTX = {
   env: { ORG: 'test-org', SITE: 'test-site', PROXY_TOKEN: 'test-token' },
   log: { error: () => {} },
