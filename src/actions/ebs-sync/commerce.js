@@ -18,9 +18,10 @@ const JOURNAL_CHUNK_HOURS = 11;
  *
  * @param {object} params - Action params containing COMMERCE_* env vars
  * @param {string | null} since - ISO 8601 timestamp, or null to default to 1h ago
+ * @param {object} log - Logger instance (ctx.log)
  * @returns {Promise<object[]>} Flat array of journal entries, oldest first
  */
-export async function getJournalEntries(params, since) {
+export async function getJournalEntries(params, since, log) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const baseUrl = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/journal`;
 
@@ -28,6 +29,7 @@ export async function getJournalEntries(params, since) {
     ? new Date(since)
     : new Date(Date.now() - 60 * 60 * 1000); // default: 1 hour ago
   const untilDate = new Date();
+  log.info(`[ebs-sync] Querying journal: ${baseUrl} since=${sinceDate.toISOString()} until=${untilDate.toISOString()}`);
 
   const rangeMs = untilDate.getTime() - sinceDate.getTime();
   const chunkMs = JOURNAL_CHUNK_HOURS * 60 * 60 * 1000;
@@ -35,7 +37,7 @@ export async function getJournalEntries(params, since) {
   const allEntries = [];
 
   if (rangeMs <= chunkMs) {
-    const entries = await fetchJournalChunk(baseUrl, EDGE_COMMERCE_API_ORDERS_TOKEN, sinceDate, untilDate);
+    const entries = await fetchJournalChunk(baseUrl, EDGE_COMMERCE_API_ORDERS_TOKEN, sinceDate, untilDate, log);
     allEntries.push(...entries);
   } else {
     // Break into JOURNAL_CHUNK_HOURS windows
@@ -45,7 +47,7 @@ export async function getJournalEntries(params, since) {
         chunkStart.getTime() + chunkMs,
         untilDate.getTime(),
       ));
-      const entries = await fetchJournalChunk(baseUrl, EDGE_COMMERCE_API_ORDERS_TOKEN, chunkStart, chunkEnd);
+      const entries = await fetchJournalChunk(baseUrl, EDGE_COMMERCE_API_ORDERS_TOKEN, chunkStart, chunkEnd, log);
       allEntries.push(...entries);
       chunkStart = chunkEnd;
     }
@@ -59,9 +61,10 @@ export async function getJournalEntries(params, since) {
  * @param {string} token
  * @param {Date} since
  * @param {Date} until
+ * @param {object} log
  * @returns {Promise<object[]>}
  */
-async function fetchJournalChunk(baseUrl, token, since, until) {
+async function fetchJournalChunk(baseUrl, token, since, until, log) {
   const url = new URL(baseUrl);
   url.searchParams.set('since', since.toISOString());
   url.searchParams.set('until', until.toISOString());
@@ -76,7 +79,9 @@ async function fetchJournalChunk(baseUrl, token, since, until) {
   }
 
   const data = await res.json();
-  return data.entries ?? [];
+  const entries = data.entries ?? [];
+  log.info(`[ebs-sync] Journal chunk returned ${entries.length} entries (${since.toISOString()} – ${until.toISOString()})`);
+  return entries;
 }
 
 /**

@@ -25,6 +25,9 @@ export default async function createContext(owParams) {
     EBS_BASE_URL_STAGE,
     EBS_API_KEY,
     EBS_API_KEY_STAGE,
+    SYNC_STATUS_TOKEN,
+    EDGE_COMMERCE_API_ORDERS_TOKEN,
+    EDGE_COMMERCE_API_BASE,
     ...data
   } = owParams;
 
@@ -40,7 +43,10 @@ export default async function createContext(owParams) {
       EBS_BASE_URL,
       EBS_BASE_URL_STAGE,
       EBS_API_KEY,
-      EBS_API_KEY_STAGE
+      EBS_API_KEY_STAGE,
+      SYNC_STATUS_TOKEN,
+      EDGE_COMMERCE_API_ORDERS_TOKEN,
+      EDGE_COMMERCE_API_BASE,
     },
     // @ts-ignore
     log: Core.Logger('main', { level: LOG_LEVEL }),

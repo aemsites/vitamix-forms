@@ -18,6 +18,7 @@
  *   7. Saves updated state and releases the lock
  */
 
+import { Core } from '@adobe/aio-sdk';
 import { loadState, saveState, acquireLock, releaseLock } from './state.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom } from './commerce.js';
 import { syncOrderToEbs } from './ebs.js';
@@ -33,11 +34,12 @@ const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
  * @returns {Promise<{body: object}>}
  */
 export async function run(params) {
+  const log = Core.Logger('ebs-sync', { level: params.LOG_LEVEL ?? 'info' });
   const startTime = Date.now();
 
   const locked = await acquireLock();
   if (!locked) {
-    console.log('[ebs-sync] Skipping: another invocation is holding the lock.');
+    log.info('[ebs-sync] Skipping: another invocation is holding the lock.');
     return {
       body: {
         message: 'Skipped — another invocation is in progress.',
@@ -47,6 +49,7 @@ export async function run(params) {
   }
 
   const state = await loadState();
+  log.info(`[ebs-sync] State loaded — since=${state.since ?? 'null (will default to 1h ago)'}, status=${state.status}, processedCount=${state.processedCount ?? 0}, failedCount=${state.failedCount ?? 0}`);
 
   /** Accumulated summary returned as the action response body. */
   const summary = {
@@ -62,8 +65,8 @@ export async function run(params) {
 
   try {
     // ── 1. Fetch journal entries and find the batch boundary ────────────
-    const entries = await getJournalEntries(params, state.since);
-    console.log(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'}`);
+    const entries = await getJournalEntries(params, state.since, log);
+    log.info(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'}`);
 
     // The cursor advances to the latest timestamp in the batch — not
     // Date.now(), since time passes during processing.
@@ -88,7 +91,16 @@ export async function run(params) {
       }
     }
 
-    console.log(
+    if (entries.length > 0 && terminalEntries.length === 0) {
+      // Entries came back but none were terminal — log event type breakdown to diagnose.
+      const eventCounts = {};
+      for (const e of entries) {
+        eventCounts[e.event ?? '(missing)'] = (eventCounts[e.event ?? '(missing)'] || 0) + 1;
+      }
+      log.info(`[ebs-sync] No terminal events found. Event breakdown: ${JSON.stringify(eventCounts)}`);
+    }
+
+    log.info(
       `[ebs-sync] ${terminalEntries.length} terminal entries, ${orderIds.length} unique order IDs to evaluate`,
     );
 
@@ -97,7 +109,7 @@ export async function run(params) {
     for (const orderId of orderIds) {
       // ── Deadline guard ──────────────────────────────────────────────
       if (Date.now() - startTime > DEADLINE_MS) {
-        console.log('[ebs-sync] Approaching 10-minute deadline. Stopping.');
+        log.info('[ebs-sync] Approaching 10-minute deadline. Stopping.');
         summary.halted = true;
         summary.haltReason = 'deadline';
         break;
@@ -108,18 +120,18 @@ export async function run(params) {
       try {
         order = await getOrder(params, orderId);
       } catch (fetchErr) {
-        console.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
+        log.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
         continue;
       }
 
       if (!order) {
-        console.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
+        log.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
         continue;
       }
 
       // ── Already synced ─────────────────────────────────────────────
       if (order.custom?.syncedToEbs) {
-        console.log(
+        log.info(
           `[ebs-sync] Order ${orderId} already synced at ${order.custom.syncedToEbs} — skipping.`,
         );
         continue;
@@ -127,7 +139,7 @@ export async function run(params) {
 
       // ── Cancelled (including fraud-declined) — no EBS sync needed ──
       if (order.state === 'payment_cancelled') {
-        console.log(`[ebs-sync] Order ${orderId} is payment_cancelled — skipping.`);
+        log.info(`[ebs-sync] Order ${orderId} is payment_cancelled — skipping.`);
         continue;
       }
 
@@ -138,9 +150,9 @@ export async function run(params) {
           ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
         const until = new Date().toISOString();
         orderJournal = await getOrderJournalEntries(params, orderId, since, until);
-        console.log(`[ebs-sync] Order ${orderId} journal: ${orderJournal.length} entries`);
+        log.info(`[ebs-sync] Order ${orderId} journal: ${orderJournal.length} entries`);
       } catch (journalErr) {
-        console.warn(
+        log.warn(
           `[ebs-sync] Could not fetch journal for ${orderId}: ${journalErr.message}`,
         );
         continue;
@@ -165,12 +177,12 @@ export async function run(params) {
           summary.lastProcessedOrderId = orderId;
           summary.lastError = null;
 
-          console.log(`[ebs-sync] Order ${orderId} synced on attempt ${attempt}.`);
+          log.info(`[ebs-sync] Order ${orderId} synced on attempt ${attempt}.`);
           synced = true;
           break;
         } catch (err) {
           lastErr = err;
-          console.warn(
+          log.warn(
             `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`,
           );
           if (attempt < MAX_RETRIES) {
@@ -189,7 +201,7 @@ export async function run(params) {
         summary.haltReason = 'max-retries';
         halted = true;
 
-        console.error(
+        log.error(
           `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.\n${errStack}`,
         );
         break;
