@@ -1,3 +1,11 @@
+## [1.1.1](https://github.com/aemsites/vitamix-forms/compare/v1.1.0...v1.1.1) (2026-05-11)
+
+
+### Bug Fixes
+
+* correct order journal api ([c9f61b3](https://github.com/aemsites/vitamix-forms/commit/c9f61b3b38aa2b133c1dd37acb8f15263a0772aa))
+* more logs ([e752626](https://github.com/aemsites/vitamix-forms/commit/e752626fdd3f7f4d5fb7a49b187915d6f6a50cfb))
+
 # [1.1.0](https://github.com/aemsites/vitamix-forms/compare/v1.0.24...v1.1.0) (2026-05-11)
 
 
