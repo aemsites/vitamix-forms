@@ -62,12 +62,38 @@
 
 import { proxyFetch } from '../../proxy.js';
 
+const TRANSIENT_ERROR_PATTERN = /timeout|timed out|aborted|fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i;
+
+/**
+ * Classify whether an error from syncOrderToEbs is worth retrying.
+ *
+ * Retriable:
+ *   - HTTP 5xx (server-side / transient)
+ *   - HTTP 429 (rate limit — back off and retry)
+ *   - Network / timeout errors (no status code, transient name/message)
+ *
+ * Not retriable:
+ *   - HTTP 4xx other than 429 (client error — request itself is bad)
+ *   - Business-logic errors thrown by this module (e.g. "EBS rejected order",
+ *     "cannot build payment snapshot") — retrying yields the same outcome
+ *
+ * @param {Error & { response?: { statusCode?: number } }} err
+ * @returns {boolean}
+ */
+export function isRetriableError(err) {
+  const status = err?.response?.statusCode;
+  if (status) return status >= 500 || status === 429;
+  if (err?.name === 'AbortError') return true;
+  return TRANSIENT_ERROR_PATTERN.test(err?.message ?? '');
+}
+
 /**
  * Sync a single order to EBS.
  * Derives all payment data from the order journal entries.
  * Routes the request through proxyFetch — EBS is IP-whitelisted to the
  * proxy's static egress IP.
  * Throws on any non-success response so the caller can apply retry logic.
+ * Use isRetriableError() to classify thrown errors before retrying.
  *
  * @param {Context}  ctx          - Context exposing env.{ORG,SITE,PROXY_TOKEN} and log
  * @param {object}   params       - Action params (needs EBS_BASE_URL)

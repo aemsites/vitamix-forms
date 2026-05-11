@@ -21,7 +21,7 @@
 import { Core } from '@adobe/aio-sdk';
 import { loadState, saveState, acquireLock, releaseLock } from './state.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom } from './commerce.js';
-import { syncOrderToEbs } from './ebs.js';
+import { syncOrderToEbs, isRetriableError } from './ebs.js';
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
@@ -183,6 +183,12 @@ export async function run(params) {
           break;
         } catch (err) {
           lastErr = err;
+          if (!isRetriableError(err)) {
+            log.warn(
+              `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error: ${err.message}`,
+            );
+            break;
+          }
           log.warn(
             `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`,
           );
