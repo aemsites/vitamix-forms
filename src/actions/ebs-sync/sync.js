@@ -10,7 +10,7 @@
  *        a. Fetches the order — skips if already synced (custom.syncedToEbs)
  *        b. Skips cancelled orders (including fraud-declined) — no EBS sync needed
  *        c. For payment_completed: queries complete per-order journal
- *        d. Calls syncOrderToEbs(params, order, orderJournal), retrying up to MAX_RETRIES
+ *        d. Calls syncOrderToEbs(ctx, params, order, orderJournal), retrying up to MAX_RETRIES
  *        e. On success: patches custom.syncedToEbs
  *        f. On max-retries exhausted: records the error, halts without advancing cursor
  *   5. Checks a 9.5-minute deadline before each order
@@ -21,7 +21,7 @@
 import { Core } from '@adobe/aio-sdk';
 import { loadState, saveState, acquireLock, releaseLock } from './state.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom } from './commerce.js';
-import { syncOrderToEbs } from './ebs.js';
+import { syncOrderToEbs, isRetriableError } from './ebs.js';
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
@@ -35,6 +35,7 @@ const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
  */
 export async function run(params) {
   const log = Core.Logger('ebs-sync', { level: params.LOG_LEVEL ?? 'info' });
+  const ctx = { env: params, log };
   const startTime = Date.now();
 
   const locked = await acquireLock();
@@ -164,7 +165,7 @@ export async function run(params) {
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          await syncOrderToEbs(params, order, orderJournal);
+          await syncOrderToEbs(ctx, params, order, orderJournal);
 
           const syncedAt = new Date().toISOString();
           await updateOrderCustom(params, orderId, { syncedToEbs: syncedAt });
@@ -182,6 +183,12 @@ export async function run(params) {
           break;
         } catch (err) {
           lastErr = err;
+          if (!isRetriableError(err)) {
+            log.warn(
+              `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error: ${err.message}`,
+            );
+            break;
+          }
           log.warn(
             `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`,
           );

@@ -60,18 +60,47 @@
  *   Affirm payment plan          PaymentTerms (3/5)         hardcoded 'Immediate'
  */
 
-const EBS_TIMEOUT_MS = 120_000; // 2 minutes per order
+import { proxyFetch } from '../../proxy.js';
+
+const TRANSIENT_ERROR_PATTERN = /timeout|timed out|aborted|fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i;
+
+/**
+ * Classify whether an error from syncOrderToEbs is worth retrying.
+ *
+ * Retriable:
+ *   - HTTP 5xx (server-side / transient)
+ *   - HTTP 429 (rate limit — back off and retry)
+ *   - Network / timeout errors (no status code, transient name/message)
+ *
+ * Not retriable:
+ *   - HTTP 4xx other than 429 (client error — request itself is bad)
+ *   - Business-logic errors thrown by this module (e.g. "EBS rejected order",
+ *     "cannot build payment snapshot") — retrying yields the same outcome
+ *
+ * @param {Error & { response?: { statusCode?: number } }} err
+ * @returns {boolean}
+ */
+export function isRetriableError(err) {
+  const status = err?.response?.statusCode;
+  if (status) return status >= 500 || status === 429;
+  if (err?.name === 'AbortError') return true;
+  return TRANSIENT_ERROR_PATTERN.test(err?.message ?? '');
+}
 
 /**
  * Sync a single order to EBS.
  * Derives all payment data from the order journal entries.
+ * Routes the request through proxyFetch — EBS is IP-whitelisted to the
+ * proxy's static egress IP.
  * Throws on any non-success response so the caller can apply retry logic.
+ * Use isRetriableError() to classify thrown errors before retrying.
  *
+ * @param {Context}  ctx          - Context exposing env.{ORG,SITE,PROXY_TOKEN} and log
  * @param {object}   params       - Action params (needs EBS_BASE_URL)
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
  */
-export async function syncOrderToEbs(params, order, orderJournal) {
+export async function syncOrderToEbs(ctx, params, order, orderJournal) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
   if (!paymentSnapshot) {
     throw new Error(
@@ -81,7 +110,7 @@ export async function syncOrderToEbs(params, order, orderJournal) {
 
   const xml = buildCreateOrderXml(order, paymentSnapshot);
 
-  const res = await fetch(`${params.EBS_BASE_URL}/VITOTCCreateWebOrder`, {
+  const res = await proxyFetch(ctx, `${params.EBS_BASE_URL}/VITOTCCreateWebOrder`, {
     method: 'POST',
     headers: {
       'Content-Type': 'text/xml; charset=utf-8',
@@ -91,14 +120,9 @@ export async function syncOrderToEbs(params, order, orderJournal) {
       Pragma: 'no-cache',
     },
     body: xml,
-    signal: AbortSignal.timeout(EBS_TIMEOUT_MS),
   });
 
   const responseText = await res.text();
-
-  if (!res.ok) {
-    throw new Error(`EBS HTTP ${res.status}: ${responseText.slice(0, 500)}`);
-  }
 
   if (!parseEbsSuccess(responseText)) {
     throw new Error(`EBS rejected order: ${extractEbsErrorMessage(responseText)}`);
