@@ -1,3 +1,10 @@
+## [1.1.5](https://github.com/aemsites/vitamix-forms/compare/v1.1.4...v1.1.5) (2026-05-12)
+
+
+### Bug Fixes
+
+* tweak date formatting ([22066e5](https://github.com/aemsites/vitamix-forms/commit/22066e57cb037ded1dead461683af8beabf8f156))
+
 ## [1.1.4](https://github.com/aemsites/vitamix-forms/compare/v1.1.3...v1.1.4) (2026-05-11)
 
 
