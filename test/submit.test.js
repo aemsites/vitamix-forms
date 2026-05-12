@@ -28,7 +28,7 @@ const { main } = await import('../src/actions/submit/index.js');
 function makeCtx(overrides = {}) {
   return {
     env: { ORG: 'test-org', SITE: 'test-site', SHEET: '', EMAIL_TOKEN: '', EMAIL_RECIPIENT: '' },
-    log: { info: jest.fn(), debug: jest.fn(), error: jest.fn() },
+    log: { info: jest.fn(), debug: jest.fn(), warn: jest.fn(), error: jest.fn() },
     data: { formId: 'contact-us', data: { name: 'John', email: 'john@test.com' } },
     info: {
       method: 'POST',
@@ -528,6 +528,50 @@ describe('submit action', () => {
         expect.anything(),
         { baseUrl: 'https://ebs.example.com', apiKey: 'prod-key' },
       );
+    });
+
+    test('fires newsletter subscription in parallel when emailOptIn is true', async () => {
+      const ctx = makeRegistrationCtx({ emailOptIn: true });
+      ctx.env.NEWSLETTER_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.NEWSLETTER_API_KEY = 'nl-prod-key';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      const result = await main({});
+
+      expect(result.statusCode).toBe(200);
+      expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+      const [, , opts] = mockProxyFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.EmailAddress).toBe('jane@test.com');
+      expect(body.EmailOptIn).toBe(true);
+      expect(body.FirstName).toBe('Jane');
+      expect(body.LastName).toBe('Doe');
+      expect(body.Country).toBe('US');
+    });
+
+    test('does not fire newsletter when emailOptIn is absent', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx());
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+
+      await main({});
+
+      expect(mockProxyFetch).not.toHaveBeenCalled();
+    });
+
+    test('returns registration response even when newsletter subscription fails', async () => {
+      const ctx = makeRegistrationCtx({ emailOptIn: true });
+      ctx.env.NEWSLETTER_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.NEWSLETTER_API_KEY = 'nl-prod-key';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+      mockProxyFetch.mockRejectedValue(new Error('newsletter API unavailable'));
+
+      const result = await main({});
+
+      expect(result.statusCode).toBe(200);
+      expect(result.body.registrationResponse.succeeded).toBe(true);
     });
   });
 

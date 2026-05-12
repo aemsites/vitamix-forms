@@ -141,7 +141,19 @@ async function handleProductRegistration(ctx, formId, data) {
   data.purchasedOn = purchasedOn.toISOString();
 
   const opts = getEbsSettings(ctx, formId);
-  const resp = await createProductRegistration(ctx, data, opts);
+
+  // If the user opted in to emails, subscribe them to the newsletter in parallel.
+  // Failure is non-fatal — log and continue with the registration response.
+  const newsletterPromise = data.emailOptIn === true
+    ? callNewsletterApi(ctx, formId, data).catch(err => {
+        log.warn(`newsletter subscription failed for product registration formId=${formId}: ${err.message}`);
+      })
+    : Promise.resolve();
+
+  const [resp] = await Promise.all([
+    createProductRegistration(ctx, data, opts),
+    newsletterPromise,
+  ]);
   const response = resp.body?.RegistrationResponse;
   if (response?.['@_Succeeded'] !== 'true') {
     log.error(`failed to create product registration for formId=${formId}: ${response?.Details?.['@_Message'] ?? 'unknown error'}`, resp.body);
@@ -222,6 +234,65 @@ function getNewsletterSettings(ctx, formId) {
 }
 
 /**
+ * Build the newsletter API payload and send it via the proxy.
+ * Caller is responsible for ensuring data.email and data.emailOptIn are valid.
+ * @param {Context} ctx
+ * @param {string} formId
+ * @param {Object} data
+ * @returns {Promise<Response>}
+ */
+async function callNewsletterApi(ctx, formId, data) {
+  const payload = {
+    EBSPartyNumber: '',
+    FirstName: '',
+    MiddleName: '',
+    LastName: '',
+    LeadSource: 'edge-commerce',
+    Country: 'US',
+    Company: 'HOUSEHOLD',
+    EmailAddress: data.email,
+    EmailOptIn: data.emailOptIn,
+    EmailPreferenceDate: '',
+    Mobile: '',
+    SMSOptIn: false,
+    SMSPreferenceDate: '',
+    Title: '',
+    workFlowName: 'subscription',
+  };
+
+  if (data.firstName && typeof data.firstName === 'string') payload.FirstName = data.firstName;
+  if (data.middleName && typeof data.middleName === 'string') payload.MiddleName = data.middleName;
+  if (data.lastName && typeof data.lastName === 'string') payload.LastName = data.lastName;
+  if (data.country && typeof data.country === 'string' && ['us', 'ca', 'mx', 'vr'].includes(data.country.toLowerCase())) {
+    payload.Country = data.country.toUpperCase();
+  }
+  if (data.company && typeof data.company === 'string' && ['household', 'business'].includes(data.company.toLowerCase())) {
+    payload.Company = data.company.toUpperCase();
+  }
+  if (data.title && typeof data.title === 'string') payload.Title = data.title;
+  if (data.workFlowName && typeof data.workFlowName === 'string' && ['subscription', 'newsletter'].includes(data.workFlowName.toLowerCase())) {
+    payload.workFlowName = data.workFlowName;
+  }
+  if (data.mobile && typeof data.mobile === 'string') {
+    payload.Mobile = data.mobile;
+    // infer opt-in from lack of explicit opt-out
+    if (data.smsOptIn === undefined || data.smsOptIn === null) payload.SMSOptIn = true;
+  }
+  if (data.smsOptIn && typeof data.smsOptIn === 'boolean') payload.SMSOptIn = data.smsOptIn;
+  if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') payload.SMSPreferenceDate = data.smsPreferenceDate;
+
+  const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
+  return proxyFetch(ctx, baseUrl, {
+    method: 'POST',
+    headers: {
+      'content-type': 'application/json',
+      'x-api-key': apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
  * Handle newsletter subscription submission
  * @param {Context} ctx
  * @param {string} formId
@@ -241,71 +312,8 @@ async function handleNewsletter(ctx, formId, data) {
   if (typeof data.emailOptIn !== 'boolean') {
     return errorResponse(400, 'missing or invalid emailOptIn');
   }
-  const payload = {
-    EBSPartyNumber: '',
-    FirstName: '',
-    MiddleName: '',
-    LastName: '',
-    LeadSource: 'edge-commerce',
-    Country: 'US',
-    Company: 'HOUSEHOLD',
-    EmailAddress: data.email,
-    EmailOptIn: data.emailOptIn,
-    EmailPreferenceDate: '',
-    Mobile: '',
-    SMSOptIn: false,
-    SMSPreferenceDate: '',
-    Title: '',
-    workFlowName: 'subscription',
-  };
 
-  // if other settings are present and valid, add them to the payload
-  if (data.firstName && typeof data.firstName === 'string') {
-    payload.FirstName = data.firstName;
-  }
-  if (data.middleName && typeof data.middleName === 'string') {
-    payload.MiddleName = data.middleName;
-  }
-  if (data.lastName && typeof data.lastName === 'string') {
-    payload.LastName = data.lastName;
-  }
-  if (data.country && typeof data.country === 'string' && ['us', 'ca', 'mx', 'vr'].includes(data.country.toLowerCase())) {
-    payload.Country = data.country.toUpperCase();
-  }
-  if (data.company && typeof data.company === 'string' && ['household', 'business'].includes(data.company.toLowerCase())) {
-    payload.Company = data.company.toUpperCase();
-  }
-  if (data.title && typeof data.title === 'string') {
-    payload.Title = data.title;
-  }
-  if (data.workFlowName && typeof data.workFlowName === 'string' && ['subscription', 'newsletter'].includes(data.workFlowName.toLowerCase())) {
-    payload.workFlowName = data.workFlowName;
-  }
-  if (data.mobile && typeof data.mobile === 'string') {
-    payload.Mobile = data.mobile;
-    // infer optin from lack of optout
-    if (data.smsOptIn === undefined || data.smsOptIn === null) {
-      payload.SMSOptIn = true;
-    }
-  }
-  if (data.smsOptIn && typeof data.smsOptIn === 'boolean') {
-    payload.SMSOptIn = data.smsOptIn;
-  }
-  if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') {
-    payload.SMSPreferenceDate = data.smsPreferenceDate;
-  }
-
-  const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
-
-  const resp = await proxyFetch(ctx, baseUrl, {
-    method: 'POST',
-    headers: {
-      'content-type': 'application/json',
-      'x-api-key': apiKey,
-    },
-    body: JSON.stringify(payload),
-  });
-
+  const resp = await callNewsletterApi(ctx, formId, data);
   return {
     statusCode: resp.status,
     headers: { 'content-type': 'application/json' },
