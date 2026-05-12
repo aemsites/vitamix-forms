@@ -1,3 +1,10 @@
+## [1.1.7](https://github.com/aemsites/vitamix-forms/compare/v1.1.6...v1.1.7) (2026-05-12)
+
+
+### Bug Fixes
+
+* fraudscore tweaks ([9e96f3a](https://github.com/aemsites/vitamix-forms/commit/9e96f3ae14036c71f54843c7a986641d24b6f80c))
+
 ## [1.1.6](https://github.com/aemsites/vitamix-forms/compare/v1.1.5...v1.1.6) (2026-05-12)
 
 
