@@ -1,3 +1,11 @@
+## [1.1.8](https://github.com/aemsites/vitamix-forms/compare/v1.1.7...v1.1.8) (2026-05-12)
+
+
+### Bug Fixes
+
+* more newsletter properties ([764c363](https://github.com/aemsites/vitamix-forms/commit/764c363128ce4453fa38c2c4f95d6b8f502305de))
+* newsletter api tweaks ([34775c3](https://github.com/aemsites/vitamix-forms/commit/34775c312a99a83b67e00a8a32b3c4abc51d6dc6))
+
 ## [1.1.7](https://github.com/aemsites/vitamix-forms/compare/v1.1.6...v1.1.7) (2026-05-12)
 
 
