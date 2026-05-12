@@ -223,7 +223,7 @@ describe('ebs-sync e2e', () => {
       expect(snap.approvalCode).toBe('tst401');
       expect(snap.cardBrand).toBe('Visa');
       expect(snap.last4).toBe('1881');
-      expect(snap.expiration).toBe('2028-01-28T00:00');
+      expect(snap.expiration).toBe('2028-01-28-12:00');
       expect(snap.fraudDecision).toBe('approve');
       // No SafeTech data in this journal (Forter-only environment)
       expect(snap.fraudScore).toBe('');

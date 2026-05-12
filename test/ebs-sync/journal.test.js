@@ -377,9 +377,9 @@ describe('buildPaymentSnapshot', () => {
     });
 
     test('converts cardExpiry from MMYY to EBS date format', () => {
-      // cardExpiry "0127" (January 2027) → "2027-01-28T00:00"
+      // cardExpiry "0127" (January 2027) → "2027-01-28-12:00" (midnight in 12-hour form)
       const { expiration } = buildPaymentSnapshot(mockOrder(), CHASE_FORTER_ENTRIES);
-      expect(expiration).toBe('2027-01-28T00:00');
+      expect(expiration).toBe('2027-01-28-12:00');
     });
 
     test('captures fraudDecision from fraud_evaluated entry', () => {
@@ -472,12 +472,12 @@ describe('buildPaymentSnapshot', () => {
       return buildPaymentSnapshot(mockOrder(), entries);
     }
 
-    test('"1228" (December 2028) → "2028-12-28T00:00"', () => {
-      expect(snapshotWithExpiry('1228').expiration).toBe('2028-12-28T00:00');
+    test('"1228" (December 2028) → "2028-12-28-12:00"', () => {
+      expect(snapshotWithExpiry('1228').expiration).toBe('2028-12-28-12:00');
     });
 
-    test('"0130" (January 2030) → "2030-01-28T00:00"', () => {
-      expect(snapshotWithExpiry('0130').expiration).toBe('2030-01-28T00:00');
+    test('"0130" (January 2030) → "2030-01-28-12:00"', () => {
+      expect(snapshotWithExpiry('0130').expiration).toBe('2030-01-28-12:00');
     });
 
     test('empty string → empty string', () => {
