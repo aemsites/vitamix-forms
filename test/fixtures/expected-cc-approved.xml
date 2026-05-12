@@ -23,7 +23,7 @@
           TaxHolidayInEffect="false"
           ReferrerCode=""
           Key="M4Z6Y6PC"
-          Created="2026-05-04T19:47:57">
+          Created="2026-05-04T15:47:57">
         <ns2:Customer
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
           xsi:type="Person"
@@ -55,8 +55,8 @@
         <ns2:OrderPayment PaymentTerms="Immediate">
           <ns2:CreditCard
               CardId=""
-              Expiration="2028-01-28T00:00"
-              Approval="2026-05-04T19:48"
+              Expiration="2028-01-28-12:00"
+              Approval="2026-05-04-03:48"
               FraudScore=""
               AuthCode="tst401"
               CardBrand="Visa"

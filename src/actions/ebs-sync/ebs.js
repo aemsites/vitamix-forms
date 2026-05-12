@@ -711,17 +711,18 @@ function parseSafetech(response) {
 
 /**
  * Convert a Chase card expiry in MMYY format to EBS date format.
- * EBS expects YYYY-MM-DDTHH:mm — we use the 28th as the nominal expiry day.
+ * EBS expects YYYY-MM-DD-hh:mm (12-hour, no AM/PM) — we use the 28th at midnight.
+ * Midnight in 12-hour form is "12:00" (matches PHP date('h:i') for hour 0).
  *
  * @param {string} mmyy - e.g. "0127" = January 2027
- * @returns {string} e.g. "2027-01-28T00:00"
+ * @returns {string} e.g. "2027-01-28-12:00"
  */
 function cardExpiryToDate(mmyy) {
   const s = String(mmyy);
   if (s.length < 4) return '';
   const mm = s.slice(0, 2);
   const yy = s.slice(2, 4);
-  return `20${yy}-${mm}-28T00:00`;
+  return `20${yy}-${mm}-28-12:00`;
 }
 
 /** Resolve the 2-char ISO country code from the order. */
@@ -750,14 +751,49 @@ function countryToPriceList(country) {
   return PRICE_LIST_MAP[country] || 'US HH END CUSTOMER';
 }
 
-/** Format an ISO 8601 timestamp to EBS's YYYY-MM-DDTHH:mm format. */
+/**
+ * EBS expects all timestamps in the Vitamix store timezone (US/Eastern),
+ * matching the PHP implementation that runs date() with the Magento store TZ.
+ */
+const EBS_TIMEZONE = 'America/New_York';
+
+/**
+ * Format an ISO 8601 timestamp as EBS's YYYY-MM-DD-hh:mm — 12-hour clock with
+ * leading zero, no AM/PM (matches PHP date('Y-m-d-h:i', ...) in US/Eastern).
+ * Midnight renders as "12:00", 1 pm as "01:00".
+ */
 function formatEbsDate(iso) {
-  return String(iso).slice(0, 16).replace(' ', 'T');
+  const m = ebsDateParts(iso, 'h12');
+  return `${m.year}-${m.month}-${m.day}-${m.hour}:${m.minute}`;
 }
 
-/** Format an ISO 8601 timestamp to EBS's YYYY-MM-DDTHH:mm:ss format (used by Order/@Created). */
+/**
+ * Format an ISO 8601 timestamp as EBS's YYYY-MM-DDTHH:mm:ss — 24-hour clock,
+ * used by Order/@Created (matches PHP date('Y-m-d\\TH:i:s', ...) in US/Eastern).
+ */
 function formatEbsDateTime(iso) {
-  return String(iso).slice(0, 19).replace(' ', 'T');
+  const m = ebsDateParts(iso, 'h23', true);
+  return `${m.year}-${m.month}-${m.day}T${m.hour}:${m.minute}:${m.second}`;
+}
+
+/**
+ * Extract date-time parts from an ISO timestamp in EBS_TIMEZONE.
+ * hourCycle: 'h12' yields hours 01-12 (midnight → "12"); 'h23' yields 00-23.
+ */
+function ebsDateParts(iso, hourCycle, withSeconds = false) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: EBS_TIMEZONE,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    ...(withSeconds ? { second: '2-digit' } : {}),
+    hourCycle,
+  }).formatToParts(new Date(iso));
+  const out = {};
+  for (const p of parts) if (p.type !== 'literal') out[p.type] = p.value;
+  return out;
 }
 
 /** Strip all non-digit characters from a phone number. */
