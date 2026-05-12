@@ -1,3 +1,10 @@
+## [1.1.9](https://github.com/aemsites/vitamix-forms/compare/v1.1.8...v1.1.9) (2026-05-12)
+
+
+### Bug Fixes
+
+* advance since timestamp in ebs-sync ([5f2b65d](https://github.com/aemsites/vitamix-forms/commit/5f2b65de0e2ae74d7044c82de7498d2c52bb0e18))
+
 ## [1.1.8](https://github.com/aemsites/vitamix-forms/compare/v1.1.7...v1.1.8) (2026-05-12)
 
 
