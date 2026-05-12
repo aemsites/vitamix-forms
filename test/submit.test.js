@@ -536,7 +536,7 @@ describe('submit action', () => {
   describe('newsletter', () => {
     function makeNewsletterCtx(dataOverride = {}) {
       return makeCtx({
-        data: { formId: 'us/newsletter', data: { emailAddress: 'test@example.com', emailOptIn: true, ...dataOverride } },
+        data: { formId: 'us/newsletter', data: { email: 'test@example.com', emailOptIn: true, ...dataOverride } },
         env: {
           ORG: 'test-org', SITE: 'test-site',
           NEWSLETTER_BASE_URL: 'https://newsletter.example.com/prod',
@@ -549,7 +549,7 @@ describe('submit action', () => {
 
     test('returns 400 for missing emailAddress', async () => {
       const ctx = makeNewsletterCtx();
-      delete ctx.data.data.emailAddress;
+      delete ctx.data.data.email;
       mockMakeContext.mockResolvedValue(ctx);
 
       const result = await main({});
@@ -558,7 +558,7 @@ describe('submit action', () => {
     });
 
     test('returns 400 for non-string emailAddress', async () => {
-      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ emailAddress: 12345 }));
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ email: 12345 }));
       const result = await main({});
       expect(result.error.statusCode).toBe(400);
       expect(result.error.headers['x-error']).toBe('missing or invalid emailAddress');
