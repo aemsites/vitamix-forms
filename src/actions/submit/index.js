@@ -235,24 +235,21 @@ async function handleNewsletter(ctx, formId, data) {
   if (!data || typeof data !== 'object') {
     return errorResponse(400, 'missing or invalid data');
   }
-  if (!data.emailAddress || typeof data.emailAddress !== 'string') {
+  if (!data.email || typeof data.email !== 'string') {
     return errorResponse(400, 'missing or invalid emailAddress');
   }
   if (typeof data.emailOptIn !== 'boolean') {
     return errorResponse(400, 'missing or invalid emailOptIn');
   }
-
-  const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
-
   const payload = {
     EBSPartyNumber: '',
     FirstName: '',
     MiddleName: '',
     LastName: '',
-    LeadSource: 'aerogarden',
+    LeadSource: 'edge-commerce',
     Country: 'US',
     Company: 'HOUSEHOLD',
-    EmailAddress: data.emailAddress,
+    EmailAddress: data.email,
     EmailOptIn: data.emailOptIn,
     EmailPreferenceDate: '',
     Mobile: '',
@@ -261,6 +258,44 @@ async function handleNewsletter(ctx, formId, data) {
     Title: '',
     workFlowName: 'subscription',
   };
+
+  // if other settings are present and valid, add them to the payload
+  if (data.firstName && typeof data.firstName === 'string') {
+    payload.FirstName = data.firstName;
+  }
+  if (data.middleName && typeof data.middleName === 'string') {
+    payload.MiddleName = data.middleName;
+  }
+  if (data.lastName && typeof data.lastName === 'string') {
+    payload.LastName = data.lastName;
+  }
+  if (data.country && typeof data.country === 'string' && ['us', 'ca', 'mx', 'vr'].includes(data.country.toLowerCase())) {
+    payload.Country = data.country.toUpperCase();
+  }
+  if (data.company && typeof data.company === 'string' && ['household', 'business'].includes(data.company.toLowerCase())) {
+    payload.Company = data.company.toUpperCase();
+  }
+  if (data.title && typeof data.title === 'string') {
+    payload.Title = data.title;
+  }
+  if (data.workFlowName && typeof data.workFlowName === 'string' && ['subscription', 'newsletter'].includes(data.workFlowName.toLowerCase())) {
+    payload.workFlowName = data.workFlowName;
+  }
+  if (data.mobile && typeof data.mobile === 'string') {
+    payload.Mobile = data.mobile;
+    // infer optin from lack of optout
+    if (data.smsOptIn === undefined || data.smsOptIn === null) {
+      payload.SMSOptIn = true;
+    }
+  }
+  if (data.smsOptIn && typeof data.smsOptIn === 'boolean') {
+    payload.SMSOptIn = data.smsOptIn;
+  }
+  if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') {
+    payload.SMSPreferenceDate = data.smsPreferenceDate;
+  }
+
+  const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
 
   const resp = await proxyFetch(ctx, baseUrl, {
     method: 'POST',
