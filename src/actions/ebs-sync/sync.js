@@ -66,15 +66,8 @@ export async function run(params) {
 
   try {
     // ── 1. Fetch journal entries and find the batch boundary ────────────
-    const entries = await getJournalEntries(params, state.since, log);
-    log.info(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'}`);
-
-    // The cursor advances to the latest timestamp in the batch — not
-    // Date.now(), since time passes during processing.
-    let batchLatestTimestamp = state.since;
-    for (const e of entries) {
-      if (e.timestamp > batchLatestTimestamp) batchLatestTimestamp = e.timestamp;
-    }
+    const { entries, until: batchUntil } = await getJournalEntries(params, state.since, log);
+    log.info(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'} until ${batchUntil}`);
 
     // ── 2. Filter to terminal events, collect unique orderIds ──────────
     const TERMINAL_EVENTS = new Set(['payment_completed', 'payment_cancelled']);
@@ -216,11 +209,13 @@ export async function run(params) {
     }
 
     // ── 8. Advance cursor ──────────────────────────────────────────────
-    // On success or deadline: advance to the latest journal entry timestamp.
+    // On success or deadline: advance to the query's `until` boundary so the
+    // next invocation starts right where this one left off — even when the
+    // batch was empty.
     // On halt (max-retries): do NOT advance — the batch will be re-fetched
     // next invocation and already-synced orders are skipped cheaply.
-    if (!halted && batchLatestTimestamp && batchLatestTimestamp !== state.since) {
-      state.since = batchLatestTimestamp;
+    if (!halted) {
+      state.since = batchUntil;
     }
     state.lastRun = new Date().toISOString();
     state.status = halted ? 'error' : 'idle';
