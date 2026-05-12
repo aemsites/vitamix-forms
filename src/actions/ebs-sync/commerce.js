@@ -16,10 +16,15 @@ const JOURNAL_CHUNK_HOURS = 11;
  * Fetch all journal entries since the given ISO timestamp, chunking the
  * request into ≤11-hour windows if the full range exceeds the API limit.
  *
+ * Returns the queried `until` timestamp alongside the entries so the caller
+ * can advance its cursor to the boundary of what was examined — necessary
+ * because empty batches and pre-cursor entries would otherwise leave the
+ * cursor stuck at the previous value.
+ *
  * @param {object} params - Action params containing COMMERCE_* env vars
  * @param {string | null} since - ISO 8601 timestamp, or null to default to 1h ago
  * @param {object} log - Logger instance (ctx.log)
- * @returns {Promise<object[]>} Flat array of journal entries, oldest first
+ * @returns {Promise<{ entries: object[], until: string }>}
  */
 export async function getJournalEntries(params, since, log) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
@@ -53,7 +58,7 @@ export async function getJournalEntries(params, since, log) {
     }
   }
 
-  return allEntries;
+  return { entries: allEntries, until: untilDate.toISOString() };
 }
 
 /**
