@@ -313,7 +313,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
   const referrerCode = '';
 
   const orderKey = order.friendlyId || order.id;
-  const created = formatEbsDate(order.createdAt || new Date().toISOString());
+  const created = formatEbsDateTime(order.createdAt || new Date().toISOString());
 
   // Tax and shipping totals from the payment snapshot (with order.estimates fallback)
   const taxAmount = paymentSnapshot.taxAmount;
@@ -753,6 +753,11 @@ function countryToPriceList(country) {
 /** Format an ISO 8601 timestamp to EBS's YYYY-MM-DDTHH:mm format. */
 function formatEbsDate(iso) {
   return String(iso).slice(0, 16).replace(' ', 'T');
+}
+
+/** Format an ISO 8601 timestamp to EBS's YYYY-MM-DDTHH:mm:ss format (used by Order/@Created). */
+function formatEbsDateTime(iso) {
+  return String(iso).slice(0, 19).replace(' ', 'T');
 }
 
 /** Strip all non-digit characters from a phone number. */
