@@ -596,6 +596,19 @@ describe('submit action', () => {
       expect(result.body.registrationResponse.succeeded).toBe(true);
     });
 
+    test('returns registration response even when newsletter URL is not configured', async () => {
+      const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
+      // no NEWSLETTER_BASE_URL set — callNewsletterApi will throw before proxyFetch
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+
+      expect(result.statusCode).toBe(200);
+      expect(result.body.registrationResponse.succeeded).toBe(true);
+      expect(mockProxyFetch).not.toHaveBeenCalled();
+    });
+
     test('sample payload: flat format with marketingOptIn fires newsletter with mapped fields', async () => {
       const ctx = makeCtx({
         data: {
@@ -766,6 +779,18 @@ describe('submit action', () => {
       const [, url, opts] = mockProxyFetch.mock.calls[0];
       expect(url).toBe('https://newsletter.example.com/prod');
       expect(opts.headers['x-api-key']).toBe('prod-key');
+    });
+
+    test('returns 500 when newsletter URL is not configured', async () => {
+      const ctx = makeNewsletterCtx();
+      delete ctx.env.NEWSLETTER_BASE_URL;
+      delete ctx.env.NEWSLETTER_BASE_URL_STAGE;
+      mockMakeContext.mockResolvedValue(ctx);
+
+      const result = await main({});
+
+      expect(result.error.statusCode).toBe(500);
+      expect(mockProxyFetch).not.toHaveBeenCalled();
     });
   });
 

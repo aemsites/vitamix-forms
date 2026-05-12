@@ -147,8 +147,8 @@ async function handleProductRegistration(ctx, formId, data) {
   const marketingOptIn = data.marketingOptIn === true || data.marketingOptIn === 'yes';
   const newsletterPromise = marketingOptIn
     ? callNewsletterApi(ctx, formId, { ...data, emailOptIn: true }).catch(err => {
-        log.warn(`newsletter subscription failed for product registration formId=${formId}: ${err.message}`);
-      })
+      log.warn(`newsletter subscription failed for product registration formId=${formId}: ${err.message}`);
+    })
     : Promise.resolve();
 
   const [resp] = await Promise.all([
@@ -283,6 +283,9 @@ async function callNewsletterApi(ctx, formId, data) {
   if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') payload.SMSPreferenceDate = data.smsPreferenceDate;
 
   const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
+  if (!baseUrl) {
+    throw new Error(`newsletter API URL not configured for formId=${formId}`);
+  }
   return proxyFetch(ctx, baseUrl, {
     method: 'POST',
     headers: {
