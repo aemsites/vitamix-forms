@@ -214,6 +214,7 @@ export function buildPaymentSnapshot(order, orderJournal) {
 
   if (provider === 'chase') {
     const safetech = parseSafetech(completed.providerData?.safetechResponse);
+    const hasSafetech = Boolean(completed.providerData?.safetechResponse);
 
     // Fraud decision: prefer SafeTech FraudStatusCode; also check fraud_evaluated
     // event (emitted by Forter or other post-auth fraud provider).
@@ -233,7 +234,10 @@ export function buildPaymentSnapshot(order, orderJournal) {
       approvalDate: completed.timestamp,
       // MISSING: cardId not logged in Chase journal entry — hardcoded ''
       cardId: '',
-      // SafeTech parsed fields (present only when safetechMerchantId is configured)
+      // SafeTech parsed fields — emitted on CreditCard only when SafeTech is the
+      // fraud provider. With Forter enabled (default), these are omitted entirely
+      // (PHP parity: `if (!$isForterEnabled) { ... FraudScore ... }`).
+      hasSafetech,
       fraudScore: safetech.RiskScore || '',
       fraudStatusCode: safetech.FraudStatusCode || '',
       fraudRiskInquiryTransactionId: safetech.RiskInquiryTransactionID || '',
@@ -446,16 +450,22 @@ function buildPaymentXml(paymentSnapshot, order) {
     );
     // MISSING: storedCredentials (payment plan indicator not in journal) — 'N'
     // MISSING: mitMsgType (not in journal) — 'CGEN'
+    // SafeTech-only attributes are omitted entirely when Forter is the fraud
+    // provider (PHP: `if (!$isForterEnabled)`). EBS rejects empty FraudScore.
+    const fraudScoreAttr = paymentSnapshot.hasSafetech
+      ? `\n              FraudScore="${escapeXml(paymentSnapshot.fraudScore)}"`
+      : '';
+    const safetechAttrs = paymentSnapshot.hasSafetech
+      ? `\n              FraudStatusCode="${escapeXml(paymentSnapshot.fraudStatusCode)}"`
+        + `\n              FraudRiskInquiryTransactionID="${escapeXml(paymentSnapshot.fraudRiskInquiryTransactionId)}"`
+        + `\n              FraudAutoDecisionResponse="${escapeXml(paymentSnapshot.fraudAutoDecisionResponse)}"`
+      : '';
     inner = `<ns2:CreditCard
               CardId="${escapeXml(paymentSnapshot.cardId)}"
               Expiration="${escapeXml(paymentSnapshot.expiration)}"
-              Approval="${formatEbsDate(paymentSnapshot.approvalDate)}"
-              FraudScore="${escapeXml(paymentSnapshot.fraudScore)}"
+              Approval="${formatEbsDate(paymentSnapshot.approvalDate)}"${fraudScoreAttr}
               AuthCode="${escapeXml(paymentSnapshot.approvalCode)}"
-              CardBrand="${escapeXml(paymentSnapshot.cardBrand)}"
-              FraudStatusCode="${escapeXml(paymentSnapshot.fraudStatusCode)}"
-              FraudRiskInquiryTransactionID="${escapeXml(paymentSnapshot.fraudRiskInquiryTransactionId)}"
-              FraudAutoDecisionResponse="${escapeXml(paymentSnapshot.fraudAutoDecisionResponse)}"
+              CardBrand="${escapeXml(paymentSnapshot.cardBrand)}"${safetechAttrs}
               CardLast4Digits="${escapeXml(paymentSnapshot.last4)}"
               MITMsgType="${escapeXml(paymentSnapshot.mitMsgType)}"
               StoredCredentials="${paymentSnapshot.storedCredentials}"
