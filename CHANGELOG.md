@@ -1,3 +1,12 @@
+## [1.1.10](https://github.com/aemsites/vitamix-forms/compare/v1.1.9...v1.1.10) (2026-05-12)
+
+
+### Bug Fixes
+
+* add keys, guard undefined env vars ([0e32c8f](https://github.com/aemsites/vitamix-forms/commit/0e32c8fd167dae618b6b806f92a625ae736413b9))
+* adjust newsletter condition, add test ([6aa03c2](https://github.com/aemsites/vitamix-forms/commit/6aa03c2380fb77715b439831b410d19b20c5827b))
+* call newsletter api from product-registration ([b765dc2](https://github.com/aemsites/vitamix-forms/commit/b765dc246c6d1a68c56fdc4a48777e0020a04b9b))
+
 ## [1.1.9](https://github.com/aemsites/vitamix-forms/compare/v1.1.8...v1.1.9) (2026-05-12)
 
 
