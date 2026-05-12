@@ -530,8 +530,8 @@ describe('submit action', () => {
       );
     });
 
-    test('fires newsletter subscription in parallel when emailOptIn is true', async () => {
-      const ctx = makeRegistrationCtx({ emailOptIn: true });
+    test('fires newsletter subscription when marketingOptIn is "yes"', async () => {
+      const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
       ctx.env.NEWSLETTER_BASE_URL = 'https://newsletter.example.com/prod';
       ctx.env.NEWSLETTER_API_KEY = 'nl-prod-key';
       mockMakeContext.mockResolvedValue(ctx);
@@ -551,7 +551,20 @@ describe('submit action', () => {
       expect(body.Country).toBe('US');
     });
 
-    test('does not fire newsletter when emailOptIn is absent', async () => {
+    test('fires newsletter subscription when marketingOptIn is boolean true', async () => {
+      const ctx = makeRegistrationCtx({ marketingOptIn: true });
+      ctx.env.NEWSLETTER_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.NEWSLETTER_API_KEY = 'nl-prod-key';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+    });
+
+    test('does not fire newsletter when marketingOptIn is absent', async () => {
       mockMakeContext.mockResolvedValue(makeRegistrationCtx());
       mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
 
@@ -560,8 +573,17 @@ describe('submit action', () => {
       expect(mockProxyFetch).not.toHaveBeenCalled();
     });
 
+    test('does not fire newsletter when marketingOptIn is "no"', async () => {
+      mockMakeContext.mockResolvedValue(makeRegistrationCtx({ marketingOptIn: 'no' }));
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+
+      await main({});
+
+      expect(mockProxyFetch).not.toHaveBeenCalled();
+    });
+
     test('returns registration response even when newsletter subscription fails', async () => {
-      const ctx = makeRegistrationCtx({ emailOptIn: true });
+      const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
       ctx.env.NEWSLETTER_BASE_URL = 'https://newsletter.example.com/prod';
       ctx.env.NEWSLETTER_API_KEY = 'nl-prod-key';
       mockMakeContext.mockResolvedValue(ctx);
@@ -572,6 +594,68 @@ describe('submit action', () => {
 
       expect(result.statusCode).toBe(200);
       expect(result.body.registrationResponse.succeeded).toBe(true);
+    });
+
+    test('sample payload: flat format with marketingOptIn fires newsletter with mapped fields', async () => {
+      const ctx = makeCtx({
+        data: {
+          serialNumber: '123456789123456789',
+          planToUse: 'at-home',
+          purchasedFrom: 'best-buy',
+          purchasedOn: '1992-01-01',
+          firstName: '1',
+          lastName: '2',
+          address: '123 v',
+          addressLine2: '123',
+          city: 'wihjdfnw',
+          province: 'NB',
+          postalCode: '23456',
+          phone: '12345678',
+          email: 'ab@cd.ef',
+          marketingOptIn: 'yes',
+          acceptTerms: 'yes',
+          formId: 'ca/fr_ca/product-registration',
+          pageUrl: 'https://ebs-forms--vitamix--aemsites.aem.network/ca/fr_ca/customer-service/product-registration',
+        },
+        env: {
+          ORG: 'test-org', SITE: 'test-site',
+          EBS_BASE_URL: 'https://ebs.example.com',
+          EBS_API_KEY: 'ebs-prod-key',
+          EBS_BASE_URL_STAGE: 'https://ebs-stage.example.com',
+          EBS_API_KEY_STAGE: 'ebs-stage-key',
+          NEWSLETTER_BASE_URL: 'https://newsletter.example.com/prod',
+          NEWSLETTER_API_KEY: 'nl-prod-key',
+          NEWSLETTER_BASE_URL_STAGE: 'https://newsletter.example.com/stage',
+          NEWSLETTER_API_KEY_STAGE: 'nl-stage-key',
+        },
+        info: {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            referer: 'https://ebs-forms--vitamix--aemsites.aem.network/ca/fr_ca/customer-service/product-registration',
+          },
+          path: '/submit',
+        },
+      });
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      const result = await main({});
+
+      expect(result.statusCode).toBe(200);
+      expect(mockProxyFetch).toHaveBeenCalledTimes(1);
+      const [, url, opts] = mockProxyFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      // non-prod referer → stage/ca/fr_ca/product-registration → stage newsletter endpoint
+      expect(url).toBe('https://newsletter.example.com/stage');
+      // marketingOptIn: 'yes' mapped to EmailOptIn: true
+      expect(body.EmailOptIn).toBe(true);
+      expect(body.EmailAddress).toBe('ab@cd.ef');
+      expect(body.FirstName).toBe('1');
+      expect(body.LastName).toBe('2');
+      // country extracted from formId 'ca/...'
+      expect(body.Country).toBe('CA');
     });
   });
 

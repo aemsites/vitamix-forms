@@ -142,10 +142,11 @@ async function handleProductRegistration(ctx, formId, data) {
 
   const opts = getEbsSettings(ctx, formId);
 
-  // If the user opted in to emails, subscribe them to the newsletter in parallel.
-  // Failure is non-fatal — log and continue with the registration response.
-  const newsletterPromise = data.emailOptIn === true
-    ? callNewsletterApi(ctx, formId, data).catch(err => {
+  // If the user opted in to marketing emails, subscribe them to the newsletter in parallel.
+  // Accepts boolean true or the string "yes". Failure is non-fatal — log and continue.
+  const marketingOptIn = data.marketingOptIn === true || data.marketingOptIn === 'yes';
+  const newsletterPromise = marketingOptIn
+    ? callNewsletterApi(ctx, formId, { ...data, emailOptIn: true }).catch(err => {
         log.warn(`newsletter subscription failed for product registration formId=${formId}: ${err.message}`);
       })
     : Promise.resolve();
