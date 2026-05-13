@@ -288,6 +288,22 @@ export function buildPaymentSnapshot(order, orderJournal) {
     };
   }
 
+  if (provider === 'chase-wallet') {
+    const fraudEval = orderJournal.find((e) => e.event === 'fraud_evaluated');
+    const fraudDecision = fraudEval?.decision || null;
+
+    return {
+      ...base,
+      transactionId: completed.transactionId || '',
+      approvalCode: completed.approvalCode || '',
+      cardBrand: completed.cardType || '',
+      last4: (completed.cardNumber || '').slice(-4),
+      approvalDate: completed.timestamp,
+      fraudDecision,
+      mitMsgType: 'CGEN',
+    };
+  }
+
   if (provider === 'affirm') {
     return {
       ...base,
@@ -689,12 +705,13 @@ function resolveShippingMethod(order) {
 /**
  * Map a payment provider name to the EBS payment method string.
  *
- * @param {string} provider - Journal entry provider value ('chase'|'paypal'|'affirm')
+ * @param {string} provider - Journal entry provider value ('chase'|'chase-wallet'|'paypal'|'affirm')
  * @returns {string}
  */
 function resolveEbsMethod(provider) {
   switch (provider) {
     case 'chase': return 'chasehpp';
+    case 'chase-wallet': return 'applepay';
     case 'paypal': return 'paypal';
     case 'affirm': return 'affirm';
     default: return '';

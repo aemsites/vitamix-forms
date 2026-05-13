@@ -156,6 +156,47 @@ const PP_APPROVED_ORDER = {
   },
 };
 
+/** Order matching journal-ap-approved.ndjson (Apple Pay via Chase, Forter not_reviewed). */
+const AP_APPROVED_ORDER = {
+  id: '2026-05-13T23-32-22.021Z-N2J1OM4S',
+  friendlyId: 'N2J1OM4S',
+  createdAt: '2026-05-13T23:32:22.021Z',
+  state: 'payment_completed',
+  country: 'ca',
+  customer: {
+    firstName: 'Dylan',
+    lastName: 'Davis',
+    email: 'dyland@adobe.com',
+    phone: '5555551234',
+  },
+  shipping: {
+    name: 'Dylan Davis',
+    address1: '789 Queen St E',
+    city: 'Toronto',
+    state: 'ON',
+    zip: 'M4M1H3',
+    country: 'ca',
+    phone: '5555551234',
+    email: 'dyland@adobe.com',
+  },
+  items: [
+    {
+      sku: '062048-04',
+      quantity: 1,
+      price: { final: '999.95', currency: 'CAD' },
+    },
+  ],
+  estimates: {
+    shippingMethod: {
+      id: 300,
+      label: 'Free Shipping',
+      type: 'standard',
+      rate: 0,
+    },
+    tax: { country: 'CA', state: 'ON', rate: 13, id: 'CA-ON-*-Rate1' },
+  },
+};
+
 const MOCK_PARAMS = {
   EBS_BASE_URL: 'https://ebs.test.example.com',
   EBS_API_KEY: 'test-api-key',
@@ -278,6 +319,35 @@ describe('ebs-sync e2e', () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_APPROVED_ORDER, journal);
       expect(capturedXml).toBeTruthy();
       assertXmlFixture('expected-pp-approved.xml', capturedXml);
+    });
+  });
+
+  // ── Apple Pay (chase-wallet) — Forter not_reviewed ─────────────────────
+
+  describe('AP approved (journal-ap-approved)', () => {
+    const journal = loadJournal('journal-ap-approved.ndjson');
+
+    test('buildPaymentSnapshot extracts Apple Pay payment fields', () => {
+      const snap = buildPaymentSnapshot(AP_APPROVED_ORDER, journal);
+      expect(snap).not.toBeNull();
+      expect(snap.method).toBe('applepay');
+      expect(snap.provider).toBe('chase-wallet');
+      expect(snap.amount).toBe('1129.94');
+      expect(snap.taxAmount).toBe('129.99');
+      expect(snap.shippingCost).toBe('0.00');
+      expect(snap.subtotal).toBe('999.95');
+      expect(snap.transactionId).toBe('6A050A09034A95F000000FFB00003F9E41565325');
+      expect(snap.approvalCode).toBe('tst310');
+      expect(snap.fraudDecision).toBe('not_reviewed');
+      // No card info in chase-wallet journal entries
+      expect(snap.cardBrand).toBe('');
+      expect(snap.last4).toBe('');
+    });
+
+    test('syncOrderToEbs produces expected SOAP XML', async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, AP_APPROVED_ORDER, journal);
+      expect(capturedXml).toBeTruthy();
+      assertXmlFixture('expected-ap-approved.xml', capturedXml);
     });
   });
 });

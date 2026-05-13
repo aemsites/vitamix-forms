@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ord="http://xmlns.vitamix.com/Erp/Orders"
+    xmlns:ent="http://xmlns.vitamix.com/Enterprise"
+    xmlns:pay="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+    xmlns:ship="http://xmlns.vitamix.com/Erp/Shipments">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ns2:CreateRequest
+        xmlns="http://xmlns.vitamix.com/Enterprise"
+        xmlns:ns2="http://xmlns.vitamix.com/Erp/Orders"
+        xmlns:ns3="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+        xmlns:ns4="http://xmlns.vitamix.com/Erp/Shipments"
+        xmlns:ns5="http://xmlns.oracle.com/pcbpel/adapter/db/sp/DbCallXXOTC_CREATE_SALES_ORDER_PKG"
+        Id="2026-05-13T23-32-22.021Z-N2J1OM4S">
+      <ns2:Order
+          Shipping="Standard"
+          PriceList="CAN HH END CUSTOMER"
+          Source="CA"
+          Type="Household"
+          State="Entered"
+          TaxHolidayInEffect="false"
+          ReferrerCode=""
+          Key="N2J1OM4S"
+          Created="2026-05-13T19:32:22">
+        <ns2:Customer
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="Person"
+          Key="dyland@adobe.com"
+          Action="U">
+          <BillTo IsValidated="true" Key="dyland@adobe.com-0">
+            <Address1>789 Queen St E</Address1>
+            <Address2></Address2>
+            <City>Toronto</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>M4M1H3</PostalCode>
+            <Country>CA</Country>
+          </BillTo>
+          <ShipTo IsValidated="true" Key="dyland@adobe.com-0">
+            <Address1>789 Queen St E</Address1>
+            <Address2></Address2>
+            <City>Toronto</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>M4M1H3</PostalCode>
+            <Country>CA</Country>
+          </ShipTo>
+          <Mobile>5555551234</Mobile>
+          <Email>dyland@adobe.com</Email>
+          <First>Dylan</First>
+          <Last>Davis</Last>
+        </ns2:Customer>
+        <ns2:OrderPayment PaymentTerms="Immediate">
+          <ns2:ApplePay
+              TransactionId="6A050A09034A95F000000FFB00003F9E41565325"
+              Amount="1129.94"
+              Approval="2026-05-13-07:32"
+              AuthCode="tst310"
+              CardBrand=""
+              CardLast4Digits=""
+              MITMsgType="CGEN"
+              StoredCredentials="N">
+              <NameOnCard>Dylan Davis</NameOnCard>
+            </ns2:ApplePay>
+        </ns2:OrderPayment>
+        <ns2:Tax Amount="129.99" Provisional="true" />
+        <ns2:Message></ns2:Message>
+        
+        
+        <ns2:Charge Type="Shipping" Value="0.00" />
+        <ns2:LineItem
+            Sku="062048-04"
+            Quantity="1"
+            UnitSellingPrice="999.95"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="0.00" Provisional="true" />
+          </ns2:LineItem>
+      </ns2:Order>
+    </ns2:CreateRequest>
+  </soapenv:Body>
+</soapenv:Envelope>
