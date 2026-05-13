@@ -126,8 +126,12 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal) {
   const responseText = await res.text();
 
   if (!parseEbsSuccess(responseText)) {
-    throw new Error(`EBS rejected order: ${extractEbsErrorMessage(responseText)}`);
+    const err = new Error(`EBS rejected order: ${extractEbsErrorMessage(responseText)}`);
+    err.ebsStatus = res.status;
+    throw err;
   }
+
+  return { status: res.status };
 }
 
 /** Returns true when the EBS response indicates success. */
