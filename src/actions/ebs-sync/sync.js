@@ -20,7 +20,7 @@
 
 import { Core } from '@adobe/aio-sdk';
 import { loadState, saveState, acquireLock, releaseLock } from './state.js';
-import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom } from './commerce.js';
+import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
 import { syncOrderToEbs, isRetriableError } from './ebs.js';
 
 const MAX_RETRIES = 3;
@@ -158,7 +158,11 @@ export async function run(params) {
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          await syncOrderToEbs(ctx, params, order, orderJournal);
+          const { status } = await syncOrderToEbs(ctx, params, order, orderJournal);
+
+          await logOrderSync(params, { action: 'order-sync', status }).catch((logErr) => {
+            log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}: ${logErr.message}`);
+          });
 
           const syncedAt = new Date().toISOString();
           await updateOrderCustom(params, orderId, { syncedToEbs: syncedAt });
@@ -176,6 +180,17 @@ export async function run(params) {
           break;
         } catch (err) {
           lastErr = err;
+
+          const errStatus = err?.ebsStatus ?? err?.response?.error?.statusCode ?? 0;
+          const syncLog = { action: 'order-sync', status: errStatus, error: err.message };
+          if (errStatus >= 400) {
+            const body = err?.response?.error?.body;
+            if (body) syncLog.response = typeof body === 'string' ? body : JSON.stringify(body);
+          }
+          await logOrderSync(params, syncLog).catch((logErr) => {
+            log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}: ${logErr.message}`);
+          });
+
           if (!isRetriableError(err)) {
             log.warn(
               `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error: ${err.message}`,

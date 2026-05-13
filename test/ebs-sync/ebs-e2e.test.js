@@ -180,7 +180,7 @@ describe('ebs-sync e2e', () => {
     globalThis.fetch = async (_url, opts) => {
       const wrapped = JSON.parse(opts.body);
       capturedXml = wrapped.body;
-      return { ok: true, text: async () => '<Response Succeeded="true" />' };
+      return { ok: true, status: 200, text: async () => '<Response Succeeded="true" />' };
     };
   });
 

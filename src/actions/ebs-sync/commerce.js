@@ -144,6 +144,29 @@ export async function updateOrderCustom(params, orderId, custom) {
 }
 
 /**
+ * Log an order-sync operation to the commerce API operations log.
+ *
+ * Fire-and-forget from the caller's perspective — errors are caught and
+ * logged so that a logging failure never blocks the sync itself.
+ *
+ * @param {object} params
+ * @param {{ action: string, status: number, error?: string, response?: string }} payload
+ */
+export async function logOrderSync(params, payload) {
+  const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
+  const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/operations-log`;
+
+  await fetch(url, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  });
+}
+
+/**
  * Fetch all journal entries for a specific order within a time window.
  *
  * Called for orders confirmed to be in a terminal state (payment_completed)
