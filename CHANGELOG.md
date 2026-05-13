@@ -1,3 +1,11 @@
+## [1.1.11](https://github.com/aemsites/vitamix-forms/compare/v1.1.10...v1.1.11) (2026-05-13)
+
+
+### Bug Fixes
+
+* ops-log on order sync ([995a61d](https://github.com/aemsites/vitamix-forms/commit/995a61dc9ffd6c7a21db6b63f94bbc74e648bf46))
+* order-sync log tweaks ([93fc462](https://github.com/aemsites/vitamix-forms/commit/93fc46210d9a250ad0babe99d5aeeb79bff7afc4))
+
 ## [1.1.10](https://github.com/aemsites/vitamix-forms/compare/v1.1.9...v1.1.10) (2026-05-12)
 
 
