@@ -160,7 +160,7 @@ export async function run(params) {
         try {
           const { status } = await syncOrderToEbs(ctx, params, order, orderJournal);
 
-          await logOrderSync(params, { action: 'order-sync', status }).catch((logErr) => {
+          await logOrderSync(params, { action: 'order-sync', id: orderId, status }).catch((logErr) => {
             log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}: ${logErr.message}`);
           });
 
@@ -182,7 +182,7 @@ export async function run(params) {
           lastErr = err;
 
           const errStatus = err?.ebsStatus ?? err?.response?.error?.statusCode ?? 0;
-          const syncLog = { action: 'order-sync', status: errStatus, error: err.message };
+          const syncLog = { action: 'order-sync', id: orderId, status: errStatus, error: err.message };
           if (errStatus >= 400) {
             const body = err?.response?.error?.body;
             if (body) syncLog.response = typeof body === 'string' ? body : JSON.stringify(body);

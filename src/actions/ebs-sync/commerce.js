@@ -153,15 +153,12 @@ export async function updateOrderCustom(params, orderId, custom) {
  * @param {{ action: string, status: number, error?: string, response?: string }} payload
  */
 export async function logOrderSync(params, payload) {
-  const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
+  const { EDGE_COMMERCE_API_BASE, ORG, SITE } = params;
   const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/operations-log`;
 
   await fetch(url, {
     method: 'POST',
-    headers: {
-      Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
 }
