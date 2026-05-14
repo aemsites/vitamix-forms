@@ -86,16 +86,17 @@ async function handleTriggerRequest(params) {
   const authErr = requireAuth(params);
   if (authErr) return authErr;
 
-  let body;
-  try {
-    const raw = params.__ow_body ?? '';
-    const decoded = typeof raw === 'string' ? Buffer.from(raw, 'base64').toString('utf-8') : '';
-    body = decoded ? JSON.parse(decoded) : {};
-  } catch {
-    return jsonResponse(400, { error: 'Invalid JSON in request body' });
+  // The Runtime may deliver the body in two ways depending on Content-Type:
+  //   application/json → parsed and merged into params directly
+  //   other / raw      → base64-encoded in __ow_body
+  let since = params.since;
+  if (!since && params.__ow_body) {
+    try {
+      const raw = params.__ow_body;
+      const decoded = Buffer.from(raw, 'base64').toString('utf-8');
+      since = JSON.parse(decoded).since;
+    } catch { /* fall through to validation */ }
   }
-
-  const { since } = body;
   if (!since || isNaN(Date.parse(since))) {
     return jsonResponse(400, { error: 'Missing or invalid "since" ISO 8601 timestamp in request body' });
   }
