@@ -13,10 +13,11 @@
  *
  *   HTTP POST (web action) — manual trigger
  *     Requires:  Authorization: Bearer {SYNC_STATUS_TOKEN}
- *     Body:      { "since": "<ISO 8601 timestamp>" }
- *     Runs the sync using the provided timestamp as the cursor start,
- *     allowing re-processing of orders from a specific point in time.
- *     The persisted cursor advances normally after a successful run.
+ *     Body:      { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes> }
+ *     Runs the sync using the provided timestamp as the cursor start.
+ *     Optionally cap the window with `until` (timestamp) or `duration` (minutes
+ *     from since). Only one of until/duration may be provided; omit both to
+ *     scan up to the current time. Cursor advances normally after a successful run.
  */
 
 import { run } from './sync.js';
@@ -77,10 +78,12 @@ async function handleStatusRequest(params) {
 
 /**
  * POST — manually trigger a sync run.
- * Body: { "since": "<ISO 8601 timestamp>" }
+ * Body: { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes> }
  *
- * The `since` field overrides the persisted cursor for this run only,
- * allowing a superuser to re-process orders from a specific point in time.
+ * `since` is required — overrides the persisted cursor for this run only.
+ * `until`  — optional upper bound timestamp (defaults to now).
+ * `duration` — optional window in minutes from `since` (e.g. 30 → since + 30 min).
+ * Only one of `until` / `duration` may be provided.
  */
 async function handleTriggerRequest(params) {
   const authErr = requireAuth(params);
@@ -89,19 +92,46 @@ async function handleTriggerRequest(params) {
   // The Runtime may deliver the body in two ways depending on Content-Type:
   //   application/json → parsed and merged into params directly
   //   other / raw      → base64-encoded in __ow_body
-  let since = params.since;
-  if (!since && params.__ow_body) {
-    try {
-      const raw = params.__ow_body;
-      const decoded = Buffer.from(raw, 'base64').toString('utf-8');
-      since = JSON.parse(decoded).since;
-    } catch { /* fall through to validation */ }
-  }
+  const body = parseBody(params);
+
+  const { since } = body;
   if (!since || isNaN(Date.parse(since))) {
     return jsonResponse(400, { error: 'Missing or invalid "since" ISO 8601 timestamp in request body' });
   }
 
-  return run({ ...params, sinceOverride: since });
+  const hasUntil = body.until !== undefined && body.until !== null;
+  const hasDuration = body.duration !== undefined && body.duration !== null;
+
+  if (hasUntil && hasDuration) {
+    return jsonResponse(400, { error: 'Provide "until" or "duration", not both' });
+  }
+
+  let untilOverride;
+  if (hasUntil) {
+    if (isNaN(Date.parse(body.until))) {
+      return jsonResponse(400, { error: 'Invalid "until" ISO 8601 timestamp' });
+    }
+    untilOverride = body.until;
+  } else if (hasDuration) {
+    const minutes = Number(body.duration);
+    if (!Number.isFinite(minutes) || minutes <= 0) {
+      return jsonResponse(400, { error: '"duration" must be a positive number of minutes' });
+    }
+    untilOverride = new Date(new Date(since).getTime() + minutes * 60_000).toISOString();
+  }
+
+  return run({ ...params, sinceOverride: since, untilOverride });
+}
+
+/** Extract body fields from params (auto-parsed JSON) or __ow_body (base64). */
+function parseBody(params) {
+  if (params.since) return params;
+  if (!params.__ow_body) return {};
+  try {
+    return JSON.parse(Buffer.from(params.__ow_body, 'base64').toString('utf-8'));
+  } catch {
+    return {};
+  }
 }
 
 function jsonResponse(statusCode, body) {
