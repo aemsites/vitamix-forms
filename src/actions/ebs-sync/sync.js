@@ -95,7 +95,7 @@ export async function run(params) {
     }
 
     log.info(
-      `[ebs-sync] ${terminalEntries.length} terminal entries, ${orderIds.length} unique order IDs to evaluate`,
+      `[ebs-sync] ${terminalEntries.length} terminal entries, ${orderIds.length} unique order IDs to evaluate${orderIds.length > 0 ? `: ${orderIds.join(', ')}` : ''}`,
     );
 
     let halted = false;

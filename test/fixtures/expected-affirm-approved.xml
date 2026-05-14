@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ord="http://xmlns.vitamix.com/Erp/Orders"
+    xmlns:ent="http://xmlns.vitamix.com/Enterprise"
+    xmlns:pay="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+    xmlns:ship="http://xmlns.vitamix.com/Erp/Shipments">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ns2:CreateRequest
+        xmlns="http://xmlns.vitamix.com/Enterprise"
+        xmlns:ns2="http://xmlns.vitamix.com/Erp/Orders"
+        xmlns:ns3="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+        xmlns:ns4="http://xmlns.vitamix.com/Erp/Shipments"
+        xmlns:ns5="http://xmlns.oracle.com/pcbpel/adapter/db/sp/DbCallXXOTC_CREATE_SALES_ORDER_PKG"
+        Id="2026-05-14T00-36-15.515Z-EZY1S855">
+      <ns2:Order
+          Shipping="Standard"
+          PriceList="CAN HH END CUSTOMER"
+          Source="CA"
+          Type="Household"
+          State="Entered"
+          TaxHolidayInEffect="false"
+          ReferrerCode=""
+          Key="EZY1S855"
+          Created="2026-05-13T20:36:15">
+        <ns2:Customer
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="Person"
+          Key="dylandepass@gmail.com"
+          Action="U">
+          <BillTo IsValidated="true" Key="dylandepass@gmail.com-0">
+            <Address1>100 Test Ave</Address1>
+            <Address2></Address2>
+            <City>Toronto</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>M5V1A1</PostalCode>
+            <Country>CA</Country>
+          </BillTo>
+          <ShipTo IsValidated="true" Key="dylandepass@gmail.com-0">
+            <Address1>100 Test Ave</Address1>
+            <Address2></Address2>
+            <City>Toronto</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>M5V1A1</PostalCode>
+            <Country>CA</Country>
+          </ShipTo>
+          <Mobile>5555550000</Mobile>
+          <Email>dylandepass@gmail.com</Email>
+          <First>Dylan</First>
+          <Last>Depass</Last>
+        </ns2:Customer>
+        <ns2:OrderPayment PaymentTerms="Immediate">
+          <ns2:Affirm
+              TransactionId="MTUW-BDJZ"
+              Amount="824.84"
+              TransactionDate="2026-05-13-08:36"
+              TransactionStatus="authorized" />
+        </ns2:OrderPayment>
+        <ns2:Tax Amount="94.89" Provisional="true" />
+        <ns2:Message></ns2:Message>
+        
+        
+        <ns2:Charge Type="Shipping" Value="0.00" />
+        <ns2:LineItem
+            Sku="068051-04"
+            Quantity="1"
+            UnitSellingPrice="729.95"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="0.00" Provisional="true" />
+          </ns2:LineItem>
+      </ns2:Order>
+    </ns2:CreateRequest>
+  </soapenv:Body>
+</soapenv:Envelope>

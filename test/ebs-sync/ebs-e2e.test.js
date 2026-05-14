@@ -197,6 +197,47 @@ const AP_APPROVED_ORDER = {
   },
 };
 
+/** Order matching journal-affirm-approved.ndjson (Affirm BNPL, no Forter). */
+const AFFIRM_APPROVED_ORDER = {
+  id: '2026-05-14T00-36-15.515Z-EZY1S855',
+  friendlyId: 'EZY1S855',
+  createdAt: '2026-05-14T00:36:15.515Z',
+  state: 'payment_completed',
+  country: 'ca',
+  customer: {
+    firstName: 'Dylan',
+    lastName: 'Depass',
+    email: 'dylandepass@gmail.com',
+    phone: '5555550000',
+  },
+  shipping: {
+    name: 'Dylan Depass',
+    address1: '100 Test Ave',
+    city: 'Toronto',
+    state: 'ON',
+    zip: 'M5V1A1',
+    country: 'ca',
+    phone: '5555550000',
+    email: 'dylandepass@gmail.com',
+  },
+  items: [
+    {
+      sku: '068051-04',
+      quantity: 1,
+      price: { final: '729.95', currency: 'CAD' },
+    },
+  ],
+  estimates: {
+    shippingMethod: {
+      id: 300,
+      label: 'Free Shipping',
+      type: 'standard',
+      rate: 0,
+    },
+    tax: { country: 'CA', state: 'ON', rate: 13, id: 'CA-ON-*-Rate1' },
+  },
+};
+
 const MOCK_PARAMS = {
   EBS_BASE_URL: 'https://ebs.test.example.com',
   EBS_API_KEY: 'test-api-key',
@@ -348,6 +389,31 @@ describe('ebs-sync e2e', () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, AP_APPROVED_ORDER, journal);
       expect(capturedXml).toBeTruthy();
       assertXmlFixture('expected-ap-approved.xml', capturedXml);
+    });
+  });
+
+  // ── Affirm BNPL — no Forter ───────────────────────────────────────────
+
+  describe('Affirm approved (journal-affirm-approved)', () => {
+    const journal = loadJournal('journal-affirm-approved.ndjson');
+
+    test('buildPaymentSnapshot extracts Affirm payment fields', () => {
+      const snap = buildPaymentSnapshot(AFFIRM_APPROVED_ORDER, journal);
+      expect(snap).not.toBeNull();
+      expect(snap.method).toBe('affirm');
+      expect(snap.provider).toBe('affirm');
+      expect(snap.amount).toBe('824.84');
+      expect(snap.taxAmount).toBe('94.89');
+      expect(snap.shippingCost).toBe('0.00');
+      expect(snap.subtotal).toBe('729.95');
+      expect(snap.transactionId).toBe('MTUW-BDJZ');
+      expect(snap.transactionDate).toBe('2026-05-14T00:36:47.223Z');
+    });
+
+    test('syncOrderToEbs produces expected SOAP XML', async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, AFFIRM_APPROVED_ORDER, journal);
+      expect(capturedXml).toBeTruthy();
+      assertXmlFixture('expected-affirm-approved.xml', capturedXml);
     });
   });
 });
