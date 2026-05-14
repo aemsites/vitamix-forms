@@ -86,9 +86,14 @@ async function handleTriggerRequest(params) {
   const authErr = requireAuth(params);
   if (authErr) return authErr;
 
-  const body = typeof params.__ow_body === 'string'
-    ? JSON.parse(params.__ow_body)
-    : params.__ow_body || {};
+  let body;
+  try {
+    const raw = params.__ow_body ?? '';
+    const decoded = typeof raw === 'string' ? Buffer.from(raw, 'base64').toString('utf-8') : '';
+    body = decoded ? JSON.parse(decoded) : {};
+  } catch {
+    return jsonResponse(400, { error: 'Invalid JSON in request body' });
+  }
 
   const { since } = body;
   if (!since || isNaN(Date.parse(since))) {
