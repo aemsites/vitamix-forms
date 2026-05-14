@@ -1,3 +1,10 @@
+## [1.1.17](https://github.com/aemsites/vitamix-forms/compare/v1.1.16...v1.1.17) (2026-05-14)
+
+
+### Bug Fixes
+
+* add ability to trigger sync until ([9d2b5ff](https://github.com/aemsites/vitamix-forms/commit/9d2b5fff034be2aa6120355f874ac057f4d6446f))
+
 ## [1.1.16](https://github.com/aemsites/vitamix-forms/compare/v1.1.15...v1.1.16) (2026-05-14)
 
 
