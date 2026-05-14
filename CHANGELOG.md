@@ -1,3 +1,10 @@
+## [1.1.12](https://github.com/aemsites/vitamix-forms/compare/v1.1.11...v1.1.12) (2026-05-14)
+
+
+### Bug Fixes
+
+* handle new payment method ([cef0ab3](https://github.com/aemsites/vitamix-forms/commit/cef0ab3a4001b57b6dc719175581868edc1ea58a))
+
 ## [1.1.11](https://github.com/aemsites/vitamix-forms/compare/v1.1.10...v1.1.11) (2026-05-13)
 
 
