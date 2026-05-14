@@ -24,9 +24,10 @@ const JOURNAL_CHUNK_HOURS = 11;
  * @param {object} params - Action params containing COMMERCE_* env vars
  * @param {string | null} since - ISO 8601 timestamp, or null to default to 1h ago
  * @param {object} log - Logger instance (ctx.log)
+ * @param {string} [until] - ISO 8601 upper bound, defaults to now
  * @returns {Promise<{ entries: object[], until: string }>}
  */
-export async function getJournalEntries(params, since, log) {
+export async function getJournalEntries(params, since, log, until) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const baseUrl = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/journal`;
 
@@ -39,7 +40,7 @@ export async function getJournalEntries(params, since, log) {
   const sinceDate = since
     ? new Date(new Date(since).getTime() - OVERLAP_MS)
     : new Date(Date.now() - 60 * 60 * 1000); // default: 1 hour ago
-  const untilDate = new Date();
+  const untilDate = until ? new Date(until) : new Date();
   log.info(`[ebs-sync] Querying journal: ${baseUrl} since=${sinceDate.toISOString()} until=${untilDate.toISOString()}`);
 
   const rangeMs = untilDate.getTime() - sinceDate.getTime();

@@ -73,7 +73,7 @@ export async function run(params) {
 
   try {
     // ── 1. Fetch journal entries and find the batch boundary ────────────
-    const { entries, until: batchUntil } = await getJournalEntries(params, state.since, log);
+    const { entries, until: batchUntil } = await getJournalEntries(params, state.since, log, params.untilOverride);
     log.info(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'} until ${batchUntil}`);
 
     // ── 2. Filter to terminal events, collect unique orderIds ──────────
