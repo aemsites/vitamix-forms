@@ -30,8 +30,14 @@ export async function getJournalEntries(params, since, log) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const baseUrl = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/journal`;
 
+  // Look back 15 minutes before the cursor to catch late-arriving journal
+  // entries. The journal writer runs on its own ~10-minute cron, so entries
+  // can appear in the global index after the sync cursor has already advanced
+  // past their event timestamp. Already-synced orders are skipped cheaply via
+  // the custom.syncedToEbs check, so the overlap is harmless.
+  const OVERLAP_MS = 15 * 60 * 1000;
   const sinceDate = since
-    ? new Date(since)
+    ? new Date(new Date(since).getTime() - OVERLAP_MS)
     : new Date(Date.now() - 60 * 60 * 1000); // default: 1 hour ago
   const untilDate = new Date();
   log.info(`[ebs-sync] Querying journal: ${baseUrl} since=${sinceDate.toISOString()} until=${untilDate.toISOString()}`);
@@ -86,6 +92,10 @@ async function fetchJournalChunk(baseUrl, token, since, until, log) {
   const data = await res.json();
   const entries = data.entries ?? [];
   log.info(`[ebs-sync] Journal chunk returned ${entries.length} entries (${since.toISOString()} – ${until.toISOString()})`);
+  if (entries.length > 0) {
+    const summary = entries.map((e) => `${e.event}:${e.orderId?.slice(-8) ?? '?'}`).join(', ');
+    log.info(`[ebs-sync] Chunk entries: [${summary}]`);
+  }
   return entries;
 }
 
