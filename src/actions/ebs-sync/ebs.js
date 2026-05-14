@@ -251,7 +251,7 @@ export function buildPaymentSnapshot(order, orderJournal) {
     };
   }
 
-  if (provider === 'paypal') {
+  if (provider === 'paypal' || provider === 'paypal-express') {
     return {
       ...base,
       transactionId: completed.transactionId || '',
@@ -733,7 +733,8 @@ function resolveEbsMethod(provider) {
   switch (provider) {
     case 'chase': return 'chasehpp';
     case 'chase-wallet': return 'applepay';
-    case 'paypal': return 'paypal';
+    case 'paypal':
+    case 'paypal-express': return 'paypal';
     case 'affirm': return 'affirm';
     default: return '';
   }
