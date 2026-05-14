@@ -1,3 +1,11 @@
+## [1.1.19](https://github.com/aemsites/vitamix-forms/compare/v1.1.18...v1.1.19) (2026-05-14)
+
+
+### Bug Fixes
+
+* 06- for cj code prefix ([8433c90](https://github.com/aemsites/vitamix-forms/commit/8433c904874617d572fd7234503d878d23354a3f))
+* handle paypal-express ([a0d7c78](https://github.com/aemsites/vitamix-forms/commit/a0d7c782d1254d5470f637a364150977b6201748))
+
 ## [1.1.18](https://github.com/aemsites/vitamix-forms/compare/v1.1.17...v1.1.18) (2026-05-14)
 
 
