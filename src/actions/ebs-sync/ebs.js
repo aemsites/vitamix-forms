@@ -251,7 +251,7 @@ export function buildPaymentSnapshot(order, orderJournal) {
     };
   }
 
-  if (provider === 'paypal') {
+  if (provider === 'paypal' || provider === 'paypal-express') {
     return {
       ...base,
       transactionId: completed.transactionId || '',
@@ -636,9 +636,8 @@ function buildLineItemsXml(order) {
 
 /**
  * Coupon codes with this prefix are Commission Junction affiliate coupons.
- * Bulk CJ coupons are generated as `CJ-{suffix}` via the commerce API coupon generator.
  */
-const CJ_COUPON_PREFIX = 'CJ-';
+const CJ_COUPON_PREFIX = '06-';
 
 /**
  * Extract the applied coupon code from order.estimates.discounts.
@@ -733,7 +732,8 @@ function resolveEbsMethod(provider) {
   switch (provider) {
     case 'chase': return 'chasehpp';
     case 'chase-wallet': return 'applepay';
-    case 'paypal': return 'paypal';
+    case 'paypal':
+    case 'paypal-express': return 'paypal';
     case 'affirm': return 'affirm';
     default: return '';
   }
