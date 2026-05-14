@@ -636,9 +636,8 @@ function buildLineItemsXml(order) {
 
 /**
  * Coupon codes with this prefix are Commission Junction affiliate coupons.
- * Bulk CJ coupons are generated as `CJ-{suffix}` via the commerce API coupon generator.
  */
-const CJ_COUPON_PREFIX = 'CJ-';
+const CJ_COUPON_PREFIX = '06-';
 
 /**
  * Extract the applied coupon code from order.estimates.discounts.
