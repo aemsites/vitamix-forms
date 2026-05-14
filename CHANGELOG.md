@@ -1,3 +1,10 @@
+## [1.1.13](https://github.com/aemsites/vitamix-forms/compare/v1.1.12...v1.1.13) (2026-05-14)
+
+
+### Bug Fixes
+
+* read 15min in past from journals ([dd6ab6d](https://github.com/aemsites/vitamix-forms/commit/dd6ab6dc5368608b7947c16dba9ac0dd78816b3a))
+
 ## [1.1.12](https://github.com/aemsites/vitamix-forms/compare/v1.1.11...v1.1.12) (2026-05-14)
 
 
