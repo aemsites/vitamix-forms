@@ -1,3 +1,10 @@
+## [1.1.18](https://github.com/aemsites/vitamix-forms/compare/v1.1.17...v1.1.18) (2026-05-14)
+
+
+### Bug Fixes
+
+* add cj prefix handling, coupon ([1d18ff2](https://github.com/aemsites/vitamix-forms/commit/1d18ff2b934a95b0ad43342870bb88eab5792634))
+
 ## [1.1.17](https://github.com/aemsites/vitamix-forms/compare/v1.1.16...v1.1.17) (2026-05-14)
 
 
