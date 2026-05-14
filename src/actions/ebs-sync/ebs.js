@@ -35,11 +35,7 @@
  *   taxHolidayInEffect           Order/@TaxHolidayInEffect  hardcoded 'false'
  *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded ''
  *   giftMessage                  ns2:Message                always empty
- *   affiliateCoupon              ns2:SalesPersonId          always empty
- *   salesPersonId override       ns2:SalesPersonId          always empty
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
- *   couponCode                   ns2:PromotionCode          never emitted
- *   promotionDescription         ns2:PromotionCode prefix   never emitted
  *   shippingDiscount (PayPal)    PaymentDetails/ShippingDiscount  hardcoded '0.00'
  *   item.taxAmount               LineItem/Tax/@Amount       hardcoded '0.00'
  *   item.unitOfMeasure           LineItem/@UnitOfMeasure    defaulted 'Each'
@@ -346,10 +342,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
   // MISSING: giftMessage (not in order or journal) — always empty
   const giftMessage = '<ns2:Message></ns2:Message>';
 
-  // MISSING: salesPersonId and affiliateCoupon (not in order or journal) — always ''.
-  // Required by EBS when affiliate coupons are used or payment is Affirm.
-  // Both fields must be added to the commerce API.
-  const salesPersonId = '';
+  const salesPersonId = resolveSalesPersonId(order);
 
   return `<?xml version="1.0" encoding="UTF-8" ?>
 <soapenv:Envelope
@@ -381,8 +374,8 @@ function buildCreateOrderXml(order, paymentSnapshot) {
         ${buildPaymentXml(paymentSnapshot, order)}
         <ns2:Tax Amount="${taxAmount}" Provisional="true" />
         ${giftMessage}
-        ${salesPersonId}
-        ${buildPromotionsXml()}
+        ${salesPersonId ? `<ns2:SalesPersonId>${escapeXml(salesPersonId)}</ns2:SalesPersonId>` : ''}
+        ${buildPromotionsXml(order)}
         <ns2:Charge Type="Shipping" Value="${shippingAmount}" />
         ${buildLineItemsXml(order)}
       </ns2:Order>
@@ -642,12 +635,40 @@ function buildLineItemsXml(order) {
 }
 
 /**
- * Promotions block — omitted pending API additions.
- * MISSING: couponCode and promotionDescription are not in the order or journal schema.
- * Add both fields to the Order type in the commerce API to enable this block.
+ * Coupon codes with this prefix are Commission Junction affiliate coupons.
+ * Bulk CJ coupons are generated as `CJ-{suffix}` via the commerce API coupon generator.
  */
-function buildPromotionsXml() {
-  return '';
+const CJ_COUPON_PREFIX = 'CJ-';
+
+/**
+ * Extract the applied coupon code from order.estimates.discounts.
+ * The commerce API stores coupon discounts with id="coupon:{code}".
+ */
+function getAppliedCouponCode(order) {
+  const entry = (order.estimates?.discounts ?? []).find((d) => d.id?.startsWith('coupon:'));
+  return entry ? entry.id.slice('coupon:'.length) : '';
+}
+
+/**
+ * If the applied coupon is a CJ affiliate coupon, return it as the SalesPersonId.
+ * Returns empty string otherwise.
+ */
+function resolveSalesPersonId(order) {
+  const code = getAppliedCouponCode(order);
+  return code.startsWith(CJ_COUPON_PREFIX) ? code : '';
+}
+
+/**
+ * Emit a PromotionCode element for each coupon discount on the order.
+ */
+function buildPromotionsXml(order) {
+  return (order.estimates?.discounts ?? [])
+    .filter((d) => d.id?.startsWith('coupon:'))
+    .map((d) => {
+      const code = escapeXml(d.id.slice('coupon:'.length));
+      return `<ns2:PromotionCode>${code}</ns2:PromotionCode>`;
+    })
+    .join('\n        ');
 }
 
 // ---------------------------------------------------------------------------
