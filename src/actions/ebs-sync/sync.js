@@ -50,6 +50,13 @@ export async function run(params) {
   }
 
   const state = await loadState();
+
+  // Allow the caller to override the cursor start (e.g. manual trigger via API).
+  if (params.sinceOverride) {
+    log.info(`[ebs-sync] Cursor overridden: ${state.since ?? 'null'} → ${params.sinceOverride}`);
+    state.since = params.sinceOverride;
+  }
+
   log.info(`[ebs-sync] State loaded — since=${state.since ?? 'null (will default to 1h ago)'}, status=${state.status}, processedCount=${state.processedCount ?? 0}, failedCount=${state.failedCount ?? 0}`);
 
   /** Accumulated summary returned as the action response body. */
