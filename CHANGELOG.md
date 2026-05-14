@@ -1,3 +1,10 @@
+## [1.1.15](https://github.com/aemsites/vitamix-forms/compare/v1.1.14...v1.1.15) (2026-05-14)
+
+
+### Bug Fixes
+
+* sync trigger api tweak ([00ba06c](https://github.com/aemsites/vitamix-forms/commit/00ba06c4a29ab0ce15767880958d23f63a33d008))
+
 ## [1.1.14](https://github.com/aemsites/vitamix-forms/compare/v1.1.13...v1.1.14) (2026-05-14)
 
 
