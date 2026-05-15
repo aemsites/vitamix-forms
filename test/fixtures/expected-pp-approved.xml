@@ -56,7 +56,7 @@
           <ns2:PayPalExpressCheckout
                 PayPalEmailAddress="sb-bruwa26923093@personal.example.com"
                 Approval="2026-05-04-04:11"
-                PaymentStatus=""
+                PaymentStatus="CREATED"
                 PendingReason=""
                 ProtectionEligibility="ELIGIBLE"
                 AuthCode="9AR333349R915513J"
@@ -69,7 +69,7 @@
           <ns3:PayerInfo>
             <ns3:Payer>sb-bruwa26923093@personal.example.com</ns3:Payer>
             <ns3:PayerID>RV6HF5GVYA4D8</ns3:PayerID>
-            <ns3:PayerStatus></ns3:PayerStatus>
+            <ns3:PayerStatus>VERIFIED</ns3:PayerStatus>
             <ns3:PayerName>
               <ns3:FirstName>Test</ns3:FirstName>
               <ns3:LastName>Shopper</ns3:LastName>
