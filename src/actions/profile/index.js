@@ -111,14 +111,15 @@ export async function main(params) {
       return errorResponse(401, 'invalid auth token');
     }
 
-    const customerResp = await fetchCustomer(ctx, email, token);
+    const isProd = ctx.info.headers?.referer?.includes(PROD_ORIGIN) || false;
+
+    const customerResp = await fetchCustomer(ctx, email, token, isProd);
     if (!customerResp.ok) {
       const errBody = await customerResp.text().catch(() => '');
       return errorResponse(customerResp.status, 'customer lookup failed', errBody);
     }
     const customer = await customerResp.json();
 
-    const isProd = ctx.info.headers?.referer?.includes(PROD_ORIGIN) || false;
     let profile = null;
     try {
       const statusResp = await fetchProfileStatus(ctx, email, isProd);
