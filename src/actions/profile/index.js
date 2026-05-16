@@ -117,10 +117,10 @@ export async function main(params) {
     const customer = await customerResp.json();
 
     const isProd = ctx.info.headers?.referer?.includes(PROD_ORIGIN) || false;
-    let newsletter = null;
+    let profile = null;
     try {
       const statusResp = await fetchProfileStatus(ctx, email, isProd);
-      newsletter = await statusResp.json().catch(() => null);
+      profile = await statusResp.json().catch(() => null);
     } catch (err) {
       log.warn(`profile status fetch failed for ${email}: ${err.message}`);
     }
@@ -128,7 +128,7 @@ export async function main(params) {
     return {
       statusCode: 200,
       headers: { 'content-type': 'application/json' },
-      body: { customer, newsletter },
+      body: { customer, profile },
     };
   } catch (error) {
     if (error.response) return error.response;
