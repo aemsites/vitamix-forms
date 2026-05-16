@@ -1,3 +1,10 @@
+## [1.2.2](https://github.com/aemsites/vitamix-forms/compare/v1.2.1...v1.2.2) (2026-05-16)
+
+
+### Bug Fixes
+
+* unnest customer ([804c454](https://github.com/aemsites/vitamix-forms/commit/804c4545d37473598487e27bcc3b114a1ceddeae))
+
 ## [1.2.1](https://github.com/aemsites/vitamix-forms/compare/v1.2.0...v1.2.1) (2026-05-16)
 
 
