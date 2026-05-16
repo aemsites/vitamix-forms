@@ -46,6 +46,16 @@ const CC_APPROVED_ORDER = {
     email: 'approve@forter.com',
     phone: '4165551234',
   },
+  billing: {
+    name: 'Test Buyer',
+    address1: '123 Main St',
+    city: 'Toronto',
+    state: 'ON',
+    zip: 'M5V2T6',
+    country: 'ca',
+    phone: '4165551234',
+    email: 'approve@forter.com',
+  },
   shipping: {
     name: 'Test Buyer',
     address1: '123 Main St',
@@ -128,6 +138,16 @@ const PP_APPROVED_ORDER = {
     email: 'fake@adobe.com',
     phone: '5555555555',
   },
+  billing: {
+    name: 'Test Shopper',
+    address1: '46 Fake St',
+    city: 'Aurora',
+    state: 'ON',
+    zip: 'L1K1K1',
+    country: 'ca',
+    phone: '5555555555',
+    email: 'fake@adobe.com',
+  },
   shipping: {
     name: 'Test Shopper',
     address1: '46 Fake St',
@@ -169,6 +189,16 @@ const AP_APPROVED_ORDER = {
     email: 'dyland@adobe.com',
     phone: '5555551234',
   },
+  billing: {
+    name: 'Dylan Davis',
+    address1: '789 Queen St E',
+    city: 'Toronto',
+    state: 'ON',
+    zip: 'M4M1H3',
+    country: 'ca',
+    phone: '5555551234',
+    email: 'dyland@adobe.com',
+  },
   shipping: {
     name: 'Dylan Davis',
     address1: '789 Queen St E',
@@ -209,6 +239,16 @@ const AFFIRM_APPROVED_ORDER = {
     lastName: 'Depass',
     email: 'dylandepass@gmail.com',
     phone: '5555550000',
+  },
+  billing: {
+    name: 'Dylan Depass',
+    address1: '100 Test Ave',
+    city: 'Toronto',
+    state: 'ON',
+    zip: 'M5V1A1',
+    country: 'ca',
+    phone: '5555550000',
+    email: 'dylandepass@gmail.com',
   },
   shipping: {
     name: 'Dylan Depass',
@@ -354,6 +394,8 @@ describe('ebs-sync e2e', () => {
       expect(snap.payerId).toBe('RV6HF5GVYA4D8');
       expect(snap.token).toBe('6B3711486D865245E');
       expect(snap.protectionEligibility).toBe('ELIGIBLE');
+      expect(snap.paymentStatus).toBe('CREATED');
+      expect(snap.payerStatus).toBe('VERIFIED');
     });
 
     test('syncOrderToEbs produces expected SOAP XML', async () => {
@@ -380,9 +422,10 @@ describe('ebs-sync e2e', () => {
       expect(snap.transactionId).toBe('6A050A09034A95F000000FFB00003F9E41565325');
       expect(snap.approvalCode).toBe('tst310');
       expect(snap.fraudDecision).toBe('not_reviewed');
-      // No card info in chase-wallet journal entries
+      // No card info or nameOnCard in chase-wallet journal entries yet
       expect(snap.cardBrand).toBe('');
       expect(snap.last4).toBe('');
+      expect(snap.nameOnCard).toBe('');
     });
 
     test('syncOrderToEbs produces expected SOAP XML', async () => {

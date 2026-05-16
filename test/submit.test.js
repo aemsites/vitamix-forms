@@ -661,7 +661,7 @@ describe('submit action', () => {
       const [, url, opts] = mockProxyFetch.mock.calls[0];
       const body = JSON.parse(opts.body);
       // non-prod referer → stage/ca/fr_ca/product-registration → stage newsletter endpoint
-      expect(url).toBe('https://newsletter.example.com/stage');
+      expect(url).toBe('https://newsletter.example.com/stage/VITNewsletterSignUp');
       // marketingOptIn: 'yes' mapped to EmailOptIn: true
       expect(body.EmailOptIn).toBe(true);
       expect(body.EmailAddress).toBe('ab@cd.ef');
@@ -738,7 +738,7 @@ describe('submit action', () => {
 
       const [, url, opts] = mockProxyFetch.mock.calls[0];
       const body = JSON.parse(opts.body);
-      expect(url).toBe('https://newsletter.example.com/prod');
+      expect(url).toBe('https://newsletter.example.com/prod/VITNewsletterSignUp');
       expect(opts.method).toBe('POST');
       expect(opts.headers['content-type']).toBe('application/json');
       expect(opts.headers['x-api-key']).toBe('prod-key');
@@ -766,7 +766,7 @@ describe('submit action', () => {
       await main({});
 
       const [, url, opts] = mockProxyFetch.mock.calls[0];
-      expect(url).toBe('https://newsletter.example.com/stage');
+      expect(url).toBe('https://newsletter.example.com/stage/VITNewsletterSignUp');
       expect(opts.headers['x-api-key']).toBe('stage-key');
     });
 
@@ -777,7 +777,7 @@ describe('submit action', () => {
       await main({});
 
       const [, url, opts] = mockProxyFetch.mock.calls[0];
-      expect(url).toBe('https://newsletter.example.com/prod');
+      expect(url).toBe('https://newsletter.example.com/prod/VITNewsletterSignUp');
       expect(opts.headers['x-api-key']).toBe('prod-key');
     });
 

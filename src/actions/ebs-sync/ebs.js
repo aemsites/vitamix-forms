@@ -30,30 +30,23 @@
  *   When estimates were locked in: taxAmount (number), shippingCost (number),
  *     subtotal (number) — these may be absent; falls back to order.estimates
  *
- * ── Fields MISSING from the commerce API schema (must be added) ──────────────
+ * ── Hardcoded / gap fields ────────────────────────────────────────────────────
  *   orderType                    Order/@Type                hardcoded 'Household'
  *   taxHolidayInEffect           Order/@TaxHolidayInEffect  hardcoded 'false'
- *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded ''
- *   giftMessage                  ns2:Message                always empty
+ *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded '' (gap — needs order schema)
+ *   giftMessage                  ns2:Message                always empty (gap — needs order schema)
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
- *   shippingDiscount (PayPal)    PaymentDetails/ShippingDiscount  hardcoded '0.00'
- *   item.taxAmount               LineItem/Tax/@Amount       hardcoded '0.00'
- *   item.unitOfMeasure           LineItem/@UnitOfMeasure    defaulted 'Each'
- *   item.serialNumber            ns2:SerialNumber           never emitted
- *   item.promotionCode           ns2:PromotionCode (item)   never emitted
+ *   item.taxAmount               LineItem/Tax/@Amount       hardcoded '0.00' (waiting on commerce-api)
+ *   item.serialNumber            ns2:SerialNumber           never emitted (no warranty support yet)
+ *   item.promotionCode           ns2:PromotionCode (item)   never emitted (gap — needs order schema)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
- *   Chase nameOnCard             NameOnCard                 derived from customer name
- *   PayPal paymentStatus         PayPalExpressCheckout/@PaymentStatus  hardcoded ''
- *   PayPal pendingReason         PayPalExpressCheckout/@PendingReason  hardcoded ''
- *   PayPal protectionEligibilityType  hardcoded ''
- *   PayPal payerStatus           PayerInfo/PayerStatus      hardcoded ''
+ *   PayPal protectionEligibilityType  hardcoded '' (not in PayPal Orders v2)
  *   PayPal isFinancing flag      PayPalCredit vs PayPalExpressCheckout  hardcoded false
  *   PayPal financing fields      FinancingFeeAmount etc.    hardcoded '0.00'
- *   PayPal billingAddressStatus  BillingAddress/AddressStatus  hardcoded ''
- *   PayPal shippingAddressStatus ShipToAddress/AddressStatus   hardcoded ''
- *   Affirm payment plan          PaymentTerms (3/5)         hardcoded 'Immediate'
+ *   PayPal billingAddressStatus  BillingAddress/AddressStatus  hardcoded '' (not in Orders v2)
+ *   PayPal shippingAddressStatus ShipToAddress/AddressStatus   hardcoded '' (not in Orders v2)
  */
 
 import { proxyFetch } from '../../proxy.js';
@@ -263,14 +256,12 @@ export function buildPaymentSnapshot(order, orderJournal) {
       approvalDate: completed.timestamp,
       // sellerProtection is the closest available field to protectionEligibility
       protectionEligibility: completed.sellerProtection || '',
-      // MISSING: paymentStatus (not in journal) — ''
-      paymentStatus: '',
-      // MISSING: pendingReason (not in journal) — ''
-      pendingReason: '',
+      // paymentStatus from PayPal Orders v2 capture response
+      paymentStatus: completed.paymentStatus || '',
+      pendingReason: completed.pendingReason || '',
       // MISSING: protectionEligibilityType (not in journal) — ''
       protectionEligibilityType: '',
-      // MISSING: payerStatus (not in journal) — ''
-      payerStatus: '',
+      payerStatus: completed.payerStatus || '',
       // MISSING: isFinancing flag (not in journal) — false (always PayPalExpressCheckout)
       isFinancing: false,
       // MISSING: PayPal Credit financing fields (not in journal)
@@ -292,10 +283,13 @@ export function buildPaymentSnapshot(order, orderJournal) {
       ...base,
       transactionId: completed.transactionId || '',
       approvalCode: completed.approvalCode || '',
+      // cardBrand and last4 not yet available in chase-wallet journal entries
       cardBrand: completed.cardType || '',
       last4: (completed.cardNumber || '').slice(-4),
+      nameOnCard: completed.nameOnCard || '',
       approvalDate: completed.timestamp,
       fraudDecision,
+      storedCredentials: 'N',
       mitMsgType: 'CGEN',
     };
   }
@@ -457,9 +451,8 @@ function buildPaymentXml(paymentSnapshot, order) {
   let transactionLogger = '';
 
   if (method === 'chasehpp') {
-    // MISSING: nameOnCard not logged — derived from customer name
     const nameOnCard = escapeXml(
-      `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
+      order.billing?.name || `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
     );
     // MISSING: storedCredentials (payment plan indicator not in journal) — 'N'
     // MISSING: mitMsgType (not in journal) — 'CGEN'
@@ -487,9 +480,8 @@ function buildPaymentXml(paymentSnapshot, order) {
               <NameOnCard>${nameOnCard}</NameOnCard>
             </ns2:CreditCard>`;
   } else if (method === 'applepay') {
-    // Apple Pay has no current provider in the commerce API — included for future parity.
     const nameOnCard = escapeXml(
-      `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
+      paymentSnapshot.nameOnCard || order.billing?.name || `${order.customer?.firstName || ''} ${order.customer?.lastName || ''}`.trim(),
     );
     inner = `<ns2:ApplePay
               TransactionId="${escapeXml(paymentSnapshot.transactionId || '')}"
@@ -542,8 +534,7 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
   const shippingPhone = sanitizePhone(shipping.phone || order.customer?.phone || '');
   const invoiceId = escapeXml(order.friendlyId || order.id || '');
 
-  // MISSING: shippingDiscount (not in order or journal) — hardcoded '0.00'
-  const shippingDiscount = '0.00';
+  const shippingDiscount = resolveShippingDiscount(order);
 
   // MISSING: isFinancing (not in journal) — always non-financing PaymentInfo
   const paymentInfo = `<ns3:PaymentInfo>
@@ -616,12 +607,9 @@ function buildLineItemsXml(order) {
       const sku = escapeXml(item.sku || '');
       const qty = item.quantity ?? 1;
       const price = item.price?.final || item.price?.regular || '0.00';
-      // MISSING: item-level tax (not in OrderItem schema) — hardcoded '0.00'
+      // Item-level tax: waiting on commerce-api to map estimates.tax.lines onto order items
       const itemTax = '0.00';
-      // MISSING: unitOfMeasure (not in OrderItem schema) — defaulted 'Each'
-      // Warranty items should use 'Years'; add unitOfMeasure to OrderItem to fix.
-      const unitOfMeasure = item.unitOfMeasure || 'Each';
-      // MISSING: item serialNumber and promotionCode (not in OrderItem schema) — omitted
+      const unitOfMeasure = resolveUnitOfMeasure(item);
 
       return `<ns2:LineItem
             Sku="${sku}"
@@ -720,6 +708,30 @@ function resolvePaymentTerms() {
 function resolveShippingMethod(order) {
   const type = order.estimates?.shippingMethod?.type || '';
   return /standard/i.test(type) ? 'Standard' : 'Expedited';
+}
+
+/**
+ * Resolve the PayPal ShippingDiscount from the order's discount entries.
+ * When a freeShipping discount is present, the discount equals the shipping rate
+ * that was waived. Returns '0.00' otherwise.
+ */
+function resolveShippingDiscount(order) {
+  const discounts = order.estimates?.discounts ?? [];
+  const freeShip = discounts.find((d) => d.freeShipping);
+  if (freeShip) {
+    return String(Number(order.estimates?.shippingMethod?.rate ?? 0).toFixed(2));
+  }
+  return '0.00';
+}
+
+/**
+ * Resolve the UnitOfMeasure for a line item.
+ * @param {object} _item - Order line item
+ * @returns {string}
+ */
+function resolveUnitOfMeasure(_item) {
+  // TODO: Return 'Years' for warranty/extended service plan items
+  return 'Each';
 }
 
 /**
