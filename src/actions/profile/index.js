@@ -56,11 +56,13 @@ function decodeJwtPayload(token) {
  * @param {Context} ctx
  * @param {string} email
  * @param {string} token
+ * @param {boolean} isProd
  * @returns {Promise<Response>}
  */
-async function fetchCustomer(ctx, email, token) {
-  const { EDGE_COMMERCE_API_BASE, ORG, SITE } = ctx.env;
-  const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/customers/${encodeURIComponent(email)}`;
+async function fetchCustomer(ctx, email, token, isProd) {
+  const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_BASE_STAGE, ORG, SITE } = ctx.env;
+  const baseUrl = isProd ? EDGE_COMMERCE_API_BASE : EDGE_COMMERCE_API_BASE_STAGE;
+  const url = `${baseUrl}/${ORG}/sites/${SITE}/customers/${encodeURIComponent(email)}`;
   return fetch(url, {
     headers: { Authorization: `Bearer ${token}` },
   });

@@ -34,6 +34,7 @@ application:
           
           # for profile api
           EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
+          EDGE_COMMERCE_API_BASE_STAGE: $EDGE_COMMERCE_API_BASE_STAGE
         actions:
           submit:
             function: dist/actions/submit/index.js
