@@ -121,6 +121,13 @@ export async function main(params) {
     try {
       const statusResp = await fetchProfileStatus(ctx, email, isProd);
       profile = await statusResp.json().catch(() => null);
+      // adapt to minimal/expected shape
+      profile = {
+        emailAddress: profile.EmailAddress,
+        emailOptInStatus: profile.EmailOptInStatus,
+        mobile: profile.Mobile,
+        smsOptInStatus: profile.SMSOptInStatus,
+      };
     } catch (err) {
       log.warn(`profile status fetch failed for ${email}: ${err.message}`);
     }
