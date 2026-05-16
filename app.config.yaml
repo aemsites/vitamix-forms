@@ -53,6 +53,13 @@ application:
             annotations:
               require-adobe-auth: false
               final: true
+          profile:
+            function: dist/actions/profile/index.js
+            runtime: nodejs:22
+            web: 'yes'
+            annotations:
+              require-adobe-auth: false
+              final: true
 
       ebs-sync:
         license: Apache-2.0

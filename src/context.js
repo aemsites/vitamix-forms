@@ -28,6 +28,10 @@ export default async function createContext(owParams) {
     SYNC_STATUS_TOKEN,
     EDGE_COMMERCE_API_ORDERS_TOKEN,
     EDGE_COMMERCE_API_BASE,
+    NEWSLETTER_BASE_URL,
+    NEWSLETTER_BASE_URL_STAGE,
+    NEWSLETTER_API_KEY,
+    NEWSLETTER_API_KEY_STAGE,
     ...data
   } = owParams;
 
@@ -47,6 +51,10 @@ export default async function createContext(owParams) {
       SYNC_STATUS_TOKEN,
       EDGE_COMMERCE_API_ORDERS_TOKEN,
       EDGE_COMMERCE_API_BASE,
+      NEWSLETTER_BASE_URL,
+      NEWSLETTER_BASE_URL_STAGE,
+      NEWSLETTER_API_KEY,
+      NEWSLETTER_API_KEY_STAGE,
     },
     // @ts-ignore
     log: Core.Logger('main', { level: LOG_LEVEL }),

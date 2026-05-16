@@ -20,6 +20,12 @@ declare global {
     SYNC_STATUS_TOKEN: string;
     EDGE_COMMERCE_API_ORDERS_TOKEN: string;
     EDGE_COMMERCE_API_BASE: string;
+
+    // === newsletter settings ===
+    NEWSLETTER_BASE_URL: string;
+    NEWSLETTER_BASE_URL_STAGE: string;
+    NEWSLETTER_API_KEY: string;
+    NEWSLETTER_API_KEY_STAGE: string;
   }
 
   export interface RuntimeResponse {
