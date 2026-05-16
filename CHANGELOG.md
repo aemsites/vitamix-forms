@@ -1,3 +1,13 @@
+## [1.2.1](https://github.com/aemsites/vitamix-forms/compare/v1.2.0...v1.2.1) (2026-05-16)
+
+
+### Bug Fixes
+
+* tweaks ([e67f858](https://github.com/aemsites/vitamix-forms/commit/e67f858428620f08b76fd2ba32510d43b3594dd6))
+* update workflow ([d5a1a7b](https://github.com/aemsites/vitamix-forms/commit/d5a1a7b39f6f2799a0b5be3846d56f9e264dd2cd))
+* use stage commerce api ([e47c2d7](https://github.com/aemsites/vitamix-forms/commit/e47c2d770645ac5df534cc7220a8feaa245c74f3))
+* use stage commerce api ([b9293c6](https://github.com/aemsites/vitamix-forms/commit/b9293c6652de9940ce4532338a108f264aab41eb))
+
 # [1.2.0](https://github.com/aemsites/vitamix-forms/compare/v1.1.19...v1.2.0) (2026-05-16)
 
 
