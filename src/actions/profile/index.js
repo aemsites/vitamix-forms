@@ -118,7 +118,7 @@ export async function main(params) {
       const errBody = await customerResp.text().catch(() => '');
       return errorResponse(customerResp.status, 'customer lookup failed', errBody);
     }
-    const customer = await customerResp.json();
+    const { customer } = await customerResp.json();
 
     let profile = null;
     try {
