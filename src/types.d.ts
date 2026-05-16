@@ -20,6 +20,7 @@ declare global {
     SYNC_STATUS_TOKEN: string;
     EDGE_COMMERCE_API_ORDERS_TOKEN: string;
     EDGE_COMMERCE_API_BASE: string;
+    EDGE_COMMERCE_API_BASE_STAGE: string;
 
     // === newsletter settings ===
     NEWSLETTER_BASE_URL: string;
