@@ -286,6 +286,9 @@ async function callNewsletterApi(ctx, formId, data) {
   if (!baseUrl) {
     throw new Error(`newsletter API URL not configured for formId=${formId}`);
   }
+  ctx.log.info(`calling newsletter API at ${baseUrl}/VITNewsletterSignUp`);
+  ctx.log.debug(`payload: ${JSON.stringify(payload)}`);
+  ctx.log.debug(`apiKey: ${apiKey}`);
   return proxyFetch(ctx, `${baseUrl}/VITNewsletterSignUp`, {
     method: 'POST',
     headers: {
