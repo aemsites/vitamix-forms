@@ -1,3 +1,18 @@
+# [1.2.0](https://github.com/aemsites/vitamix-forms/compare/v1.1.19...v1.2.0) (2026-05-16)
+
+
+### Bug Fixes
+
+* adapt profile ([cfc3697](https://github.com/aemsites/vitamix-forms/commit/cfc3697d1e732e9a1b3b066ff8c5b17ab3838d39))
+* add env var ([c26b8e8](https://github.com/aemsites/vitamix-forms/commit/c26b8e8123e3a05347989be1c7ea458dd6760d28))
+* more fields in sync ([18609e3](https://github.com/aemsites/vitamix-forms/commit/18609e37e90c969946dc3f33f0bb472a08b1392c))
+* tweak response body ([c252408](https://github.com/aemsites/vitamix-forms/commit/c2524084fe899dd34ceabecc2506c8e676598ba1))
+
+
+### Features
+
+* add profile action/api ([9d379ce](https://github.com/aemsites/vitamix-forms/commit/9d379ce461c4f71ec82e485a8ab9bead1877012a))
+
 ## [1.1.19](https://github.com/aemsites/vitamix-forms/compare/v1.1.18...v1.1.19) (2026-05-14)
 
 
