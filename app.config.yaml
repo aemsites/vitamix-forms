@@ -31,6 +31,9 @@ application:
           NEWSLETTER_BASE_URL_STAGE: $NEWSLETTER_BASE_URL_STAGE
           NEWSLETTER_API_KEY: $NEWSLETTER_API_KEY
           NEWSLETTER_API_KEY_STAGE: $NEWSLETTER_API_KEY_STAGE
+          
+          # for profile api
+          EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
         actions:
           submit:
             function: dist/actions/submit/index.js
