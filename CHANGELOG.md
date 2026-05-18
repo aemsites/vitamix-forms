@@ -1,3 +1,10 @@
+## [1.2.5](https://github.com/aemsites/vitamix-forms/compare/v1.2.4...v1.2.5) (2026-05-18)
+
+
+### Bug Fixes
+
+* force deploy ([cbb55b9](https://github.com/aemsites/vitamix-forms/commit/cbb55b98108513400cca709a8a549023d528fb25))
+
 ## [1.2.4](https://github.com/aemsites/vitamix-forms/compare/v1.2.3...v1.2.4) (2026-05-18)
 
 
