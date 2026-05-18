@@ -1,3 +1,10 @@
+## [1.2.4](https://github.com/aemsites/vitamix-forms/compare/v1.2.3...v1.2.4) (2026-05-18)
+
+
+### Bug Fixes
+
+* use syncedAt ([deb2963](https://github.com/aemsites/vitamix-forms/commit/deb29636fd1b13a30ffe380b0998ef3cb515b3f0))
+
 ## [1.2.3](https://github.com/aemsites/vitamix-forms/compare/v1.2.2...v1.2.3) (2026-05-18)
 
 
