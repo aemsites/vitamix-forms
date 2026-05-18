@@ -7,11 +7,11 @@
  *   3. Reads the global journal and filters to terminal events
  *      (payment_completed / payment_cancelled) to discover resolved orderIds
  *   4. For each resolved orderId (oldest first):
- *        a. Fetches the order — skips if already synced (custom.syncedToEbs)
+ *        a. Fetches the order — skips if already synced (custom.syncedAt or custom.syncedToEbs)
  *        b. Skips cancelled orders (including fraud-declined) — no EBS sync needed
  *        c. For payment_completed: queries complete per-order journal
  *        d. Calls syncOrderToEbs(ctx, params, order, orderJournal), retrying up to MAX_RETRIES
- *        e. On success: patches custom.syncedToEbs
+ *        e. On success: patches custom.syncedAt
  *        f. On max-retries exhausted: records the error, halts without advancing cursor
  *   5. Checks a 9.5-minute deadline before each order
  *   6. On success/deadline: advances cursor to the latest journal entry timestamp
@@ -131,9 +131,10 @@ export async function run(params) {
       }
 
       // ── Already synced ─────────────────────────────────────────────
-      if (order.custom?.syncedToEbs) {
+      const alreadySyncedAt = order.custom?.syncedAt || order.custom?.syncedToEbs;
+      if (alreadySyncedAt) {
         log.info(
-          `[ebs-sync] Order ${orderId} already synced at ${order.custom.syncedToEbs} — skipping.`,
+          `[ebs-sync] Order ${orderId} already synced at ${alreadySyncedAt} — skipping.`,
         );
         continue;
       }
@@ -172,7 +173,7 @@ export async function run(params) {
           });
 
           const syncedAt = new Date().toISOString();
-          await updateOrderCustom(params, orderId, { syncedToEbs: syncedAt });
+          await updateOrderCustom(params, orderId, { syncedAt });
 
           state.lastProcessedOrderId = orderId;
           state.processedCount = (state.processedCount || 0) + 1;
