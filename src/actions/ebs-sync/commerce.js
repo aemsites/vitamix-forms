@@ -35,7 +35,7 @@ export async function getJournalEntries(params, since, log, until) {
   // entries. The journal writer runs on its own ~10-minute cron, so entries
   // can appear in the global index after the sync cursor has already advanced
   // past their event timestamp. Already-synced orders are skipped cheaply via
-  // the custom.syncedToEbs check, so the overlap is harmless.
+  // the custom.syncedAt check, so the overlap is harmless.
   const OVERLAP_MS = 15 * 60 * 1000;
   const sinceDate = since
     ? new Date(new Date(since).getTime() - OVERLAP_MS)

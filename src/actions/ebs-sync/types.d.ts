@@ -182,7 +182,7 @@ export interface JournalOrderData {
   items: StoredOrderItem[];
   /** Locked-in estimate snapshot — present when estimateToken was provided at order creation */
   estimates?: StoredOrderEstimates;
-  /** Service-managed key/value pairs; only syncedToEbs is written by this action */
+  /** Service-managed key/value pairs; only syncedAt is written by this action */
   custom?: Record<string, string>;
 
   // ── Derived from journal entries ──────────────────────────────────────────

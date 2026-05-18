@@ -6,7 +6,7 @@
  *
  * All payment data is sourced from the payment_completed journal entry plus the
  * fraud_evaluated entry (for Chase SafeTech/Forter state determination).
- * order.custom is never read for field data — only the syncedToEbs flag set by
+ * order.custom is never read for field data — only the syncedAt flag set by
  * sync.js is stored there.
  *
  * ── Address field names (OrderAddress interface) ─────────────────────────────
