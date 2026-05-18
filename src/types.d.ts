@@ -10,10 +10,10 @@ declare global {
 
     // === EBS settings ===
     // BASE_URL points to prod only for the production action & production endpoint
-    EBS_BASE_URL: string;
+    EBS_BASE_URL: string; // prod on prod, stage on stage
     EBS_BASE_URL_STAGE: string;
 
-    EBS_API_KEY: string;
+    EBS_API_KEY: string; // prod on prod, stage on stage
     EBS_API_KEY_STAGE: string;
 
     // === sync settings (also relies on EBS_BASE_URL and EBS_API_KEY) ===
@@ -21,12 +21,6 @@ declare global {
     EDGE_COMMERCE_API_ORDERS_TOKEN: string;
     EDGE_COMMERCE_API_BASE: string;
     EDGE_COMMERCE_API_BASE_STAGE: string;
-
-    // === newsletter settings ===
-    NEWSLETTER_BASE_URL: string;
-    NEWSLETTER_BASE_URL_STAGE: string;
-    NEWSLETTER_API_KEY: string;
-    NEWSLETTER_API_KEY_STAGE: string;
   }
 
   export interface RuntimeResponse {

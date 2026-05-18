@@ -219,22 +219,6 @@ async function handleOrderStatus(ctx, formId, data) {
 }
 
 /**
- * Get newsletter API settings for the given formId
- * @param {Context} ctx
- * @param {string} formId
- * @returns {Object}
- */
-function getNewsletterSettings(ctx, formId) {
-  const baseUrl = formId.includes('stage/')
-    ? ctx.env.NEWSLETTER_BASE_URL_STAGE
-    : ctx.env.NEWSLETTER_BASE_URL;
-  const apiKey = formId.includes('stage/')
-    ? ctx.env.NEWSLETTER_API_KEY_STAGE
-    : ctx.env.NEWSLETTER_API_KEY;
-  return { baseUrl, apiKey };
-}
-
-/**
  * Build the newsletter API payload and send it via the proxy.
  * Caller is responsible for ensuring data.email and data.emailOptIn are valid.
  * @param {Context} ctx
@@ -282,7 +266,7 @@ async function callNewsletterApi(ctx, formId, data) {
   if (data.smsOptIn && typeof data.smsOptIn === 'boolean') payload.SMSOptIn = data.smsOptIn;
   if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') payload.SMSPreferenceDate = data.smsPreferenceDate;
 
-  const { baseUrl, apiKey } = getNewsletterSettings(ctx, formId);
+  const { baseUrl, apiKey } = getEbsSettings(ctx, formId);
   if (!baseUrl) {
     throw new Error(`newsletter API URL not configured for formId=${formId}`);
   }
