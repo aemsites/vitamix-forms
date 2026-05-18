@@ -1,3 +1,11 @@
+## [1.2.3](https://github.com/aemsites/vitamix-forms/compare/v1.2.2...v1.2.3) (2026-05-18)
+
+
+### Bug Fixes
+
+* add logging ([c377e65](https://github.com/aemsites/vitamix-forms/commit/c377e65f3c63f1c8ecc4f4509cf400e42ae0d319))
+* simplify env vars ([b7ee994](https://github.com/aemsites/vitamix-forms/commit/b7ee994aee9b6f71f63cb82a852cafb02d24b28e))
+
 ## [1.2.2](https://github.com/aemsites/vitamix-forms/compare/v1.2.1...v1.2.2) (2026-05-16)
 
 
