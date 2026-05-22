@@ -8,13 +8,17 @@ declare global {
     EMAIL_TOKEN: string;
     PROXY_TOKEN: string;
 
-    // === EBS settings ===
-    // BASE_URL points to prod only for the production action & production endpoint
-    EBS_BASE_URL: string; // prod on prod, stage on stage
+    // === EBS XML/SOAP endpoint (order sync, product registration, order query) ===
+    EBS_BASE_URL: string;
     EBS_BASE_URL_STAGE: string;
-
-    EBS_API_KEY: string; // prod on prod, stage on stage
+    EBS_API_KEY: string;
     EBS_API_KEY_STAGE: string;
+
+    // === EBS JSON endpoint (newsletter signup, profile status) ===
+    EBS_JSON_BASE_URL: string;
+    EBS_JSON_BASE_URL_STAGE: string;
+    EBS_JSON_API_KEY: string;
+    EBS_JSON_API_KEY_STAGE: string;
 
     // === sync settings (also relies on EBS_BASE_URL and EBS_API_KEY) ===
     SYNC_STATUS_TOKEN: string;

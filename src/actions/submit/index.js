@@ -97,6 +97,23 @@ function getEbsSettings(ctx, formId) {
 }
 
 /**
+ * EBS JSON endpoint settings (newsletter, profile).
+ * Separate from the XML/SOAP endpoint used by order sync and product registration.
+ * @param {Context} ctx
+ * @param {string} formId
+ * @returns {Object}
+ */
+function getEbsJsonSettings(ctx, formId) {
+  const baseUrl = formId.includes('stage/')
+    ? ctx.env.EBS_JSON_BASE_URL_STAGE
+    : ctx.env.EBS_JSON_BASE_URL;
+  const apiKey = formId.includes('stage/')
+    ? ctx.env.EBS_JSON_API_KEY_STAGE
+    : ctx.env.EBS_JSON_API_KEY;
+  return { baseUrl, apiKey };
+}
+
+/**
  * Handle product registration submission
  * @param {Context} ctx 
  * @param {string} formId
@@ -266,7 +283,7 @@ async function callNewsletterApi(ctx, formId, data) {
   if (data.smsOptIn && typeof data.smsOptIn === 'boolean') payload.SMSOptIn = data.smsOptIn;
   if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') payload.SMSPreferenceDate = data.smsPreferenceDate;
 
-  const { baseUrl, apiKey } = getEbsSettings(ctx, formId);
+  const { baseUrl, apiKey } = getEbsJsonSettings(ctx, formId);
   if (!baseUrl) {
     throw new Error(`newsletter API URL not configured for formId=${formId}`);
   }

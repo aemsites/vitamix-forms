@@ -23,11 +23,18 @@ application:
 
           # need both prod and stage vars, since the action depends on the formId
           # not just the deployment's env
+          # EBS XML/SOAP endpoint (order sync, product registration, order query)
           EBS_BASE_URL: $EBS_BASE_URL
           EBS_BASE_URL_STAGE: $EBS_BASE_URL_STAGE
           EBS_API_KEY: $EBS_API_KEY
           EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
-          
+
+          # EBS JSON endpoint (newsletter signup, profile status)
+          EBS_JSON_BASE_URL: $EBS_JSON_BASE_URL
+          EBS_JSON_BASE_URL_STAGE: $EBS_JSON_BASE_URL_STAGE
+          EBS_JSON_API_KEY: $EBS_JSON_API_KEY
+          EBS_JSON_API_KEY_STAGE: $EBS_JSON_API_KEY_STAGE
+
           # for profile api
           EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
           EDGE_COMMERCE_API_BASE_STAGE: $EDGE_COMMERCE_API_BASE_STAGE
