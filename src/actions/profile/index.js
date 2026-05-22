@@ -75,9 +75,9 @@ async function fetchCustomer(ctx, email, token, isProd) {
  * @returns {Promise<Response>}
  */
 async function fetchProfileStatus(ctx, email, isProd) {
-  const baseUrl = isProd ? ctx.env.EBS_BASE_URL : ctx.env.EBS_BASE_URL_STAGE;
-  const apiKey = isProd ? ctx.env.EBS_API_KEY : ctx.env.EBS_API_KEY_STAGE;
-  if (!baseUrl) throw new Error('EBS base URL not configured');
+  const baseUrl = isProd ? ctx.env.EBS_JSON_BASE_URL : ctx.env.EBS_JSON_BASE_URL_STAGE;
+  const apiKey = isProd ? ctx.env.EBS_JSON_API_KEY : ctx.env.EBS_JSON_API_KEY_STAGE;
+  if (!baseUrl) throw new Error('EBS JSON base URL not configured');
   const url = `${baseUrl}/VITProfileStatus?EmailAddress=${encodeURIComponent(email)}`;
   return proxyFetch(ctx, url, {
     method: 'GET',

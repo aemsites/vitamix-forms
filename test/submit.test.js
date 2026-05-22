@@ -532,8 +532,8 @@ describe('submit action', () => {
 
     test('fires newsletter subscription when marketingOptIn is "yes"', async () => {
       const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
-      ctx.env.EBS_BASE_URL = 'https://newsletter.example.com/prod';
-      ctx.env.EBS_API_KEY = 'nl-prod-key';
+      ctx.env.EBS_JSON_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.EBS_JSON_API_KEY = 'nl-prod-key';
       mockMakeContext.mockResolvedValue(ctx);
       mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
       mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
@@ -553,8 +553,8 @@ describe('submit action', () => {
 
     test('fires newsletter subscription when marketingOptIn is boolean true', async () => {
       const ctx = makeRegistrationCtx({ marketingOptIn: true });
-      ctx.env.EBS_BASE_URL = 'https://newsletter.example.com/prod';
-      ctx.env.EBS_API_KEY = 'nl-prod-key';
+      ctx.env.EBS_JSON_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.EBS_JSON_API_KEY = 'nl-prod-key';
       mockMakeContext.mockResolvedValue(ctx);
       mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
       mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
@@ -584,8 +584,8 @@ describe('submit action', () => {
 
     test('returns registration response even when newsletter subscription fails', async () => {
       const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
-      ctx.env.EBS_BASE_URL = 'https://newsletter.example.com/prod';
-      ctx.env.EBS_API_KEY = 'nl-prod-key';
+      ctx.env.EBS_JSON_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.EBS_JSON_API_KEY = 'nl-prod-key';
       mockMakeContext.mockResolvedValue(ctx);
       mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
       mockProxyFetch.mockRejectedValue(new Error('newsletter API unavailable'));
@@ -598,8 +598,8 @@ describe('submit action', () => {
 
     test('returns registration response even when newsletter URL is not configured', async () => {
       const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
-      delete ctx.env.EBS_BASE_URL;
-      delete ctx.env.EBS_BASE_URL_STAGE;
+      delete ctx.env.EBS_JSON_BASE_URL;
+      delete ctx.env.EBS_JSON_BASE_URL_STAGE;
       mockMakeContext.mockResolvedValue(ctx);
       mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
 
@@ -637,10 +637,10 @@ describe('submit action', () => {
           EBS_API_KEY: 'ebs-prod-key',
           EBS_BASE_URL_STAGE: 'https://ebs-stage.example.com',
           EBS_API_KEY_STAGE: 'ebs-stage-key',
-          EBS_BASE_URL: 'https://newsletter.example.com/prod',
-          EBS_API_KEY: 'nl-prod-key',
-          EBS_BASE_URL_STAGE: 'https://newsletter.example.com/stage',
-          EBS_API_KEY_STAGE: 'nl-stage-key',
+          EBS_JSON_BASE_URL: 'https://newsletter.example.com/prod',
+          EBS_JSON_API_KEY: 'nl-prod-key',
+          EBS_JSON_BASE_URL_STAGE: 'https://newsletter.example.com/stage',
+          EBS_JSON_API_KEY_STAGE: 'nl-stage-key',
         },
         info: {
           method: 'POST',
@@ -681,10 +681,10 @@ describe('submit action', () => {
         data: { formId: 'us/newsletter', data: { email: 'test@example.com', emailOptIn: true, ...dataOverride } },
         env: {
           ORG: 'test-org', SITE: 'test-site',
-          EBS_BASE_URL: 'https://newsletter.example.com/prod',
-          EBS_API_KEY: 'prod-key',
-          EBS_BASE_URL_STAGE: 'https://newsletter.example.com/stage',
-          EBS_API_KEY_STAGE: 'stage-key',
+          EBS_JSON_BASE_URL: 'https://newsletter.example.com/prod',
+          EBS_JSON_API_KEY: 'prod-key',
+          EBS_JSON_BASE_URL_STAGE: 'https://newsletter.example.com/stage',
+          EBS_JSON_API_KEY_STAGE: 'stage-key',
         },
       });
     }
@@ -784,8 +784,8 @@ describe('submit action', () => {
 
     test('returns 500 when newsletter URL is not configured', async () => {
       const ctx = makeNewsletterCtx();
-      delete ctx.env.EBS_BASE_URL;
-      delete ctx.env.EBS_BASE_URL_STAGE;
+      delete ctx.env.EBS_JSON_BASE_URL;
+      delete ctx.env.EBS_JSON_BASE_URL_STAGE;
       mockMakeContext.mockResolvedValue(ctx);
 
       const result = await main({});
