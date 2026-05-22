@@ -1,3 +1,10 @@
+## [1.2.7](https://github.com/aemsites/vitamix-forms/compare/v1.2.6...v1.2.7) (2026-05-22)
+
+
+### Bug Fixes
+
+* readd other ebs endpoint ([ca42fdf](https://github.com/aemsites/vitamix-forms/commit/ca42fdfdbdc951945de0632405044b515fbe4ec6))
+
 ## [1.2.6](https://github.com/aemsites/vitamix-forms/compare/v1.2.5...v1.2.6) (2026-05-18)
 
 
