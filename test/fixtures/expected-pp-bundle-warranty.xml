@@ -1,0 +1,163 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<soapenv:Envelope
+    xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/"
+    xmlns:ord="http://xmlns.vitamix.com/Erp/Orders"
+    xmlns:ent="http://xmlns.vitamix.com/Enterprise"
+    xmlns:pay="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+    xmlns:ship="http://xmlns.vitamix.com/Erp/Shipments">
+  <soapenv:Header/>
+  <soapenv:Body>
+    <ns2:CreateRequest
+        xmlns="http://xmlns.vitamix.com/Enterprise"
+        xmlns:ns2="http://xmlns.vitamix.com/Erp/Orders"
+        xmlns:ns3="http://xmlns.vitamix.com/Erp/PaymentMethods/PaymentTransactionLogger"
+        xmlns:ns4="http://xmlns.vitamix.com/Erp/Shipments"
+        xmlns:ns5="http://xmlns.oracle.com/pcbpel/adapter/db/sp/DbCallXXOTC_CREATE_SALES_ORDER_PKG"
+        Id="2026-05-25T21-00-22.943Z-omuat5711040325">
+      <ns2:Order
+          Shipping="Standard"
+          PriceList="CAN HH END CUSTOMER"
+          Source="CA"
+          Type="Household"
+          State="Booked"
+          TaxHolidayInEffect="false"
+          ReferrerCode=""
+          Key="omuat5711040325"
+          Created="2026-05-25T17:00:22">
+        <ns2:Customer
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:type="Person"
+          Key="dylandepass@gmail.com"
+          Action="U">
+          <BillTo IsValidated="true" Key="dylandepass@gmail.com-0">
+            <Address1>46 Mosley Street</Address1>
+            <Address2></Address2>
+            <City>Aurora</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>L4G 1G9</PostalCode>
+            <Country>CA</Country>
+          </BillTo>
+          <ShipTo IsValidated="true" Key="dylandepass@gmail.com-0">
+            <Address1>46 Mosley Street</Address1>
+            <Address2></Address2>
+            <City>Aurora</City>
+            <County xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:nil="true" />
+            <Region>ON</Region>
+            <PostalCode>L4G 1G9</PostalCode>
+            <Country>CA</Country>
+          </ShipTo>
+          <Mobile>6479728542</Mobile>
+          <Email>dylandepass@gmail.com</Email>
+          <First>Dylan</First>
+          <Last>Depass</Last>
+        </ns2:Customer>
+        <ns2:OrderPayment>
+          <ns2:PayPalExpressCheckout
+                PayPalEmailAddress="sb-buyer@personal.example.com"
+                Approval="2026-05-25-05:00"
+                PaymentStatus="CREATED"
+                PendingReason=""
+                ProtectionEligibility="ELIGIBLE"
+                AuthCode="5D558546MN799870T"
+                PayerId="TESTPAYERID567"
+                TransactionId="5D558546MN799870T"
+                Amount="1149.15" />
+        </ns2:OrderPayment>
+        <ns2:PaymentTransactionLogger>
+          <ns3:Token>7PP987654321ABCDE</ns3:Token>
+          <ns3:PayerInfo>
+            <ns3:Payer>sb-buyer@personal.example.com</ns3:Payer>
+            <ns3:PayerID>TESTPAYERID567</ns3:PayerID>
+            <ns3:PayerStatus>VERIFIED</ns3:PayerStatus>
+            <ns3:PayerName>
+              <ns3:FirstName>Dylan</ns3:FirstName>
+              <ns3:LastName>Depass</ns3:LastName>
+            </ns3:PayerName>
+            <ns3:PayerCountry>CA</ns3:PayerCountry>
+          </ns3:PayerInfo>
+          <ns3:PaymentInfo>
+              <ns3:IsFinancing>false</ns3:IsFinancing>
+              <ns3:PaymentType>instant</ns3:PaymentType>
+            </ns3:PaymentInfo>
+          <ns3:InvoiceID>omuat5711040325</ns3:InvoiceID>
+          <ns3:ContactPhone>6479728542</ns3:ContactPhone>
+          <ns3:PaymentDetails>
+            <ns3:OrderTotal>1149.15</ns3:OrderTotal>
+            <ns3:ItemTotal>1016.95</ns3:ItemTotal>
+            <ns3:AllowedPaymentMethodType>InstantFundingSource</ns3:AllowedPaymentMethodType>
+            <ns3:ShippingDiscount>31.71</ns3:ShippingDiscount>
+          </ns3:PaymentDetails>
+          <ns3:ShipToAddress>
+            <ns3:Street1>46 Mosley Street</ns3:Street1>
+            <ns3:CityName>Aurora</ns3:CityName>
+            <ns3:StateOrProvince>ON</ns3:StateOrProvince>
+            <ns3:Country>CA</ns3:Country>
+            <ns3:Phone>6479728542</ns3:Phone>
+            <ns3:PostalCode>L4G 1G9</ns3:PostalCode>
+            <ns3:AddressStatus></ns3:AddressStatus>
+          </ns3:ShipToAddress>
+          <ns3:BillingAddress>
+            <ns3:Street1>46 Mosley Street</ns3:Street1>
+            <ns3:CityName>Aurora</ns3:CityName>
+            <ns3:StateOrProvince>ON</ns3:StateOrProvince>
+            <ns3:PostalCode>L4G 1G9</ns3:PostalCode>
+            <ns3:Country>CA</ns3:Country>
+            <ns3:Phone>6479728542</ns3:Phone>
+            <ns3:AddressStatus></ns3:AddressStatus>
+          </ns3:BillingAddress>
+          <ns3:TransactionID>5D558546MN799870T</ns3:TransactionID>
+          <ns3:Amount>1149.15</ns3:Amount>
+          <ns3:MsgSubId></ns3:MsgSubId>
+          <ns3:AuthorizationInfo>
+            <ns3:PendingReason></ns3:PendingReason>
+            <ns3:ProtectionEligibility>ELIGIBLE</ns3:ProtectionEligibility>
+            <ns3:ProtectionEligibilityType></ns3:ProtectionEligibilityType>
+          </ns3:AuthorizationInfo>
+        </ns2:PaymentTransactionLogger>
+        <ns2:Tax Amount="132.20" Provisional="true" />
+        <ns2:Message></ns2:Message>
+        
+        
+        <ns2:Charge Type="Shipping" Value="0.00" />
+        <ns2:LineItem
+            Sku="061724-04-VB"
+            Quantity="1"
+            UnitSellingPrice="200.96"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="26.13" Provisional="true" />
+          </ns2:LineItem>
+        <ns2:LineItem
+            Sku="069834-VB"
+            Quantity="1"
+            UnitSellingPrice="17.43"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="2.26" Provisional="true" />
+          </ns2:LineItem>
+        <ns2:LineItem
+            Sku="060488-VB"
+            Quantity="1"
+            UnitSellingPrice="43.65"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="5.67" Provisional="true" />
+          </ns2:LineItem>
+        <ns2:LineItem
+            Sku="001372-1093-VB"
+            Quantity="1"
+            UnitSellingPrice="637.91"
+            UnitOfMeasure="Each">
+            <ns2:Tax Amount="82.94" Provisional="true" />
+            <ns2:SerialNumber>ciomuat5711040325-1</ns2:SerialNumber>
+          </ns2:LineItem>
+        <ns2:LineItem
+            Sku="001314"
+            Quantity="1"
+            UnitSellingPrice="117.00"
+            UnitOfMeasure="Years">
+            <ns2:Tax Amount="15.20" Provisional="true" />
+            <ns2:SerialNumber>ciomuat5711040325-1</ns2:SerialNumber>
+          </ns2:LineItem>
+      </ns2:Order>
+    </ns2:CreateRequest>
+  </soapenv:Body>
+</soapenv:Envelope>

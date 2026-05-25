@@ -36,8 +36,8 @@
  *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded '' (gap — needs order schema)
  *   giftMessage                  ns2:Message                always empty (gap — needs order schema)
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
- *   item.taxAmount               LineItem/Tax/@Amount       hardcoded '0.00' (waiting on commerce-api)
- *   item.serialNumber            ns2:SerialNumber           never emitted (no warranty support yet)
+ *   item.taxAmount               LineItem/Tax/@Amount       from item.taxAmount ('0.00' fallback)
+ *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
  *   item.promotionCode           ns2:PromotionCode (item)   never emitted (gap — needs order schema)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
@@ -602,24 +602,77 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
 }
 
 function buildLineItemsXml(order) {
-  return (order.items || [])
-    .map((item) => {
-      const sku = escapeXml(item.sku || '');
-      const qty = item.quantity ?? 1;
-      const price = item.price?.final || item.price?.regular || '0.00';
-      // Item-level tax: waiting on commerce-api to map estimates.tax.lines onto order items
-      const itemTax = '0.00';
-      const unitOfMeasure = resolveUnitOfMeasure(item);
+  const orderKey = order.friendlyId || order.id;
 
-      return `<ns2:LineItem
-            Sku="${sku}"
+  // Map warranty items by the product SKU they cover
+  const warrantyBySku = new Map();
+  for (const item of (order.items || [])) {
+    if (item.custom?.linkedTo) {
+      warrantyBySku.set(item.custom.linkedTo, item);
+    }
+  }
+
+  const lines = [];
+  let serialIndex = 0;
+
+  for (const item of (order.items || [])) {
+    // Warranty items are emitted alongside their linked product — skip here
+    if (item.custom?.linkedTo) continue;
+
+    if (item.bundleItems?.length) {
+      // Bundle: emit each child as its own line item, drop the virtual wrapper
+      for (const child of item.bundleItems) {
+        const hasWarranty = warrantyBySku.has(child.sku);
+        const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
+
+        lines.push(buildLineItemXml(
+          child.sku || '', child.quantity ?? 1,
+          child.price?.final || '0.00', child.taxAmount || '0.00', 'Each', serial,
+        ));
+
+        if (hasWarranty) {
+          const w = warrantyBySku.get(child.sku);
+          lines.push(buildLineItemXml(
+            w.sku || '', w.quantity ?? 1,
+            w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
+          ));
+        }
+      }
+    } else {
+      // Simple product
+      const hasWarranty = warrantyBySku.has(item.sku);
+      const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
+
+      lines.push(buildLineItemXml(
+        item.sku || '', item.quantity ?? 1,
+        item.price?.final || item.price?.regular || '0.00', item.taxAmount || '0.00',
+        'Each', serial,
+      ));
+
+      if (hasWarranty) {
+        const w = warrantyBySku.get(item.sku);
+        lines.push(buildLineItemXml(
+          w.sku || '', w.quantity ?? 1,
+          w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
+        ));
+      }
+    }
+  }
+
+  return lines.join('\n        ');
+}
+
+function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber) {
+  const serialEl = serialNumber
+    ? `\n            <ns2:SerialNumber>${escapeXml(serialNumber)}</ns2:SerialNumber>`
+    : '';
+  return `<ns2:LineItem
+            Sku="${escapeXml(sku)}"
             Quantity="${qty}"
             UnitSellingPrice="${price}"
             UnitOfMeasure="${unitOfMeasure}">
-            <ns2:Tax Amount="${itemTax}" Provisional="true" />
+            <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}
           </ns2:LineItem>`;
-    })
-    .join('\n        ');
 }
 
 /**
@@ -722,16 +775,6 @@ function resolveShippingDiscount(order) {
     return String(Number(order.estimates?.shippingMethod?.rate ?? 0).toFixed(2));
   }
   return '0.00';
-}
-
-/**
- * Resolve the UnitOfMeasure for a line item.
- * @param {object} _item - Order line item
- * @returns {string}
- */
-function resolveUnitOfMeasure(_item) {
-  // TODO: Return 'Years' for warranty/extended service plan items
-  return 'Each';
 }
 
 /**
