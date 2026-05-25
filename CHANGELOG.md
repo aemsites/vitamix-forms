@@ -1,3 +1,10 @@
+## [1.2.8](https://github.com/aemsites/vitamix-forms/compare/v1.2.7...v1.2.8) (2026-05-25)
+
+
+### Bug Fixes
+
+* handle bundles and warranties ([a559235](https://github.com/aemsites/vitamix-forms/commit/a55923526327bba1e05b478c195618a6c6eaaad8))
+
 ## [1.2.7](https://github.com/aemsites/vitamix-forms/compare/v1.2.6...v1.2.7) (2026-05-22)
 
 
