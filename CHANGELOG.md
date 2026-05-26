@@ -1,3 +1,12 @@
+## [1.2.9](https://github.com/aemsites/vitamix-forms/compare/v1.2.8...v1.2.9) (2026-05-26)
+
+
+### Bug Fixes
+
+* giftMessage ([f701340](https://github.com/aemsites/vitamix-forms/commit/f7013404d2af182cf0eccb16211ab21bcd47db09))
+* isCommercial by order item property presence ([577d3d5](https://github.com/aemsites/vitamix-forms/commit/577d3d56451a7dc08caa2ab26b3afc43af0fbcba))
+* vitamixProductId lookup for warranty ([b8e84c2](https://github.com/aemsites/vitamix-forms/commit/b8e84c2b673f7f827c5a71ac2635b2f5a160bf10))
+
 ## [1.2.8](https://github.com/aemsites/vitamix-forms/compare/v1.2.7...v1.2.8) (2026-05-25)
 
 
