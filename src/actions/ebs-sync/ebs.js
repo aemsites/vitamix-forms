@@ -601,6 +601,15 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
         </ns2:PaymentTransactionLogger>`;
 }
 
+/**
+ * Warranty catalog SKU → EBS VitamixProductId.
+ * PHP looks this up via product.vitamix_product_id; we hardcode the small set.
+ */
+const WARRANTY_VITAMIX_ID = {
+  '001314': '001314',
+  '070791': '70791',
+};
+
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
 
@@ -632,8 +641,9 @@ function buildLineItemsXml(order) {
 
         if (hasWarranty) {
           const w = warrantyBySku.get(child.sku);
+          const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
           lines.push(buildLineItemXml(
-            w.sku || '', w.quantity ?? 1,
+            wSku, w.quantity ?? 1,
             w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
           ));
         }
@@ -651,8 +661,9 @@ function buildLineItemsXml(order) {
 
       if (hasWarranty) {
         const w = warrantyBySku.get(item.sku);
+        const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
         lines.push(buildLineItemXml(
-          w.sku || '', w.quantity ?? 1,
+          wSku, w.quantity ?? 1,
           w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
         ));
       }
