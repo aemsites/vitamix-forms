@@ -671,4 +671,25 @@ describe('ebs-sync e2e', () => {
       expect(capturedXml).toMatch(/Type="Commercial"/);
     });
   });
+
+  // ── Gift message ──────────────────────────────────────────────────────
+
+  describe('gift message', () => {
+    const journal = loadJournal('journal-cc-approved.ndjson');
+
+    test('order without giftMessage emits empty ns2:Message', async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, CC_APPROVED_ORDER, journal);
+      expect(capturedXml).toMatch(/<ns2:Message><\/ns2:Message>/);
+    });
+
+    test('order with giftMessage emits sanitised CDATA message', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.giftMessage = 'Happy Birthday! Enjoy your new blender :)';
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      // Special chars stripped, wrapped in CDATA
+      expect(capturedXml).toMatch(
+        /<ns2:Message><!\[CDATA\[Happy Birthday Enjoy your new blender \]\]><\/ns2:Message>/,
+      );
+    });
+  });
 });

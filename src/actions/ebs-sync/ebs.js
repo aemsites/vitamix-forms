@@ -34,7 +34,7 @@
  *   orderType                    Order/@Type                from item.custom.isCommercial
  *   taxHolidayInEffect           Order/@TaxHolidayInEffect  hardcoded 'false'
  *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded '' (gap — needs order schema)
- *   giftMessage                  ns2:Message                always empty (gap — needs order schema)
+ *   giftMessage                  ns2:Message                from order.giftMessage (sanitised, CDATA)
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
  *   item.taxAmount               LineItem/Tax/@Amount       from item.taxAmount ('0.00' fallback)
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
@@ -332,8 +332,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
   const taxAmount = paymentSnapshot.taxAmount;
   const shippingAmount = paymentSnapshot.shippingCost;
 
-  // MISSING: giftMessage (not in order or journal) — always empty
-  const giftMessage = '<ns2:Message></ns2:Message>';
+  const giftMessage = buildGiftMessageXml(order.giftMessage);
 
   const salesPersonId = resolveSalesPersonId(order);
 
@@ -683,6 +682,18 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber) {
             UnitOfMeasure="${unitOfMeasure}">
             <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}
           </ns2:LineItem>`;
+}
+
+/**
+ * Build the ns2:Message element for a gift message.
+ * PHP parity: sanitises to [a-zA-Z0-9 ] and wraps in CDATA.
+ * Returns an empty element when no message is present.
+ */
+function buildGiftMessageXml(message) {
+  if (!message) return '<ns2:Message></ns2:Message>';
+  const sanitized = String(message).replace(/[^a-zA-Z0-9 ]/g, '');
+  if (!sanitized) return '<ns2:Message></ns2:Message>';
+  return `<ns2:Message><![CDATA[${sanitized}]]></ns2:Message>`;
 }
 
 /**
