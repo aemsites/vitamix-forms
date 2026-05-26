@@ -623,4 +623,73 @@ describe('ebs-sync e2e', () => {
       expect(taxes).toEqual(['26.13', '2.26', '5.67', '82.94', '15.20']);
     });
   });
+
+  // ── Warranty VitamixProductId lookup ────────────────────────────────────
+
+  describe('warranty vitamixProductId mapping', () => {
+    const journal = loadJournal('journal-pp-bundle-warranty.ndjson');
+
+    test('warranty SKU 001314 maps to VitamixProductId 001314', async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_BUNDLE_WARRANTY_ORDER, journal);
+      expect(capturedXml).toMatch(/Sku="001314"[\s\S]*?UnitOfMeasure="Years"/);
+    });
+
+    test('warranty SKU 070791 maps to VitamixProductId 70791', async () => {
+      // Clone the order with the second warranty SKU
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[1].sku = '070791';
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      // Emitted SKU should be the transformed VitamixProductId, not the catalog SKU
+      expect(capturedXml).toMatch(/Sku="70791"[\s\S]*?UnitOfMeasure="Years"/);
+      expect(capturedXml).not.toMatch(/Sku="070791"/);
+    });
+  });
+
+  // ── Commercial vs Household order type ─────────────────────────────────
+
+  describe('order type (Commercial / Household)', () => {
+    const journal = loadJournal('journal-pp-bundle-warranty.ndjson');
+
+    test('order without commercial items produces Type="Household"', async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_BUNDLE_WARRANTY_ORDER, journal);
+      expect(capturedXml).toMatch(/Type="Household"/);
+    });
+
+    test('order with a commercial item produces Type="Commercial"', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[0].custom = { isCommercial: true };
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      expect(capturedXml).toMatch(/Type="Commercial"/);
+    });
+
+    test('commercial flag on a simple (non-bundle) item produces Type="Commercial"', async () => {
+      // Use the simple CC order with isCommercial on the single item
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.items[0].custom = { isCommercial: true };
+      const ccJournal = loadJournal('journal-cc-approved.ndjson');
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, ccJournal);
+      expect(capturedXml).toMatch(/Type="Commercial"/);
+    });
+  });
+
+  // ── Gift message ──────────────────────────────────────────────────────
+
+  describe('gift message', () => {
+    const journal = loadJournal('journal-cc-approved.ndjson');
+
+    test('order without giftMessage emits empty ns2:Message', async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, CC_APPROVED_ORDER, journal);
+      expect(capturedXml).toMatch(/<ns2:Message><\/ns2:Message>/);
+    });
+
+    test('order with giftMessage emits sanitised CDATA message', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.giftMessage = 'Happy Birthday! Enjoy your new blender :)';
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      // Special chars stripped, wrapped in CDATA
+      expect(capturedXml).toMatch(
+        /<ns2:Message><!\[CDATA\[Happy Birthday Enjoy your new blender \]\]><\/ns2:Message>/,
+      );
+    });
+  });
 });

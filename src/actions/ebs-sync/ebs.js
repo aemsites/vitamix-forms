@@ -31,10 +31,10 @@
  *     subtotal (number) — these may be absent; falls back to order.estimates
  *
  * ── Hardcoded / gap fields ────────────────────────────────────────────────────
- *   orderType                    Order/@Type                hardcoded 'Household'
+ *   orderType                    Order/@Type                from item.custom.isCommercial
  *   taxHolidayInEffect           Order/@TaxHolidayInEffect  hardcoded 'false'
  *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded '' (gap — needs order schema)
- *   giftMessage                  ns2:Message                always empty (gap — needs order schema)
+ *   giftMessage                  ns2:Message                from order.giftMessage (sanitised, CDATA)
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
  *   item.taxAmount               LineItem/Tax/@Amount       from item.taxAmount ('0.00' fallback)
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
@@ -314,8 +314,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
   const source = countryToSource(country);
   const priceList = countryToPriceList(country);
 
-  // MISSING: orderType (not in order or journal) — hardcoded 'Household'
-  const orderType = 'Household';
+  const orderType = resolveOrderType(order);
 
   // Shipping method derived from locked-in estimates (type field, e.g. 'standard')
   const shippingMethod = resolveShippingMethod(order);
@@ -333,8 +332,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
   const taxAmount = paymentSnapshot.taxAmount;
   const shippingAmount = paymentSnapshot.shippingCost;
 
-  // MISSING: giftMessage (not in order or journal) — always empty
-  const giftMessage = '<ns2:Message></ns2:Message>';
+  const giftMessage = buildGiftMessageXml(order.giftMessage);
 
   const salesPersonId = resolveSalesPersonId(order);
 
@@ -601,6 +599,15 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
         </ns2:PaymentTransactionLogger>`;
 }
 
+/**
+ * Warranty catalog SKU → EBS VitamixProductId.
+ * PHP looks this up via product.vitamix_product_id; we hardcode the small set.
+ */
+const WARRANTY_VITAMIX_ID = {
+  '001314': '001314',
+  '070791': '70791',
+};
+
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
 
@@ -632,8 +639,9 @@ function buildLineItemsXml(order) {
 
         if (hasWarranty) {
           const w = warrantyBySku.get(child.sku);
+          const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
           lines.push(buildLineItemXml(
-            w.sku || '', w.quantity ?? 1,
+            wSku, w.quantity ?? 1,
             w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
           ));
         }
@@ -651,8 +659,9 @@ function buildLineItemsXml(order) {
 
       if (hasWarranty) {
         const w = warrantyBySku.get(item.sku);
+        const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
         lines.push(buildLineItemXml(
-          w.sku || '', w.quantity ?? 1,
+          wSku, w.quantity ?? 1,
           w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
         ));
       }
@@ -673,6 +682,18 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber) {
             UnitOfMeasure="${unitOfMeasure}">
             <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}
           </ns2:LineItem>`;
+}
+
+/**
+ * Build the ns2:Message element for a gift message.
+ * PHP parity: sanitises to [a-zA-Z0-9 ] and wraps in CDATA.
+ * Returns an empty element when no message is present.
+ */
+function buildGiftMessageXml(message) {
+  if (!message) return '<ns2:Message></ns2:Message>';
+  const sanitized = String(message).replace(/[^a-zA-Z0-9 ]/g, '');
+  if (!sanitized) return '<ns2:Message></ns2:Message>';
+  return `<ns2:Message><![CDATA[${sanitized}]]></ns2:Message>`;
 }
 
 /**
@@ -752,6 +773,17 @@ function determineOrderState(order, paymentSnapshot) {
 function resolvePaymentTerms() {
   // MISSING: paymentPlan (not in journal) — hardcoded 'Immediate'
   return 'Immediate';
+}
+
+/**
+ * 'Commercial' when any item in the order is flagged as commercial
+ * (item.custom.isCommercial === true), otherwise 'Household'.
+ */
+function resolveOrderType(order) {
+  const hasCommercial = (order.items || []).some(
+    (item) => item.custom?.isCommercial === true,
+  );
+  return hasCommercial ? 'Commercial' : 'Household';
 }
 
 /**
