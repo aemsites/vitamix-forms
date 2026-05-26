@@ -31,7 +31,7 @@
  *     subtotal (number) — these may be absent; falls back to order.estimates
  *
  * ── Hardcoded / gap fields ────────────────────────────────────────────────────
- *   orderType                    Order/@Type                hardcoded 'Household'
+ *   orderType                    Order/@Type                from item.custom.isCommercial
  *   taxHolidayInEffect           Order/@TaxHolidayInEffect  hardcoded 'false'
  *   ctsCode / referrerCode       Order/@ReferrerCode        hardcoded '' (gap — needs order schema)
  *   giftMessage                  ns2:Message                always empty (gap — needs order schema)
@@ -314,8 +314,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
   const source = countryToSource(country);
   const priceList = countryToPriceList(country);
 
-  // MISSING: orderType (not in order or journal) — hardcoded 'Household'
-  const orderType = 'Household';
+  const orderType = resolveOrderType(order);
 
   // Shipping method derived from locked-in estimates (type field, e.g. 'standard')
   const shippingMethod = resolveShippingMethod(order);
@@ -763,6 +762,17 @@ function determineOrderState(order, paymentSnapshot) {
 function resolvePaymentTerms() {
   // MISSING: paymentPlan (not in journal) — hardcoded 'Immediate'
   return 'Immediate';
+}
+
+/**
+ * 'Commercial' when any item in the order is flagged as commercial
+ * (item.custom.isCommercial === true), otherwise 'Household'.
+ */
+function resolveOrderType(order) {
+  const hasCommercial = (order.items || []).some(
+    (item) => item.custom?.isCommercial === true,
+  );
+  return hasCommercial ? 'Commercial' : 'Household';
 }
 
 /**
