@@ -220,14 +220,16 @@ async function handleOrderStatus(ctx, formId, data) {
 
   const body = transformSoapKeys(response);
 
-  // Detect cancellation from line item statuses. Cancelled orders may have no
-  // delivery items; each cancelled line item shows Status="Closed".
+  // Detect cancellation from line item statuses. Cancelled line items show
+  // Status="Closed" AND Quantity="0" — Status="Closed" alone can also mean
+  // shipped/fulfilled, so the zero quantity is what distinguishes cancellation.
   const lineItems = [].concat(body.order?.lineItem ?? []);
   if (lineItems.length > 0) {
-    const closedCount = lineItems.filter(item => item?.status === 'Closed').length;
-    if (closedCount === lineItems.length) {
+    const isCancelled = item => item?.status === 'Closed' && item?.quantity === '0';
+    const cancelledCount = lineItems.filter(isCancelled).length;
+    if (cancelledCount === lineItems.length) {
       body.outcome = 'Cancelled';
-    } else if (closedCount > 0) {
+    } else if (cancelledCount > 0) {
       body.outcome = 'Partially Cancelled';
     }
   }
@@ -236,10 +238,14 @@ async function handleOrderStatus(ctx, formId, data) {
   delete body.order?.customer;
   delete body.order?.lineItem;
   delete body.order?.systemOfRecordKey;
-  body.order?.delivery?.forEach(delivery => {
-    delete delivery.systemOfRecordKey;
-    delete delivery.trackingDetail;
-  });
+  if (body.order?.delivery) {
+    // single-delivery responses arrive as an object, not an array — normalize
+    body.order.delivery = [].concat(body.order.delivery);
+    body.order.delivery.forEach(delivery => {
+      delete delivery.systemOfRecordKey;
+      delete delivery.trackingDetail;
+    });
+  }
 
   return {
     body,

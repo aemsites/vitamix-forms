@@ -414,7 +414,7 @@ describe('submit action', () => {
       expect(result.body.order).not.toHaveProperty('lineItem');
     });
 
-    test('reports outcome=Partially Cancelled when some line items are Closed', async () => {
+    test('reports outcome=Partially Cancelled when some line items are Closed with Quantity=0', async () => {
       const partialBody = {
         Response: {
           '@_Id': 'abc',
@@ -423,8 +423,8 @@ describe('submit action', () => {
           'Order': {
             '@_Key': 'om-partial',
             'LineItem': [
-              { '@_Key': '1', '@_Status': 'Closed' },
-              { '@_Key': '2', '@_Status': 'Shipped' },
+              { '@_Key': '1', '@_Status': 'Closed', '@_Quantity': '0' },
+              { '@_Key': '2', '@_Status': 'Shipped', '@_Quantity': '1' },
             ],
           },
         },
@@ -438,12 +438,93 @@ describe('submit action', () => {
       expect(result.body.outcome).toBe('Partially Cancelled');
     });
 
+    test('does not flag Closed line items with Quantity>0 as cancelled (shipped/fulfilled)', async () => {
+      // Closed + Quantity=1 means delivered/fulfilled, not cancelled
+      const fulfilledBody = {
+        Response: {
+          '@_Id': 'abc',
+          '@_Outcome': 'Success',
+          '@_Succeeded': 'true',
+          'Order': {
+            '@_Key': 'om-fulfilled',
+            'LineItem': { '@_Key': '1', '@_Status': 'Closed', '@_Quantity': '1' },
+          },
+        },
+      };
+
+      mockMakeContext.mockResolvedValue(makeOrderCtx('om-fulfilled'));
+      mockQueryOrder.mockResolvedValue({ status: 200, body: fulfilledBody });
+
+      const result = await main({});
+      expect(result.body.outcome).toBe('Success');
+    });
+
     test('preserves original outcome when no line items are Closed', async () => {
       mockMakeContext.mockResolvedValue(makeOrderCtx());
       mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });
 
       const result = await main({});
       expect(result.body.outcome).toBe('Success');
+    });
+
+    test('handles a single Delivery (parsed as object, not array)', async () => {
+      // Real EBS response for a commercial order with one shipped Delivery.
+      // fast-xml-parser emits single-occurrence elements as objects, which
+      // previously crashed the handler at `delivery.forEach`.
+      const singleDeliveryBody = {
+        Response: {
+          '@_Id': '123456654321',
+          '@_Outcome': 'Success',
+          '@_Succeeded': 'true',
+          'Order': {
+            '@_Shipping': 'Standard',
+            '@_Source': 'US',
+            '@_Currency': 'USD',
+            '@_Type': 'Commercial',
+            '@_Key': 'om2101233469',
+            '@_SystemOfRecordKey': '14025466',
+            '@_Created': '2025-04-18T15:34:26',
+            'Customer': {
+              '@_Key': '11253571',
+              '@_SystemOfRecordKey': '7230937',
+              'First': 'DAVID',
+              'Last': 'NUESCHELER',
+              'Middle': '',
+            },
+            'Delivery': {
+              '@_Shipped': '2025-04-22T23:59:00',
+              '@_SystemOfRecordKey': '12208171',
+              'TrackingDetail': {
+                '@_Carrier': 'UPS',
+                'TrackingNumber': '1Z512Y240310631634',
+                'CustomCarrier': 'UPS',
+                'ShippingMethod': 'UPS Ground',
+              },
+            },
+            'LineItem': {
+              '@_Sku': '036019-ABAB',
+              '@_Quantity': '1',
+              '@_UnitSellingPrice': '1462.95',
+              '@_UnitOfMeasure': 'Each',
+              '@_Status': 'Closed',
+              '@_Key': '18115572',
+            },
+          },
+        },
+      };
+
+      mockMakeContext.mockResolvedValue(makeOrderCtx('om2101233469'));
+      mockQueryOrder.mockResolvedValue({ status: 200, body: singleDeliveryBody });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(result.body.order.key).toBe('om2101233469');
+      expect(result.body.order.type).toBe('Commercial');
+      expect(Array.isArray(result.body.order.delivery)).toBe(true);
+      expect(result.body.order.delivery).toHaveLength(1);
+      expect(result.body.order.delivery[0].shipped).toBe('2025-04-22T23:59:00');
+      expect(result.body.order.delivery[0]).not.toHaveProperty('systemOfRecordKey');
+      expect(result.body.order.delivery[0]).not.toHaveProperty('trackingDetail');
     });
   });
 
