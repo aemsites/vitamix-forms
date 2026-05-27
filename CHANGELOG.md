@@ -1,3 +1,10 @@
+## [1.2.11](https://github.com/aemsites/vitamix-forms/compare/v1.2.10...v1.2.11) (2026-05-27)
+
+
+### Bug Fixes
+
+* handle non-array delivery ([62878af](https://github.com/aemsites/vitamix-forms/commit/62878af0163669d9c3286bb51e42af3ed86ddaa7))
+
 ## [1.2.10](https://github.com/aemsites/vitamix-forms/compare/v1.2.9...v1.2.10) (2026-05-27)
 
 
