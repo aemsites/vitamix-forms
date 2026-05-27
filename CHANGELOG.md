@@ -1,3 +1,10 @@
+## [1.2.10](https://github.com/aemsites/vitamix-forms/compare/v1.2.9...v1.2.10) (2026-05-27)
+
+
+### Bug Fixes
+
+* order status cancelled ([b24b140](https://github.com/aemsites/vitamix-forms/commit/b24b14061d24d9167a2c967a94747e5b2d8dc7a1))
+
 ## [1.2.9](https://github.com/aemsites/vitamix-forms/compare/v1.2.8...v1.2.9) (2026-05-26)
 
 
