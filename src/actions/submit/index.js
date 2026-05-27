@@ -218,8 +218,21 @@ async function handleOrderStatus(ctx, formId, data) {
     return errorResponse(status, message, { error: message });
   }
 
-  // remove PII from data
   const body = transformSoapKeys(response);
+
+  // Detect cancellation from line item statuses. Cancelled orders may have no
+  // delivery items; each cancelled line item shows Status="Closed".
+  const lineItems = [].concat(body.order?.lineItem ?? []);
+  if (lineItems.length > 0) {
+    const closedCount = lineItems.filter(item => item?.status === 'Closed').length;
+    if (closedCount === lineItems.length) {
+      body.outcome = 'Cancelled';
+    } else if (closedCount > 0) {
+      body.outcome = 'Partially Cancelled';
+    }
+  }
+
+  // remove PII from data
   delete body.order?.customer;
   delete body.order?.lineItem;
   delete body.order?.systemOfRecordKey;

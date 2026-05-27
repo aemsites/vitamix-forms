@@ -366,6 +366,85 @@ describe('submit action', () => {
       expect(typeof result.body.succeeded).toBe('boolean');
       expect(result.body.succeeded).toBe(true);
     });
+
+    test('reports outcome=Cancelled when all line items are Closed', async () => {
+      // Sample EBS response for a fully cancelled single-item order.
+      // Cancelled orders may have no Delivery elements; each cancelled
+      // LineItem carries Status="Closed".
+      const cancelledBody = {
+        Response: {
+          '@_Id': '123456654321',
+          '@_Outcome': 'Success',
+          '@_Succeeded': 'true',
+          'Order': {
+            '@_Shipping': 'Standard',
+            '@_Source': 'US',
+            '@_Currency': 'USD',
+            '@_Type': 'Household',
+            '@_Key': 'om2101502620',
+            '@_SystemOfRecordKey': '14207540',
+            '@_Created': '2026-04-07T16:49:26',
+            'Customer': {
+              '@_Key': '12285360',
+              '@_SystemOfRecordKey': '7929814',
+              'First': 'KATHLEEN',
+              'Last': 'RUMME',
+              'Middle': '',
+            },
+            'LineItem': {
+              '@_Sku': '001811',
+              '@_Quantity': '0',
+              '@_UnitSellingPrice': '349.95',
+              '@_UnitOfMeasure': 'Each',
+              '@_Status': 'Closed',
+              '@_Key': '19329252',
+            },
+          },
+        },
+      };
+
+      mockMakeContext.mockResolvedValue(makeOrderCtx('om2101502620'));
+      mockQueryOrder.mockResolvedValue({ status: 200, body: cancelledBody });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(result.body.outcome).toBe('Cancelled');
+      expect(result.body.order.key).toBe('om2101502620');
+      expect(result.body.order).not.toHaveProperty('delivery');
+      expect(result.body.order).not.toHaveProperty('lineItem');
+    });
+
+    test('reports outcome=Partially Cancelled when some line items are Closed', async () => {
+      const partialBody = {
+        Response: {
+          '@_Id': 'abc',
+          '@_Outcome': 'Success',
+          '@_Succeeded': 'true',
+          'Order': {
+            '@_Key': 'om-partial',
+            'LineItem': [
+              { '@_Key': '1', '@_Status': 'Closed' },
+              { '@_Key': '2', '@_Status': 'Shipped' },
+            ],
+          },
+        },
+      };
+
+      mockMakeContext.mockResolvedValue(makeOrderCtx('om-partial'));
+      mockQueryOrder.mockResolvedValue({ status: 200, body: partialBody });
+
+      const result = await main({});
+      expect(result.statusCode).toBe(200);
+      expect(result.body.outcome).toBe('Partially Cancelled');
+    });
+
+    test('preserves original outcome when no line items are Closed', async () => {
+      mockMakeContext.mockResolvedValue(makeOrderCtx());
+      mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });
+
+      const result = await main({});
+      expect(result.body.outcome).toBe('Success');
+    });
   });
 
   // -- product-registration ------------------------------------------------
