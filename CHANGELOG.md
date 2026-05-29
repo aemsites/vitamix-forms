@@ -1,3 +1,10 @@
+## [1.2.12](https://github.com/aemsites/vitamix-forms/compare/v1.2.11...v1.2.12) (2026-05-29)
+
+
+### Bug Fixes
+
+* log xml to ops-log ([098ef54](https://github.com/aemsites/vitamix-forms/commit/098ef543fa5200031f1e93c5b338c8e0633bd1a2))
+
 ## [1.2.11](https://github.com/aemsites/vitamix-forms/compare/v1.2.10...v1.2.11) (2026-05-27)
 
 
