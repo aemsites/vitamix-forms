@@ -120,7 +120,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal) {
     throw err;
   }
 
-  return { status: res.status };
+  return { status: res.status, xml };
 }
 
 /** Returns true when the EBS response indicates success. */
@@ -461,8 +461,8 @@ function buildPaymentXml(paymentSnapshot, order) {
       : '';
     const safetechAttrs = paymentSnapshot.hasSafetech
       ? `\n              FraudStatusCode="${escapeXml(paymentSnapshot.fraudStatusCode)}"`
-        + `\n              FraudRiskInquiryTransactionID="${escapeXml(paymentSnapshot.fraudRiskInquiryTransactionId)}"`
-        + `\n              FraudAutoDecisionResponse="${escapeXml(paymentSnapshot.fraudAutoDecisionResponse)}"`
+      + `\n              FraudRiskInquiryTransactionID="${escapeXml(paymentSnapshot.fraudRiskInquiryTransactionId)}"`
+      + `\n              FraudAutoDecisionResponse="${escapeXml(paymentSnapshot.fraudAutoDecisionResponse)}"`
       : '';
     inner = `<ns2:CreditCard
               CardId="${escapeXml(paymentSnapshot.cardId)}"

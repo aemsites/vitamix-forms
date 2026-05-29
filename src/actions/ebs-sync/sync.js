@@ -166,9 +166,9 @@ export async function run(params) {
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { status } = await syncOrderToEbs(ctx, params, order, orderJournal);
+          const { status, xml } = await syncOrderToEbs(ctx, params, order, orderJournal);
 
-          await logOrderSync(params, { action: 'order-sync', id: orderId, status }).catch((logErr) => {
+          await logOrderSync(params, { action: 'order-sync', id: orderId, status, xml }).catch((logErr) => {
             log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}: ${logErr.message}`);
           });
 
