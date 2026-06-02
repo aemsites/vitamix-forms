@@ -265,18 +265,16 @@ function sleep(ms) {
 }
 
 /**
- * Reduce a sync failure to a compact, stable code (with a short detail suffix
- * where useful) for storage in the order's custom.syncError. Keeps the value
- * small and free of stack traces while still distinguishing failure modes:
+ * Reduce a sync failure to a compact, stable code for storage in the order's
+ * custom.syncError. This value is customer-readable via the API, so it must
+ * never carry raw error messages, payloads, or other internals — only a vague
+ * code naming the system involved. The matching detail lives in the logs.
  *
  *   payment_snapshot_missing  - journal had no usable payment_completed entry
- *   ebs_rejected: <detail>    - EBS responded but did not accept the order
+ *   ebs_rejected              - EBS responded but did not accept the order
  *   ebs_http_<status>         - EBS/proxy returned a non-2xx HTTP status
  *   ebs_unreachable           - network/timeout/DNS — no response from EBS
- *   sync_failed: <detail>     - anything else
- *
- * The result is truncated to MAX_SYNC_ERROR_LEN — the commerce API caps custom
- * string values at 128 characters.
+ *   sync_failed               - anything else
  *
  * @param {(Error & { ebsStatus?: number, response?: { statusCode?: number, error?: { statusCode?: number } } }) | null} err
  * @returns {string}
@@ -290,8 +288,7 @@ function describeSyncError(err) {
   }
 
   if (err.ebsStatus != null || /EBS rejected order/i.test(message)) {
-    const detail = message.replace(/^EBS rejected order:\s*/i, '');
-    return truncate(`ebs_rejected: ${detail}`);
+    return 'ebs_rejected';
   }
 
   const status = err?.response?.statusCode ?? err?.response?.error?.statusCode;
@@ -299,15 +296,5 @@ function describeSyncError(err) {
 
   if (isRetriableError(err)) return 'ebs_unreachable';
 
-  return truncate(`sync_failed: ${message}`);
-}
-
-/** Commerce API caps custom string values at 128 characters. */
-const MAX_SYNC_ERROR_LEN = 128;
-
-/** Truncate to the commerce custom-field limit, marking elision with an ellipsis. */
-function truncate(value) {
-  return value.length > MAX_SYNC_ERROR_LEN
-    ? `${value.slice(0, MAX_SYNC_ERROR_LEN - 1)}…`
-    : value;
+  return 'sync_failed';
 }
