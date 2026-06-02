@@ -11,8 +11,9 @@
  *        b. Skips cancelled orders (including fraud-declined) — no EBS sync needed
  *        c. For payment_completed: queries complete per-order journal
  *        d. Calls syncOrderToEbs(ctx, params, order, orderJournal), retrying up to MAX_RETRIES
- *        e. On success: patches custom.syncedAt
- *        f. On max-retries exhausted: records the error, halts without advancing cursor
+ *        e. On success: patches custom.syncedAt and clears custom.syncError to null
+ *        f. On max-retries exhausted: patches custom.syncError with a short error
+ *           code, records the error, halts without advancing cursor
  *   5. Checks a 9.5-minute deadline before each order
  *   6. On success/deadline: advances cursor to the latest journal entry timestamp
  *   7. Saves updated state and releases the lock
@@ -157,6 +158,9 @@ export async function run(params) {
         log.warn(
           `[ebs-sync] Could not fetch journal for ${orderId}: ${journalErr.message}`,
         );
+        await updateOrderCustom(params, orderId, { syncError: 'journal_fetch_failed' }).catch((patchErr) => {
+          log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
+        });
         continue;
       }
 
@@ -173,7 +177,7 @@ export async function run(params) {
           });
 
           const syncedAt = new Date().toISOString();
-          await updateOrderCustom(params, orderId, { syncedAt });
+          await updateOrderCustom(params, orderId, { syncedAt, syncError: null });
 
           state.lastProcessedOrderId = orderId;
           state.processedCount = (state.processedCount || 0) + 1;
@@ -224,6 +228,11 @@ export async function run(params) {
         summary.haltReason = 'max-retries';
         halted = true;
 
+        // Surface the failure on the order itself so it's visible downstream.
+        await updateOrderCustom(params, orderId, { syncError: describeSyncError(lastErr) }).catch((patchErr) => {
+          log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
+        });
+
         log.error(
           `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.\n${errStack}`,
         );
@@ -253,4 +262,52 @@ export async function run(params) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Reduce a sync failure to a compact, stable code (with a short detail suffix
+ * where useful) for storage in the order's custom.syncError. Keeps the value
+ * small and free of stack traces while still distinguishing failure modes:
+ *
+ *   payment_snapshot_missing  - journal had no usable payment_completed entry
+ *   ebs_rejected: <detail>    - EBS responded but did not accept the order
+ *   ebs_http_<status>         - EBS/proxy returned a non-2xx HTTP status
+ *   ebs_unreachable           - network/timeout/DNS — no response from EBS
+ *   sync_failed: <detail>     - anything else
+ *
+ * The result is truncated to MAX_SYNC_ERROR_LEN — the commerce API caps custom
+ * string values at 128 characters.
+ *
+ * @param {(Error & { ebsStatus?: number, response?: { statusCode?: number, error?: { statusCode?: number } } }) | null} err
+ * @returns {string}
+ */
+function describeSyncError(err) {
+  if (!err) return 'sync_failed';
+  const message = err.message ?? String(err);
+
+  if (/cannot build payment snapshot/i.test(message)) {
+    return 'payment_snapshot_missing';
+  }
+
+  if (err.ebsStatus != null || /EBS rejected order/i.test(message)) {
+    const detail = message.replace(/^EBS rejected order:\s*/i, '');
+    return truncate(`ebs_rejected: ${detail}`);
+  }
+
+  const status = err?.response?.statusCode ?? err?.response?.error?.statusCode;
+  if (status) return `ebs_http_${status}`;
+
+  if (isRetriableError(err)) return 'ebs_unreachable';
+
+  return truncate(`sync_failed: ${message}`);
+}
+
+/** Commerce API caps custom string values at 128 characters. */
+const MAX_SYNC_ERROR_LEN = 128;
+
+/** Truncate to the commerce custom-field limit, marking elision with an ellipsis. */
+function truncate(value) {
+  return value.length > MAX_SYNC_ERROR_LEN
+    ? `${value.slice(0, MAX_SYNC_ERROR_LEN - 1)}…`
+    : value;
 }
