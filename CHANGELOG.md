@@ -1,3 +1,10 @@
+## [1.2.13](https://github.com/aemsites/vitamix-forms/compare/v1.2.12...v1.2.13) (2026-06-02)
+
+
+### Bug Fixes
+
+* add syncError ([04955ef](https://github.com/aemsites/vitamix-forms/commit/04955eff6a493559dd9eda6d1fa76efd68701f8e))
+
 ## [1.2.12](https://github.com/aemsites/vitamix-forms/compare/v1.2.11...v1.2.12) (2026-05-29)
 
 
