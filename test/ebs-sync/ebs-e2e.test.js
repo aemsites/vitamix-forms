@@ -614,6 +614,18 @@ describe('ebs-sync e2e', () => {
       expect(serials[0][1]).toBe(serials[1][1]);
     });
 
+    test('warranty quantity is coverageYears and price is the per-year unit price', async () => {
+      // Order carries price.final=117.00 as the total for the full 3-year term.
+      // EBS expects Quantity=coverageYears (3) and a per-year unit price (117/3=39.00).
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_BUNDLE_WARRANTY_ORDER, journal);
+      const line = capturedXml.match(/<ns2:LineItem\s+Sku="001314"[\s\S]*?<\/ns2:LineItem>/)[0];
+      expect(line).toMatch(/Quantity="3"/);
+      expect(line).toMatch(/UnitSellingPrice="39\.00"/);
+      expect(line).toMatch(/UnitOfMeasure="Years"/);
+      // The total (price.final) must not leak through as the unit price
+      expect(line).not.toMatch(/UnitSellingPrice="117\.00"/);
+    });
+
     test('item-level tax amounts are emitted from taxAmount fields', async () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_BUNDLE_WARRANTY_ORDER, journal);
       // Each bundle child carries its own tax
@@ -642,6 +654,55 @@ describe('ebs-sync e2e', () => {
       // Emitted SKU should be the transformed VitamixProductId, not the catalog SKU
       expect(capturedXml).toMatch(/Sku="70791"[\s\S]*?UnitOfMeasure="Years"/);
       expect(capturedXml).not.toMatch(/Sku="070791"/);
+    });
+  });
+
+  // ── Warranty per-year pricing math ──────────────────────────────────────
+
+  describe('warranty per-year pricing', () => {
+    const journal = loadJournal('journal-pp-bundle-warranty.ndjson');
+
+    /** Run the sync with a warranty whose total price.final and coverageYears are overridden. */
+    async function syncWarranty({ final, coverageYears }) {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[1].price.final = final;
+      if (coverageYears === undefined) {
+        delete order.items[1].custom.coverageYears;
+      } else {
+        order.items[1].custom.coverageYears = coverageYears;
+      }
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      return capturedXml.match(/<ns2:LineItem\s+Sku="001314"[\s\S]*?<\/ns2:LineItem>/)[0];
+    }
+
+    test('splits the term total evenly: 117.00 over 3 years => 39.00 × 3', async () => {
+      const line = await syncWarranty({ final: '117.00', coverageYears: 3 });
+      expect(line).toMatch(/Quantity="3"/);
+      expect(line).toMatch(/UnitSellingPrice="39\.00"/);
+    });
+
+    test('5-year term: 250.00 over 5 years => 50.00 × 5', async () => {
+      const line = await syncWarranty({ final: '250.00', coverageYears: 5 });
+      expect(line).toMatch(/Quantity="5"/);
+      expect(line).toMatch(/UnitSellingPrice="50\.00"/);
+    });
+
+    test('non-even division rounds the unit price to 2 decimals: 100.00 over 3 years', async () => {
+      const line = await syncWarranty({ final: '100.00', coverageYears: 3 });
+      expect(line).toMatch(/Quantity="3"/);
+      expect(line).toMatch(/UnitSellingPrice="33\.33"/);
+    });
+
+    test('1-year term: unit price equals the full total', async () => {
+      const line = await syncWarranty({ final: '49.00', coverageYears: 1 });
+      expect(line).toMatch(/Quantity="1"/);
+      expect(line).toMatch(/UnitSellingPrice="49\.00"/);
+    });
+
+    test('missing coverageYears falls back to a single year at full price', async () => {
+      const line = await syncWarranty({ final: '99.00', coverageYears: undefined });
+      expect(line).toMatch(/Quantity="1"/);
+      expect(line).toMatch(/UnitSellingPrice="99\.00"/);
     });
   });
 

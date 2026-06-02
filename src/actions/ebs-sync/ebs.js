@@ -638,12 +638,7 @@ function buildLineItemsXml(order) {
         ));
 
         if (hasWarranty) {
-          const w = warrantyBySku.get(child.sku);
-          const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
-          lines.push(buildLineItemXml(
-            wSku, w.quantity ?? 1,
-            w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
-          ));
+          lines.push(buildWarrantyLineItemXml(warrantyBySku.get(child.sku), serial));
         }
       }
     } else {
@@ -658,12 +653,7 @@ function buildLineItemsXml(order) {
       ));
 
       if (hasWarranty) {
-        const w = warrantyBySku.get(item.sku);
-        const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
-        lines.push(buildLineItemXml(
-          wSku, w.quantity ?? 1,
-          w.price?.final || '0.00', w.taxAmount || '0.00', 'Years', serial,
-        ));
+        lines.push(buildWarrantyLineItemXml(warrantyBySku.get(item.sku), serial));
       }
     }
   }
@@ -682,6 +672,26 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber) {
             UnitOfMeasure="${unitOfMeasure}">
             <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}
           </ns2:LineItem>`;
+}
+
+/**
+ * Build a warranty line item (UnitOfMeasure="Years").
+ *
+ * The order carries the warranty's price.final as the total for the full
+ * coverage term, with the number of years in custom.coverageYears. EBS models
+ * warranties as a per-year unit price billed against a quantity of years, so we
+ * split the total back out:
+ *   Quantity         = coverageYears
+ *   UnitSellingPrice = price.final / coverageYears
+ */
+function buildWarrantyLineItemXml(w, serial) {
+  const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
+  const coverageYears = Number(w.custom?.coverageYears) || 1;
+  const total = Number(w.price?.final) || 0;
+  const unitPrice = String((total / coverageYears).toFixed(2));
+  return buildLineItemXml(
+    wSku, coverageYears, unitPrice, w.taxAmount || '0.00', 'Years', serial,
+  );
 }
 
 /**
