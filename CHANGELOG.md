@@ -1,3 +1,11 @@
+## [1.2.14](https://github.com/aemsites/vitamix-forms/compare/v1.2.13...v1.2.14) (2026-06-02)
+
+
+### Bug Fixes
+
+* correct warranty price ([09124bd](https://github.com/aemsites/vitamix-forms/commit/09124bd5ff255af3237474b3b5f656083f7d8c11))
+* generic ebsError codes ([e0d7749](https://github.com/aemsites/vitamix-forms/commit/e0d77497a7da29d53a2876ea649a992b7302a2b5))
+
 ## [1.2.13](https://github.com/aemsites/vitamix-forms/compare/v1.2.12...v1.2.13) (2026-06-02)
 
 
