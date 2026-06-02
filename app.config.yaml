@@ -101,7 +101,7 @@ application:
           ebs-sync-schedule:
             feed: /whisk.system/alarms/alarm
             inputs:
-              cron: '*/10 * * * *'
+              cron: '*/5 * * * *'
               timezone: UTC
 
         rules:
