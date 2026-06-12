@@ -1,3 +1,11 @@
+## [1.2.15](https://github.com/aemsites/vitamix-forms/compare/v1.2.14...v1.2.15) (2026-06-12)
+
+
+### Bug Fixes
+
+* faster cron ([677f8e9](https://github.com/aemsites/vitamix-forms/commit/677f8e9afd3aa3d940df3cbe84c2b0c534282439))
+* force deploy ([b60f682](https://github.com/aemsites/vitamix-forms/commit/b60f682890c0408c94a71fc3b5caa0d8d87c1f9e))
+
 ## [1.2.14](https://github.com/aemsites/vitamix-forms/compare/v1.2.13...v1.2.14) (2026-06-02)
 
 
