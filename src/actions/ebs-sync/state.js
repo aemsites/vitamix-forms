@@ -16,8 +16,15 @@ import { init } from '@adobe/aio-lib-state';
 const STATE_KEY = 'ebs-sync:state';
 const LOCK_KEY = 'ebs-sync:lock';
 
-/** Lock TTL — one full schedule interval plus a generous buffer. */
-const LOCK_TTL_SEC = 660; // 11 minutes
+/**
+ * Lock TTL — must exceed the action's max run duration (the 600000ms / 10-min
+ * timeout in app.config.yaml) so the lock can never expire while a run is still
+ * in progress. This is what keeps overlapping triggers from running in parallel:
+ * the sync fires every 5 minutes but a run may last up to 10, so a trigger that
+ * fires mid-run must find the lock still held and skip. Do NOT lower this to
+ * track the schedule interval — it is keyed to run duration, not cron cadence.
+ */
+const LOCK_TTL_SEC = 660; // 11 minutes (> 10-min max run)
 
 /** State TTL — effectively permanent (1 year). */
 const STATE_TTL_SEC = 365 * 24 * 3600;

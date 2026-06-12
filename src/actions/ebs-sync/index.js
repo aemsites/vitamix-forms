@@ -3,7 +3,7 @@
  *
  * Three invocation modes:
  *
- *   Scheduled (alarm rule, every 10 min)
+ *   Scheduled (alarm rule, every 5 min)
  *     params.__ow_method is absent.
  *     Runs the full sync job via sync.run().
  *

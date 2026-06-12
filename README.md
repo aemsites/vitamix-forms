@@ -18,9 +18,9 @@ Returns the currently deployed version (`{ "version": "..." }`). Used by post-de
 
 ### `ebs-sync/ebs-sync` (web action + scheduled)
 
-Synchronizes completed commerce orders to Oracle EBS. Runs on a 10-minute cron schedule and is also available as an HTTP endpoint for status checks and manual triggers.
+Synchronizes completed commerce orders to Oracle EBS. Runs on a 5-minute cron schedule and is also available as an HTTP endpoint for status checks and manual triggers.
 
-**Scheduled mode** (every 10 min): Reads the global orders journal since the last cursor, filters to terminal events (`payment_completed` / `payment_cancelled`), and for each completed order builds a SOAP XML payload and POSTs it to EBS via a static-IP proxy. Cancelled orders are skipped. A 15-minute overlap is applied to journal queries to catch late-arriving entries.
+**Scheduled mode** (every 5 min): Reads the global orders journal since the last cursor, filters to terminal events (`payment_completed` / `payment_cancelled`), and for each completed order builds a SOAP XML payload and POSTs it to EBS via a static-IP proxy. Cancelled orders are skipped. A 15-minute overlap is applied to journal queries to catch late-arriving entries.
 
 **Supported payment methods**: Credit card (Chase), PayPal, Apple Pay (Chase wallet), Affirm.
 
