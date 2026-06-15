@@ -1,3 +1,10 @@
+## [1.2.16](https://github.com/aemsites/vitamix-forms/compare/v1.2.15...v1.2.16) (2026-06-15)
+
+
+### Bug Fixes
+
+* **ebs-sync:** resolve address validation like Magento ([f2832c5](https://github.com/aemsites/vitamix-forms/commit/f2832c560b48471a1c380c42fcd2a66fe5828e60))
+
 ## [1.2.15](https://github.com/aemsites/vitamix-forms/compare/v1.2.14...v1.2.15) (2026-06-12)
 
 
