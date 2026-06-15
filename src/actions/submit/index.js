@@ -10,7 +10,7 @@ const MAX_PAYLOAD_SIZE = 16_000; // 16KB
  * alphanumeric, underscores, hyphens, slashes allowed
  * but no trailing/leading slash, hyphen or underscore
  */
-const FORM_ID_PATTERN = /^[a-zA-Z0-9]+[\/a-zA-Z0-9_-]*[a-zA-Z0-9]+$/;
+const FORM_ID_PATTERN = /^[a-zA-Z0-9]+[/a-zA-Z0-9_-]*[a-zA-Z0-9]+$/;
 
 /**
  * Origin of the production site, as seen in referer header

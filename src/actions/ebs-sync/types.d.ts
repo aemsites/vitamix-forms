@@ -22,7 +22,7 @@ export interface JournalPaymentData {
   /** EBS-facing method identifier */
   method: 'chasehpp' | 'paypal' | 'affirm' | 'applepay';
   /** Raw provider name from the payment_completed journal entry */
-  provider: 'chase' | 'paypal' | 'affirm';
+  provider: 'chase' | 'chase-wallet' | 'paypal' | 'affirm';
   /** Charged total as a decimal string (e.g. "913.05") */
   amount: string;
   /** Tax amount as a decimal string — from journal or order.estimates fallback */
@@ -41,7 +41,7 @@ export interface JournalPaymentData {
   approvalCode?: string;
   /** Card brand from Chase cardType field (e.g. "Visa", "Mastercard") */
   cardBrand?: string;
-  /** Last 4 digits sliced from the masked mPAN (e.g. "1881" from "401288XXXXXX1881") */
+  /** Last 4 card digits sent to EBS */
   last4?: string;
   /** Card expiry converted from Chase MMYY format to EBS date (e.g. "2027-01-28T00:00") */
   expiration?: string;
@@ -57,6 +57,8 @@ export interface JournalPaymentData {
   fraudAutoDecisionResponse?: string;
   /** Decision from fraud_evaluated journal entry (e.g. 'approve', 'decline', 'not_reviewed') */
   fraudDecision?: string | null;
+  /** Chase AVSMatch from queryTransaction; drives EBS BillTo IsValidated for chasehpp only */
+  avsMatch?: string;
   /** MISSING: StoredCredentials flag — not logged; always 'N' */
   storedCredentials?: string;
   /** MISSING: MIT message type — not logged; always 'CGEN' */
@@ -121,7 +123,7 @@ export interface StoredOrderAddress {
   company?: string;
   phone?: string;
   isDefault?: boolean;
-  /** When false, EBS IsValidated attribute is set to 'false' */
+  /** Stored address metadata; ShipTo uses shipping.isValidated, while BillTo is resolved from payment AVS rules */
   isValidated?: boolean;
 }
 
@@ -130,6 +132,15 @@ export interface StoredOrderCustomer {
   lastName: string;
   email: string;
   phone?: string;
+}
+
+export interface StoredOrderPayment {
+  method?: string;
+  transactionId?: string;
+  /** Final four card digits stored by Edge Commerce; fallback source for EBS CreditCard/@CardLast4Digits */
+  cardLastFour?: string;
+  amount?: string;
+  currency?: string;
 }
 
 export interface StoredOrderItem {
@@ -179,6 +190,8 @@ export interface JournalOrderData {
   /** Billing address — falls back to shipping when absent */
   billing?: StoredOrderAddress;
   shipping: StoredOrderAddress;
+  /** Stored order payment metadata; payment_completed journal remains the primary EBS payment source */
+  payment?: StoredOrderPayment;
   items: StoredOrderItem[];
   /** Locked-in estimate snapshot — present when estimateToken was provided at order creation */
   estimates?: StoredOrderEstimates;

@@ -14,7 +14,7 @@
  *
  * ── Payment data sources ─────────────────────────────────────────────────────
  *   Chase (provider='chase')   payment_completed:
- *     transactionId, approvalCode, cardType (brand), cardNumber (masked mPAN),
+ *     transactionId, approvalCode, cardType (brand), cardLast4,
  *     cardExpiry (MMYY), avsMatch, cvvMatch, amount, currency
  *     providerData.safetechResponse  (pipe-delimited, optional)
  *   fraud_evaluated: decision ('approve'|'decline'|'not_reviewed'|'pending')
@@ -52,6 +52,10 @@
 import { proxyFetch } from '../../proxy.js';
 
 const TRANSIENT_ERROR_PATTERN = /timeout|timed out|aborted|fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i;
+
+const CHASE_AVS_UNVALIDATED_CODES = new Set([
+  '1', '2', '3', '4', '5', '6', '8', 'G', 'J', 'M1', 'M8', 'N4', 'N6', 'R', 'UK',
+]);
 
 /**
  * Classify whether an error from syncOrderToEbs is worth retrying.
@@ -149,6 +153,8 @@ function extractEbsErrorMessage(xml) {
  *   - The fraud_evaluated journal entry (fraud decision for Chase order state)
  *   - order.estimates (fallback for taxAmount/shippingCost/subtotal when
  *     the payment_completed entry was logged without locked-in estimates)
+ *   - payment_completed.cardLast4 or order.payment.cardLastFour for EBS
+ *     CreditCard/@CardLast4Digits
  *
  * Returns null when no payment_completed entry is present in the journal.
  *
@@ -220,8 +226,8 @@ export function buildPaymentSnapshot(order, orderJournal) {
       approvalCode: completed.approvalCode || '',
       // cardType from Chase queryTransaction is the card brand (e.g. "Visa")
       cardBrand: completed.cardType || '',
-      // cardNumber is the masked mPAN (e.g. "401288XXXXXX1881") — last 4 for EBS
-      last4: (completed.cardNumber || '').slice(-4),
+      // Magento sends getCcLast4(); Edge stores only the final four digits.
+      last4: resolveCardLast4(completed, order),
       // cardExpiry from Chase in MMYY format (e.g. "0127" = January 2027)
       expiration: cardExpiryToDate(completed.cardExpiry || ''),
       approvalDate: completed.timestamp,
@@ -237,6 +243,7 @@ export function buildPaymentSnapshot(order, orderJournal) {
       fraudAutoDecisionResponse: safetech.AutoDecisionResponse || '',
       // Forter / fraud provider decision from fraud_evaluated entry
       fraudDecision,
+      avsMatch: completed.avsMatch || '',
       // MISSING: storedCredentials (payment plan indicator not in journal) — 'N'
       storedCredentials: 'N',
       // MISSING: mitMsgType (not in journal) — 'CGEN' (standard one-time payment)
@@ -283,9 +290,8 @@ export function buildPaymentSnapshot(order, orderJournal) {
       ...base,
       transactionId: completed.transactionId || '',
       approvalCode: completed.approvalCode || '',
-      // cardBrand and last4 not yet available in chase-wallet journal entries
-      cardBrand: completed.cardType || '',
-      last4: (completed.cardNumber || '').slice(-4),
+      cardBrand: completed.cardBrand || completed.cardType || '',
+      last4: (completed.cardLast4 || '').slice(-4),
       nameOnCard: completed.nameOnCard || '',
       approvalDate: completed.timestamp,
       fraudDecision,
@@ -362,7 +368,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
           ReferrerCode="${escapeXml(referrerCode)}"
           Key="${escapeXml(orderKey)}"
           Created="${created}">
-        ${buildCustomerXml(order)}
+        ${buildCustomerXml(order, paymentSnapshot)}
         ${buildPaymentXml(paymentSnapshot, order)}
         <ns2:Tax Amount="${taxAmount}" Provisional="true" />
         ${giftMessage}
@@ -376,7 +382,7 @@ function buildCreateOrderXml(order, paymentSnapshot) {
 </soapenv:Envelope>`;
 }
 
-function buildCustomerXml(order) {
+function buildCustomerXml(order, paymentSnapshot) {
   const email = escapeXml(order.customer?.email || '');
   const firstName = escapeXml(sanitizeName(order.customer?.firstName || ''));
   const lastName = escapeXml(sanitizeName(order.customer?.lastName || ''));
@@ -385,8 +391,14 @@ function buildCustomerXml(order) {
   );
 
   // billing falls back to shipping when absent
-  const billing = order.billing || order.shipping || {};
-  const shipping = order.shipping || {};
+  const billing = {
+    ...(order.billing || order.shipping || {}),
+    isValidated: resolveBillingIsValidated(paymentSnapshot),
+  };
+  const shipping = {
+    ...(order.shipping || {}),
+    isValidated: resolveShippingIsValidated(order),
+  };
 
   return `<ns2:Customer
           xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
@@ -400,6 +412,30 @@ function buildCustomerXml(order) {
           <First>${firstName}</First>
           <Last>${lastName}</Last>
         </ns2:Customer>`;
+}
+
+/**
+ * Resolve ShipTo validation from the stored shipping address flag.
+ * Missing flags default to true for older and express-checkout orders.
+ *
+ * @param {object} order
+ * @returns {boolean}
+ */
+function resolveShippingIsValidated(order) {
+  return order.shipping?.isValidated !== false;
+}
+
+/**
+ * Resolve BillTo validation using Magento's Chase AVS rules.
+ * Non-Chase methods and zero-total Chase orders are always considered validated.
+ *
+ * @param {object} paymentSnapshot
+ * @returns {boolean}
+ */
+function resolveBillingIsValidated(paymentSnapshot) {
+  if (paymentSnapshot?.method !== 'chasehpp') return true;
+  if (Number(paymentSnapshot.amount || 0) === 0) return true;
+  return !CHASE_AVS_UNVALIDATED_CODES.has(String(paymentSnapshot.avsMatch || '').trim());
 }
 
 /**
@@ -856,6 +892,18 @@ function parseSafetech(response) {
     result[pair.slice(0, colonIdx).trim()] = pair.slice(colonIdx + 1).trim();
   }
   return result;
+}
+
+/**
+ * Resolve the final four credit card digits for EBS.
+ * Magento sends getCcLast4(); Edge stores only last-four values for PCI scope.
+ *
+ * @param {object} completed - payment_completed journal entry
+ * @param {object} order - stored order document
+ * @returns {string}
+ */
+function resolveCardLast4(completed, order) {
+  return String(completed.cardLast4 || order.payment?.cardLastFour || '').slice(-4);
 }
 
 /**

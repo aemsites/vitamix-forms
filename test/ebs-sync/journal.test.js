@@ -91,8 +91,7 @@ const CHASE_FORTER_ENTRIES = [
     transactionId: '69D6844E106ACBB3000004420000559C4156542B',
     approvalCode: 'tst387',
     cardType: 'Visa',
-    cardNumber: '401288XXXXXX1881',
-    cardBin: '401288',
+    cardLast4: '1881',
     cardExpiry: '0127',
     avsMatch: '2 ',
     cvvMatch: 'M',
@@ -370,9 +369,22 @@ describe('buildPaymentSnapshot', () => {
       expect(cardBrand).toBe('Visa');
     });
 
-    test('derives last4 from masked mPAN', () => {
-      // cardNumber "401288XXXXXX1881" → last 4 → "1881"
+    test('derives last4 from journal cardLast4', () => {
       const { last4 } = buildPaymentSnapshot(mockOrder(), CHASE_FORTER_ENTRIES);
+      expect(last4).toBe('1881');
+    });
+
+    test('falls back to order payment cardLastFour when journal cardLast4 is absent', () => {
+      const entries = CHASE_FORTER_ENTRIES.map((entry) => {
+        if (entry.event !== 'payment_completed') return entry;
+        const rest = { ...entry };
+        delete rest.cardLast4;
+        return rest;
+      });
+      const { last4 } = buildPaymentSnapshot(
+        mockOrder({ payment: { method: 'card', cardLastFour: '1881' } }),
+        entries,
+      );
       expect(last4).toBe('1881');
     });
 
@@ -385,6 +397,22 @@ describe('buildPaymentSnapshot', () => {
     test('captures fraudDecision from fraud_evaluated entry', () => {
       const { fraudDecision } = buildPaymentSnapshot(mockOrder(), CHASE_FORTER_ENTRIES);
       expect(fraudDecision).toBe('approve');
+    });
+
+    test('captures AVS match from payment_completed', () => {
+      const { avsMatch } = buildPaymentSnapshot(mockOrder(), CHASE_FORTER_ENTRIES);
+      expect(avsMatch).toBe('2 ');
+    });
+
+    test('defaults missing AVS match to empty string', () => {
+      const entries = CHASE_FORTER_ENTRIES.map((entry) => {
+        if (entry.event !== 'payment_completed') return entry;
+        const rest = { ...entry };
+        delete rest.avsMatch;
+        return rest;
+      });
+      const { avsMatch } = buildPaymentSnapshot(mockOrder(), entries);
+      expect(avsMatch).toBe('');
     });
 
     test('defaults SafeTech fields to empty string when providerData absent', () => {
