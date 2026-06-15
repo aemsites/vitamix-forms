@@ -82,6 +82,13 @@ const CC_APPROVED_ORDER = {
     },
     tax: { country: 'CA', state: 'ON', rate: 13, id: 'CA-ON-*-Rate1' },
   },
+  payment: {
+    method: 'card',
+    transactionId: '69F8F8131B061CE600000FFA0000796C41565367',
+    cardLastFour: '1881',
+    amount: '540.15',
+    currency: 'CAD',
+  },
 };
 
 /** Order matching journal-cc-decline.ndjson (Chase, Forter declined → cancelled). */
@@ -397,13 +404,13 @@ const MOCK_CTX = {
 
 describe('ebs-sync e2e', () => {
   let capturedXml;
-  const origFetch = globalThis.fetch;
+  const origFetch = global.fetch;
 
   beforeAll(() => {
     // proxyFetch wraps the destination request inside a JSON envelope:
     //   POST <proxy>  body: { url, method, headers, body: <SOAP XML> }
     // Tests assert against the inner SOAP XML.
-    globalThis.fetch = async (_url, opts) => {
+    global.fetch = async (_url, opts) => {
       const wrapped = JSON.parse(opts.body);
       capturedXml = wrapped.body;
       return { ok: true, status: 200, text: async () => '<Response Succeeded="true" />' };
@@ -411,7 +418,7 @@ describe('ebs-sync e2e', () => {
   });
 
   afterAll(() => {
-    globalThis.fetch = origFetch;
+    global.fetch = origFetch;
   });
 
   beforeEach(() => {
@@ -429,6 +436,20 @@ describe('ebs-sync e2e', () => {
       console.log(`[fixture] Wrote ${fixtureName} — review and commit.`);
     }
     expect(xml).toBe(loadFixture(fixtureName));
+  }
+
+  const clone = (value) => JSON.parse(JSON.stringify(value));
+
+  const withCompletedPayment = (journal, fields) => journal.map((entry) => (
+    entry.event === 'payment_completed' ? { ...entry, ...fields } : entry
+  ));
+
+  const addressValidation = (xml, tag) => xml.match(new RegExp(`<${tag} IsValidated="([^"]+)"`))?.[1];
+
+  async function buildXml(order, journal) {
+    await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+    expect(capturedXml).toBeTruthy();
+    return capturedXml;
   }
 
   // ── Chase credit card — approved by Forter ──────────────────────────────
@@ -451,6 +472,7 @@ describe('ebs-sync e2e', () => {
       expect(snap.last4).toBe('1881');
       expect(snap.expiration).toBe('2028-01-28-12:00');
       expect(snap.fraudDecision).toBe('approve');
+      expect(snap.avsMatch).toBe('2 ');
       // No SafeTech data in this journal (Forter-only environment)
       expect(snap.fraudScore).toBe('');
       expect(snap.fraudStatusCode).toBe('');
@@ -460,6 +482,14 @@ describe('ebs-sync e2e', () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, CC_APPROVED_ORDER, journal);
       expect(capturedXml).toBeTruthy();
       assertXmlFixture('expected-cc-approved.xml', capturedXml);
+    });
+
+    test('CreditCard CardLast4Digits falls back to order payment cardLastFour', async () => {
+      const journalWithoutCardLast4 = withCompletedPayment(journal, { cardLast4: undefined });
+
+      const xml = await buildXml(CC_APPROVED_ORDER, journalWithoutCardLast4);
+
+      expect(xml).toContain('CardLast4Digits="1881"');
     });
   });
 
@@ -561,6 +591,70 @@ describe('ebs-sync e2e', () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, AFFIRM_APPROVED_ORDER, journal);
       expect(capturedXml).toBeTruthy();
       assertXmlFixture('expected-affirm-approved.xml', capturedXml);
+    });
+  });
+
+  // ── Address validation state ───────────────────────────────────────────
+
+  describe('address validation state', () => {
+    test('ShipTo IsValidated follows shipping.isValidated false', async () => {
+      const order = clone(PP_APPROVED_ORDER);
+      order.shipping.isValidated = false;
+      order.billing.isValidated = true;
+
+      const xml = await buildXml(order, loadJournal('journal-pp-approved.ndjson'));
+
+      expect(addressValidation(xml, 'ShipTo')).toBe('false');
+      expect(addressValidation(xml, 'BillTo')).toBe('true');
+    });
+
+    test.each([undefined, true])('ShipTo IsValidated defaults to true for %s', async (isValidated) => {
+      const order = clone(PP_APPROVED_ORDER);
+      if (isValidated !== undefined) order.shipping.isValidated = isValidated;
+
+      const xml = await buildXml(order, loadJournal('journal-pp-approved.ndjson'));
+
+      expect(addressValidation(xml, 'ShipTo')).toBe('true');
+    });
+
+    test.each([
+      ['paypal', PP_APPROVED_ORDER, 'journal-pp-approved.ndjson'],
+      ['affirm', AFFIRM_APPROVED_ORDER, 'journal-affirm-approved.ndjson'],
+      ['applepay', AP_APPROVED_ORDER, 'journal-ap-approved.ndjson'],
+    ])('BillTo IsValidated stays true for non-Chase method %s', async (_method, baseOrder, fixture) => {
+      const order = clone(baseOrder);
+      order.billing.isValidated = false;
+
+      const xml = await buildXml(order, loadJournal(fixture));
+
+      expect(addressValidation(xml, 'BillTo')).toBe('true');
+    });
+
+    test.each(['1', '2 ', 'G', 'M1', 'UK'])('BillTo IsValidated is false for Chase AVS %s', async (avsMatch) => {
+      const xml = await buildXml(
+        clone(CC_APPROVED_ORDER),
+        withCompletedPayment(loadJournal('journal-cc-approved.ndjson'), { avsMatch }),
+      );
+
+      expect(addressValidation(xml, 'BillTo')).toBe('false');
+    });
+
+    test.each(['', 'Y', '  ', undefined])('BillTo IsValidated is true for Chase AVS %s', async (avsMatch) => {
+      const xml = await buildXml(
+        clone(CC_APPROVED_ORDER),
+        withCompletedPayment(loadJournal('journal-cc-approved.ndjson'), { avsMatch }),
+      );
+
+      expect(addressValidation(xml, 'BillTo')).toBe('true');
+    });
+
+    test('BillTo IsValidated is true for zero-total Chase orders regardless of AVS', async () => {
+      const xml = await buildXml(
+        clone(CC_APPROVED_ORDER),
+        withCompletedPayment(loadJournal('journal-cc-approved.ndjson'), { amount: '0.00', avsMatch: '2' }),
+      );
+
+      expect(addressValidation(xml, 'BillTo')).toBe('true');
     });
   });
 
