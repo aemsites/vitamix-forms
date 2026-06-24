@@ -835,12 +835,34 @@ function resolvePaymentTerms() {
 }
 
 /**
+ * True when an item's custom.categories include a 'Commercial' category.
+ * categories should be string[] | { name, url_key }[], but custom is
+ * untrusted, so we defensively guard the array, the entry types, and the
+ * property access before comparing.
+ */
+function hasCommercialCategory(item) {
+  const categories = item.custom?.categories;
+  if (!Array.isArray(categories)) return false;
+  return categories.some((category) => {
+    if (typeof category === 'string') {
+      return category.toLowerCase() === 'commercial';
+    }
+    if (category && typeof category === 'object') {
+      return typeof category.name === 'string'
+        && category.name.toLowerCase() === 'commercial';
+    }
+    return false;
+  });
+}
+
+/**
  * 'Commercial' when any item in the order is flagged as commercial
- * (item.custom.isCommercial === true), otherwise 'Household'.
+ * (item.custom.isCommercial === true) or belongs to a 'Commercial'
+ * category, otherwise 'Household'.
  */
 function resolveOrderType(order) {
   const hasCommercial = (order.items || []).some(
-    (item) => item.custom?.isCommercial === true,
+    (item) => item.custom?.isCommercial === true || hasCommercialCategory(item),
   );
   return hasCommercial ? 'Commercial' : 'Household';
 }
