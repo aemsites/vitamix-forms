@@ -121,28 +121,28 @@
         
         <ns2:Charge Type="Shipping" Value="0.00" />
         <ns2:LineItem
-            Sku="061724-04-VB"
+            Sku="061724-04"
             Quantity="1"
             UnitSellingPrice="200.96"
             UnitOfMeasure="Each">
             <ns2:Tax Amount="26.13" Provisional="true" />
           </ns2:LineItem>
         <ns2:LineItem
-            Sku="069834-VB"
+            Sku="069834"
             Quantity="1"
             UnitSellingPrice="17.43"
             UnitOfMeasure="Each">
             <ns2:Tax Amount="2.26" Provisional="true" />
           </ns2:LineItem>
         <ns2:LineItem
-            Sku="060488-VB"
+            Sku="060488"
             Quantity="1"
             UnitSellingPrice="43.65"
             UnitOfMeasure="Each">
             <ns2:Tax Amount="5.67" Provisional="true" />
           </ns2:LineItem>
         <ns2:LineItem
-            Sku="001372-1093-VB"
+            Sku="001372-1093"
             Quantity="1"
             UnitSellingPrice="637.91"
             UnitOfMeasure="Each">

@@ -608,6 +608,17 @@ const WARRANTY_VITAMIX_ID = {
   '070791': '70791',
 };
 
+/**
+ * Strip the virtual-bundle '-VB' suffix from a bundle child SKU.
+ *
+ * Bundle children carry a '-VB' suffix in the order data, but EBS expects the
+ * original product SKU. Applied only to bundle items — simple products keep
+ * their SKU as-is.
+ */
+function stripBundleSuffix(sku) {
+  return String(sku || '').replace(/-VB$/, '');
+}
+
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
 
@@ -627,13 +638,15 @@ function buildLineItemsXml(order) {
     if (item.custom?.linkedTo) continue;
 
     if (item.bundleItems?.length) {
-      // Bundle: emit each child as its own line item, drop the virtual wrapper
+      // Bundle: emit each child as its own line item, drop the virtual wrapper.
+      // Children carry a '-VB' suffix in the order data; EBS expects the
+      // original SKU, so strip it here (warranty lookup still uses the raw SKU).
       for (const child of item.bundleItems) {
         const hasWarranty = warrantyBySku.has(child.sku);
         const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
 
         lines.push(buildLineItemXml(
-          child.sku || '', child.quantity ?? 1,
+          stripBundleSuffix(child.sku), child.quantity ?? 1,
           child.price?.final || '0.00', child.taxAmount || '0.00', 'Each', serial,
         ));
 
