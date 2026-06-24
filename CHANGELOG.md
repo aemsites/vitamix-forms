@@ -1,3 +1,10 @@
+## [1.2.18](https://github.com/aemsites/vitamix-forms/compare/v1.2.17...v1.2.18) (2026-06-24)
+
+
+### Bug Fixes
+
+* use custom.categories as an additional isCommercial signal ([fa7efb0](https://github.com/aemsites/vitamix-forms/commit/fa7efb050e24a03510a924febbb1d2bd7118f80f))
+
 ## [1.2.17](https://github.com/aemsites/vitamix-forms/compare/v1.2.16...v1.2.17) (2026-06-24)
 
 
