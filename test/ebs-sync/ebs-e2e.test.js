@@ -758,6 +758,53 @@ describe('ebs-sync e2e', () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, ccJournal);
       expect(capturedXml).toMatch(/Type="Commercial"/);
     });
+
+    test('string "Commercial" category produces Type="Commercial"', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[0].custom = { categories: ['Kitchen', 'Commercial'] };
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      expect(capturedXml).toMatch(/Type="Commercial"/);
+    });
+
+    test('object "Commercial" category (name/url_key) produces Type="Commercial"', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[0].custom = {
+        categories: [
+          { name: 'Kitchen', url_key: 'kitchen' },
+          { name: 'Commercial', url_key: 'commercial' },
+        ],
+      };
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      expect(capturedXml).toMatch(/Type="Commercial"/);
+    });
+
+    test('"Commercial" category match is case-insensitive', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[0].custom = { categories: ['commercial'] };
+      order.items[1].custom = { categories: [{ name: 'COMMERCIAL', url_key: 'commercial' }] };
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      expect(capturedXml).toMatch(/Type="Commercial"/);
+    });
+
+    test('non-commercial categories leave Type="Household"', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[0].custom = {
+        categories: ['Kitchen', { name: 'Household', url_key: 'household' }],
+      };
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      expect(capturedXml).toMatch(/Type="Household"/);
+    });
+
+    test('malformed categories are ignored and leave Type="Household"', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      // categories not an array, plus null/non-object/missing-name entries
+      order.items[0].custom = { categories: 'Commercial' };
+      order.items[1].custom = {
+        categories: [null, 42, { url_key: 'commercial' }, {}],
+      };
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      expect(capturedXml).toMatch(/Type="Household"/);
+    });
   });
 
   // ── Gift message ──────────────────────────────────────────────────────
