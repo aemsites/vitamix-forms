@@ -1,3 +1,10 @@
+## [1.2.17](https://github.com/aemsites/vitamix-forms/compare/v1.2.16...v1.2.17) (2026-06-24)
+
+
+### Bug Fixes
+
+* strip -VB suffix on bundle items in ebs-sync ([453b995](https://github.com/aemsites/vitamix-forms/commit/453b995084c707f7454d1d96acec417f570b05e6))
+
 ## [1.2.16](https://github.com/aemsites/vitamix-forms/compare/v1.2.15...v1.2.16) (2026-06-15)
 
 
