@@ -691,11 +691,38 @@ describe('ebs-sync e2e', () => {
       await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_BUNDLE_WARRANTY_ORDER, journal);
       // Bundle wrapper price (899.95) must NOT appear as a line item
       expect(capturedXml).not.toMatch(/UnitSellingPrice="899\.95"/);
-      // Each bundle child must appear with its own price
-      expect(capturedXml).toMatch(/Sku="061724-04-VB"[\s\S]*?UnitSellingPrice="200\.96"/);
-      expect(capturedXml).toMatch(/Sku="069834-VB"[\s\S]*?UnitSellingPrice="17\.43"/);
-      expect(capturedXml).toMatch(/Sku="060488-VB"[\s\S]*?UnitSellingPrice="43\.65"/);
-      expect(capturedXml).toMatch(/Sku="001372-1093-VB"[\s\S]*?UnitSellingPrice="637\.91"/);
+      // Each bundle child must appear with its own price (with '-VB' suffix stripped)
+      expect(capturedXml).toMatch(/Sku="061724-04"[\s\S]*?UnitSellingPrice="200\.96"/);
+      expect(capturedXml).toMatch(/Sku="069834"[\s\S]*?UnitSellingPrice="17\.43"/);
+      expect(capturedXml).toMatch(/Sku="060488"[\s\S]*?UnitSellingPrice="43\.65"/);
+      expect(capturedXml).toMatch(/Sku="001372-1093"[\s\S]*?UnitSellingPrice="637\.91"/);
+    });
+
+    test("bundle items have their '-VB' suffix stripped to the original SKU", async () => {
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, PP_BUNDLE_WARRANTY_ORDER, journal);
+      // No bundle SKU should reach EBS with the virtual-bundle '-VB' suffix
+      expect(capturedXml).not.toMatch(/Sku="[^"]*-VB"/);
+      // The original (stripped) SKUs are present
+      expect(capturedXml).toMatch(/Sku="061724-04"/);
+      expect(capturedXml).toMatch(/Sku="069834"/);
+      expect(capturedXml).toMatch(/Sku="060488"/);
+      expect(capturedXml).toMatch(/Sku="001372-1093"/);
+    });
+
+    test("the '-VB' suffix is stripped only for bundle items, not simple products", async () => {
+      // A simple (non-bundle) product whose SKU happens to end in '-VB' must be
+      // left untouched — stripping applies to bundle children only.
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items.push({
+        sku: '099999-VB',
+        quantity: 1,
+        name: 'Standalone item with VB-like SKU',
+        price: { final: '10.00', currency: 'CAD' },
+        taxAmount: '0.00',
+      });
+      await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, journal);
+      // Simple product keeps its SKU verbatim
+      expect(capturedXml).toMatch(/Sku="099999-VB"/);
     });
 
     test('warranty uses UnitOfMeasure="Years" and shares serial with its product', async () => {
