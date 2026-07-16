@@ -906,6 +906,29 @@ describe('submit action', () => {
       expect(body.EmailAddress).toBe('test@example.com');
       expect(body.EmailOptIn).toBe(true);
       expect(body.workFlowName).toBe('subscription');
+      expect(body.LeadSource).toBe('edge-commerce');
+    });
+
+    test('uses client-provided leadSource when present', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ leadSource: 'vitamix-promo' }));
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, , opts] = mockProxyFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.LeadSource).toBe('vitamix-promo');
+    });
+
+    test('falls back to edge-commerce when leadSource is not a string', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ leadSource: 123 }));
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, , opts] = mockProxyFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.LeadSource).toBe('edge-commerce');
     });
 
     test('returns proxied response body and status', async () => {
