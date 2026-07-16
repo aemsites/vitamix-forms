@@ -1,3 +1,10 @@
+## [1.2.19](https://github.com/aemsites/vitamix-forms/compare/v1.2.18...v1.2.19) (2026-07-16)
+
+
+### Bug Fixes
+
+* **submit:** pass through client-provided leadSource to EBS ([32bb3c4](https://github.com/aemsites/vitamix-forms/commit/32bb3c4bf3d04b872772ddbc17cf304544dfadcc))
+
 ## [1.2.18](https://github.com/aemsites/vitamix-forms/compare/v1.2.17...v1.2.18) (2026-06-24)
 
 
