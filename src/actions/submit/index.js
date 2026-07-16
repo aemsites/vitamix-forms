@@ -268,7 +268,7 @@ async function callNewsletterApi(ctx, formId, data) {
     FirstName: '',
     MiddleName: '',
     LastName: '',
-    LeadSource: 'edge-commerce',
+    LeadSource: (data.leadSource && typeof data.leadSource === 'string') ? data.leadSource : 'edge-commerce',
     Country: 'US',
     Company: 'HOUSEHOLD',
     EmailAddress: data.email,
