@@ -1007,4 +1007,66 @@ describe('submit action', () => {
       expect(result).toEqual({ statusCode: 503, body: 'unavailable' });
     });
   });
+
+  // -- stage submission logging --------------------------------------------
+
+  describe('stage submission logging', () => {
+    /** Find the [stage-submission] log line and parse its JSON payload. */
+    function getLoggedSubmission(ctx) {
+      const call = ctx.log.info.mock.calls.find(([msg]) => typeof msg === 'string' && msg.startsWith('[stage-submission] '));
+      return call ? JSON.parse(call[0].replace('[stage-submission] ', '')) : null;
+    }
+
+    test('logs request/response pair for a stage submission (non-prod referer)', async () => {
+      const ctx = makeCtx({
+        data: { formId: 'contact-us', data: { name: 'John', email: 'john@test.com' } },
+        info: { method: 'POST', headers: { 'content-type': 'application/json', 'x-forwarded-for': '1.2.3.4', referer: 'https://main--vitamix--aemsites.aem.page/' }, path: '/submit' },
+      });
+      mockMakeContext.mockResolvedValue(ctx);
+
+      const result = await main({});
+      expect(result.statusCode).toBe(201);
+
+      const logged = getLoggedSubmission(ctx);
+      expect(logged).not.toBeNull();
+      expect(logged.formId).toBe('stage/contact-us');
+      expect(logged.request).toMatchObject({ name: 'John', email: 'john@test.com' });
+      expect(logged.response).toEqual({ statusCode: 201, body: { formId: 'stage/contact-us' } });
+    });
+
+    test('does NOT log for a production submission', async () => {
+      const ctx = makeCtx(); // referer is www.vitamix.com
+      mockMakeContext.mockResolvedValue(ctx);
+
+      await main({});
+      expect(getLoggedSubmission(ctx)).toBeNull();
+    });
+
+    test('logs the error response when a handler throws on stage', async () => {
+      const err = new Error('ebs down');
+      err.response = { error: { statusCode: 502, body: 'bad gateway' } };
+      mockCreateProductRegistration.mockRejectedValue(err);
+
+      const ctx = makeCtx({
+        data: {
+          formId: 'us/product-registration',
+          data: {
+            acceptTerms: 'yes', address: '1 Main', city: 'Cleveland', postalCode: '44100', province: 'OH',
+            email: 'j@test.com', firstName: 'J', lastName: 'D', phone: '5551212',
+            purchasedFrom: 'Amazon', purchasedOn: '2026-01-01', serialNumber: '012345678901234567',
+          },
+        },
+        info: { method: 'POST', headers: { 'content-type': 'application/json', referer: 'https://main--vitamix--aemsites.aem.page/' }, path: '/submit' },
+      });
+      mockMakeContext.mockResolvedValue(ctx);
+
+      const result = await main({});
+      expect(result.error.statusCode).toBe(502);
+
+      const logged = getLoggedSubmission(ctx);
+      expect(logged).not.toBeNull();
+      expect(logged.formId).toBe('stage/us/product-registration');
+      expect(logged.response.statusCode).toBe(502);
+    });
+  });
 });
