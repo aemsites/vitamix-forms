@@ -1,3 +1,10 @@
+# [1.3.0](https://github.com/aemsites/vitamix-forms/compare/v1.2.19...v1.3.0) (2026-07-17)
+
+
+### Features
+
+* recipe-notify action ([4424738](https://github.com/aemsites/vitamix-forms/commit/442473837f522107ff7e420581f7fccee86466e1))
+
 ## [1.2.19](https://github.com/aemsites/vitamix-forms/compare/v1.2.18...v1.2.19) (2026-07-16)
 
 
