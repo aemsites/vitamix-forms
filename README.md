@@ -24,6 +24,33 @@ Synchronizes completed commerce orders to Oracle EBS. Runs on a 5-minute cron sc
 
 **Supported payment methods**: Credit card (Chase), PayPal, Apple Pay (Chase wallet), Affirm.
 
+### `recipe-notify/recipe-notify` (web action + scheduled)
+
+Emails a daily digest of **newly published recipes** to a configured list. Runs
+on a daily cron and is also available as an HTTP endpoint for status checks and
+manual triggers.
+
+**Production only.** Stage deploys the same manifest, so the scheduled run is
+gated by `RECIPE_NOTIFY_ENABLED` — it is set to `"true"` only in the prod deploy
+env and the action no-ops immediately otherwise. This prevents duplicate emails
+to the shared recipient list (state is per-namespace, but the DA template and its
+recipients are shared).
+
+**Scheduled mode** (daily): Polls the CalcMenu `GetUpdatedRecipes` journal since
+a persisted timestamp cursor. The API input is date-granular but responses carry
+full-precision `DateUpdated` timestamps and a `Status` (`New`/`Updated`/
+`Deleted`), so the action keeps recipes whose `DateUpdated` is strictly newer
+than the cursor (millisecond compare — dedupes the re-fetched boundary day),
+filters to `Status="New"`, resolves each recipe's deep link from the published
+`query-index.json` (by `Number`), and sends the digest. The cursor advances to
+the batch's max `DateUpdated` only on a successful run. The first run cold-starts
+(seeds the cursor without emailing) to avoid blasting the back-catalogue.
+
+**Recipients + copy**: authored in a DA document at
+`/config/recipes/digest-template` (same format as `email-template.html`, with a
+`{{digest}}` placeholder where the recipe table is injected). No recipient env
+var.
+
 ## APIs
 
 ### Form Submission
@@ -59,6 +86,32 @@ Content-Type: application/json
 ```
 
 Triggers a sync run starting from the given timestamp. `since` is required. Provide `until` or `duration` (not both) to cap the query window; omit both to scan up to the current time. The cursor advances normally after a successful run.
+
+### Recipe Notify Status
+
+```
+GET /recipe-notify/recipe-notify
+Authorization: Bearer <RECIPE_NOTIFY_TOKEN>
+```
+
+Returns JSON: `since`, `lastRun`, `status`, `processedCount`, `lastError`.
+
+### Recipe Notify Manual Trigger
+
+```
+POST /recipe-notify/recipe-notify
+Authorization: Bearer <RECIPE_NOTIFY_TOKEN>
+Content-Type: application/json
+
+{
+  "since": "<ISO 8601>",   // optional cursor override (backfill)
+  "dryRun": true            // optional — compute new recipes + links, do not send
+}
+```
+
+`dryRun` bypasses the prod gate and never sends or advances the cursor, so stage
+can be exercised on demand. It returns the computed new-recipe set with resolved
+deep links.
 
 ## Deployment
 
@@ -111,6 +164,25 @@ Production deployments use semantic-release to version and tag releases automati
 | `EBS_API_KEY` | Production EBS API key |
 | `EBS_API_KEY_STAGE` | Stage EBS API key |
 | `PROXY_TOKEN` | Bearer token for the static-IP proxy |
+
+### recipe-notify package
+
+All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only if they change.
+
+| Variable | Description | Default |
+|---|---|---|
+| `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
+| `LOG_LEVEL` | Logging level | `info` |
+| `EMAIL_TOKEN` | Productbus email service token (reused from forms) | — |
+| `AIO_CLIENTID` / `AIO_CLIENTSECRET` / `AIO_SCOPES` | S2S creds to mint the IMS token for reading the DA template (reused from forms) | — |
+| `RECIPE_API_URL` | CalcMenu `GetUpdatedRecipes` base URL | `https://vitamix.calcmenuweb.com/ws/service.asmx/GetUpdatedRecipes` |
+| `RECIPE_API_ID` | CalcMenu API user id | `API` |
+| `RECIPE_API_PSWD` | CalcMenu API password | `Vitamix!` |
+| `RECIPE_SITE_BASE` | Deep-link site base | `https://www.vitamix.com` |
+| `RECIPE_LINK_LOCALE` | Deep-link locale path | `us/en_us` |
+| `RECIPE_DIGEST_TEMPLATE` | DA path of the digest template | `/config/recipes/digest-template` |
+| `RECIPE_NOTIFY_TOKEN` | Bearer token for the status/trigger HTTP APIs (HTTP access denied if unset) | — |
+| `RECIPE_NOTIFY_ENABLED` | Prod-only gate — scheduled run sends only when `"true"`. Set in prod deploy env only. | unset (no-op) |
 
 ## Setup (first-time per environment)
 
