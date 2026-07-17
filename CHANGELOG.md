@@ -1,3 +1,10 @@
+## [1.3.1](https://github.com/aemsites/vitamix-forms/compare/v1.3.0...v1.3.1) (2026-07-17)
+
+
+### Bug Fixes
+
+* log submissions on stage ([c99bd6d](https://github.com/aemsites/vitamix-forms/commit/c99bd6d137f4c03f46ef9fdc5747ac1b56dcfe98))
+
 # [1.3.0](https://github.com/aemsites/vitamix-forms/compare/v1.2.19...v1.3.0) (2026-07-17)
 
 
