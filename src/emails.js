@@ -121,6 +121,105 @@ export async function resolveEmailTemplate(ctx, path, variables) {
   }
 }
 
+const HEADER_KEYS = ['to', 'cc', 'bcc', 'subject'];
+
+/**
+ * Extract the trimmed text of each `<p>` element from a template HTML string.
+ * @param {string} templateHtml
+ * @returns {string[]}
+ */
+function extractParagraphs(templateHtml) {
+  const matches = templateHtml.match(/<p>([\s\S]*?)<\/p>/g);
+  if (!matches) {
+    return [];
+  }
+  return matches.map((el) => el.replace(/<\/?p>/g, '').trim());
+}
+
+/**
+ * Replace `{{key}}` tokens in a string from a variables map.
+ * Leaves unknown tokens untouched. `{{digest}}` is never substituted here.
+ * @param {string} str
+ * @param {Record<string, string>} variables
+ * @returns {string}
+ */
+function applyVariables(str, variables) {
+  return str.replace(/\{\{\s*([\w-]+)\s*\}\}/g, (match, key) => {
+    if (key === 'digest') {
+      return match;
+    }
+    return Object.prototype.hasOwnProperty.call(variables, key) ? variables[key] : match;
+  });
+}
+
+/**
+ * Resolve a digest email template from DA.
+ *
+ * Same document format as {@link resolveEmailTemplate} — `To:`/`cc:`/`bcc:`/
+ * `Subject:` are parsed from `<p>` lines — but with two differences:
+ *   - a dedicated `{{digest}}` placeholder is replaced with the caller-supplied
+ *     `digestHtml` (pre-rendered HTML, e.g. a table), and
+ *   - any other non-header paragraph passes through as literal body copy
+ *     (with `{{count}}`/`{{date}}`-style variables substituted).
+ *
+ * Returns null if the template document does not exist (404), so callers can
+ * skip the send and retry later.
+ *
+ * @param {Context} ctx
+ * @param {string} path
+ * @param {string} digestHtml - pre-rendered HTML inserted at `{{digest}}`
+ * @param {Record<string, string>} [variables] - tokens for subject/body copy
+ * @returns {Promise<EmailPayload | null>}
+ */
+export async function resolveDigestTemplate(ctx, path, digestHtml, variables = {}) {
+  const templateHtml = await fetchHTML(ctx, path);
+  if (!templateHtml) {
+    return null;
+  }
+
+  /** @type {EmailPayload} */
+  const result = { toEmail: '', cc: [], bcc: [], subject: '', html: '' };
+  const bodyParts = [];
+
+  for (const paragraph of extractParagraphs(templateHtml)) {
+    if (!paragraph) {
+      continue;
+    }
+
+    // Standalone placeholder line, e.g. "{{digest}}".
+    const placeholder = paragraph.match(/^\{\{\s*([\w-]+)\s*\}\}$/);
+    if (placeholder) {
+      if (placeholder[1].toLowerCase() === 'digest') {
+        bodyParts.push(digestHtml);
+      }
+      continue;
+    }
+
+    // Header line, e.g. "To: a@b.com, c@d.com" / "Subject: ...".
+    const colon = paragraph.indexOf(':');
+    if (colon !== -1) {
+      const key = paragraph.slice(0, colon).toLowerCase().trim();
+      if (HEADER_KEYS.includes(key)) {
+        const value = applyVariables(paragraph.slice(colon + 1).trim(), variables);
+        if (key === 'to') {
+          result.toEmail = value.split(',').map((v) => v.trim()).filter(Boolean);
+        } else if (key === 'subject') {
+          result.subject = value;
+        } else {
+          result[key] = value.split(',').map((v) => v.trim()).filter(Boolean);
+        }
+        continue;
+      }
+    }
+
+    // Anything else is literal body copy.
+    bodyParts.push(`<p>${applyVariables(paragraph, variables)}</p>`);
+  }
+
+  result.html = `<div>${bodyParts.join('')}</div>`;
+  return result;
+}
+
 /**
  * Send an email via Productbus Email service
  * @param {Context} ctx

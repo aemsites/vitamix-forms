@@ -108,3 +108,51 @@ application:
           ebs-sync-rule:
             trigger: ebs-sync-schedule
             action: ebs-sync
+
+      recipe-notify:
+        license: Apache-2.0
+        actions:
+          recipe-notify:
+            function: dist/actions/recipe-notify/index.js
+            runtime: nodejs:22
+            web: 'yes'
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 120000  # 2 min — one API call + one email
+              memory: 256
+              concurrency: 1
+            inputs:
+              ORG: aemsites
+              SITE: vitamix
+              LOG_LEVEL: $LOG_LEVEL
+              EMAIL_TOKEN: $EMAIL_TOKEN
+              # AIO server-to-server creds — mint the IMS token used to read the
+              # DA digest template (same creds the forms/* actions use)
+              AIO_CLIENTID: $AIO_CLIENTID
+              AIO_CLIENTSECRET: $AIO_CLIENTSECRET
+              AIO_SCOPES: $AIO_SCOPES
+              # CalcMenu recipe journal API
+              RECIPE_API_URL: $RECIPE_API_URL
+              RECIPE_API_ID: $RECIPE_API_ID
+              RECIPE_API_PSWD: $RECIPE_API_PSWD
+              # deep links
+              RECIPE_SITE_BASE: $RECIPE_SITE_BASE
+              RECIPE_LINK_LOCALE: $RECIPE_LINK_LOCALE
+              # bearer for manual HTTP trigger/status
+              RECIPE_NOTIFY_TOKEN: $RECIPE_NOTIFY_TOKEN
+              # prod-only gate — set "true" ONLY in the prod deploy env; unset in stage
+              RECIPE_NOTIFY_ENABLED: $RECIPE_NOTIFY_ENABLED
+
+        triggers:
+          recipe-notify-schedule:
+            feed: /whisk.system/alarms/alarm
+            inputs:
+              cron: '0 12 * * *'  # daily 12:00 UTC (recipes land ~04:00 UTC)
+              timezone: UTC
+
+        rules:
+          recipe-notify-rule:
+            trigger: recipe-notify-schedule
+            action: recipe-notify
