@@ -346,13 +346,43 @@ async function handleNewsletter(ctx, formId, data) {
 }
 
 /**
+ * On stage, log the request/response pair for a submission to aid debugging.
+ *
+ * Gated to stage submissions (formId prefixed `stage/`, i.e. originating from a
+ * non-production referer) so production submissions — which carry real PII — are
+ * never logged. Best-effort: a logging failure must never affect the response.
+ *
+ * @param {Context} ctx
+ * @param {string} formId
+ * @param {unknown} request - the submission data as processed
+ * @param {RuntimeResponse} response - the response returned to the caller
+ */
+function logStageSubmission(ctx, formId, request, response) {
+  if (!formId || !formId.startsWith('stage/')) {
+    return;
+  }
+  try {
+    const { statusCode, body } = response?.error ?? response ?? {};
+    ctx.log.info(`[stage-submission] ${JSON.stringify({ formId, request, response: { statusCode, body } })}`);
+  } catch (err) {
+    ctx.log.warn(`failed to log stage submission for formId=${formId}: ${err.message}`);
+  }
+}
+
+/**
  * HTTP action: receives form submissions, validates, and publishes a `form.submitted` event.
  * @param {Object} params
  * @returns {Promise<RuntimeResponse>}
  */
 export async function main(params) {
+  /** @type {Context} */
+  let ctx;
+  /** @type {string} */
+  let formId;
+  /** @type {Record<string, unknown>} */
+  let data;
   try {
-    const ctx = await makeContext(params);
+    ctx = await makeContext(params);
     const { log } = ctx;
 
     if (ctx.info.method !== 'POST') {
@@ -369,9 +399,8 @@ export async function main(params) {
 
     const isProdReferer = ctx.info.headers['referer']?.includes(PROD_ORIGIN) || false;
 
-    /** @type {string} */
     // @ts-ignore
-    let formId = ctx.data.formId;
+    formId = ctx.data.formId;
 
     // if the origin of the submission isn't the production origin
     // add the `stage` prefix to the formId (if not present)
@@ -381,44 +410,52 @@ export async function main(params) {
     }
 
     // get submission data, it may be in the data object or the root of the payload
-    /** @type {Record<string, unknown>} */
     // @ts-ignore
-    let data = ctx.data.data;
+    data = ctx.data.data;
     if (typeof data !== 'object') {
       data = ctx.data;
       delete data.formId;
     }
 
+    /** @type {RuntimeResponse} */
+    let response;
     if (formId.endsWith('/product-registration')) {
-      return await handleProductRegistration(ctx, formId, data);
+      response = await handleProductRegistration(ctx, formId, data);
     } else if (formId.endsWith('/order-status')) {
-      return await handleOrderStatus(ctx, formId, data);
+      response = await handleOrderStatus(ctx, formId, data);
     } else if (formId.endsWith('/newsletter')) {
-      return await handleNewsletter(ctx, formId, data);
+      response = await handleNewsletter(ctx, formId, data);
+    } else {
+      // add timestamp and IP - these can't be set by the payload
+      delete data.IP;
+      delete data.timestamp;
+      data = {
+        timestamp: new Date().toISOString(),
+        IP: ctx.info.headers['x-forwarded-for'] || ctx.info.headers['x-real-ip'] || ctx.info.headers['cf-connecting-ip'] || 'unknown',
+        ...data,
+      };
+
+      log.info(`publishing form.submitted event for formId=${formId}`);
+      await publishEvent(ctx, 'form.submitted', { formId, data });
+
+      response = {
+        statusCode: 201,
+        headers: { 'content-type': 'application/json' },
+        body: { formId },
+      };
     }
 
-    // add timestamp and IP - these can't be set by the payload
-    delete data.IP;
-    delete data.timestamp;
-    data = {
-      timestamp: new Date().toISOString(),
-      IP: ctx.info.headers['x-forwarded-for'] || ctx.info.headers['x-real-ip'] || ctx.info.headers['cf-connecting-ip'] || 'unknown',
-      ...data,
-    };
-
-    log.info(`publishing form.submitted event for formId=${formId}`);
-    await publishEvent(ctx, 'form.submitted', { formId, data });
-
-    return {
-      statusCode: 201,
-      headers: { 'content-type': 'application/json' },
-      body: { formId },
-    };
+    logStageSubmission(ctx, formId, data, response);
+    return response;
   } catch (error) {
+    const response = error.response ?? errorResponse(500, 'server error');
+    if (ctx) {
+      logStageSubmission(ctx, formId, data, response);
+    }
     if (error.response) {
       return error.response;
     }
     console.error('fatal error: ', error);
-    return errorResponse(500, 'server error');
+    return response;
   }
 }
