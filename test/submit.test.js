@@ -708,7 +708,7 @@ describe('submit action', () => {
       expect(body.EmailOptIn).toBe(true);
       expect(body.FirstName).toBe('Jane');
       expect(body.LastName).toBe('Doe');
-      expect(body.Country).toBe('US');
+      expect(body.Country).toBe('United States');
     });
 
     test('fires newsletter subscription when marketingOptIn is boolean true', async () => {
@@ -829,7 +829,7 @@ describe('submit action', () => {
       expect(body.FirstName).toBe('1');
       expect(body.LastName).toBe('2');
       // country extracted from formId 'ca/...'
-      expect(body.Country).toBe('CA');
+      expect(body.Country).toBe('Canada');
     });
   });
 
@@ -907,6 +907,18 @@ describe('submit action', () => {
       expect(body.EmailOptIn).toBe(true);
       expect(body.workFlowName).toBe('subscription');
       expect(body.LeadSource).toBe('edge-commerce');
+      expect(body.Country).toBe('United States');
+    });
+
+    test('sends the full Canadian country name', async () => {
+      mockMakeContext.mockResolvedValue(makeNewsletterCtx({ country: 'ca' }));
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, , opts] = mockProxyFetch.mock.calls[0];
+      const body = JSON.parse(opts.body);
+      expect(body.Country).toBe('Canada');
     });
 
     test('uses client-provided leadSource when present', async () => {

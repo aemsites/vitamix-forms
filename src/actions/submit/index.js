@@ -269,7 +269,7 @@ async function callNewsletterApi(ctx, formId, data) {
     MiddleName: '',
     LastName: '',
     LeadSource: (data.leadSource && typeof data.leadSource === 'string') ? data.leadSource : 'edge-commerce',
-    Country: 'US',
+    Country: 'United States',
     Company: 'HOUSEHOLD',
     EmailAddress: data.email,
     EmailOptIn: data.emailOptIn,
@@ -284,8 +284,16 @@ async function callNewsletterApi(ctx, formId, data) {
   if (data.firstName && typeof data.firstName === 'string') payload.FirstName = data.firstName;
   if (data.middleName && typeof data.middleName === 'string') payload.MiddleName = data.middleName;
   if (data.lastName && typeof data.lastName === 'string') payload.LastName = data.lastName;
-  if (data.country && typeof data.country === 'string' && ['us', 'ca', 'mx', 'vr'].includes(data.country.toLowerCase())) {
-    payload.Country = data.country.toUpperCase();
+  if (data.country && typeof data.country === 'string'
+    && ['us', 'ca', 'mx', 'vr'].includes(data.country.toLowerCase())) {
+    const country = data.country.toUpperCase();
+    if (country === 'US') {
+      payload.Country = 'United States';
+    } else if (country === 'CA') {
+      payload.Country = 'Canada';
+    } else {
+      payload.Country = country;
+    }
   }
   if (data.company && typeof data.company === 'string' && ['household', 'business'].includes(data.company.toLowerCase())) {
     payload.Company = data.company.toUpperCase();
