@@ -1,3 +1,10 @@
+## [1.3.2](https://github.com/aemsites/vitamix-forms/compare/v1.3.1...v1.3.2) (2026-07-20)
+
+
+### Bug Fixes
+
+* **submit:** send newsletter country names ([b5e7829](https://github.com/aemsites/vitamix-forms/commit/b5e7829a1cd0da3c0d0a6863bd56593b348d7c6f))
+
 ## [1.3.1](https://github.com/aemsites/vitamix-forms/compare/v1.3.0...v1.3.1) (2026-07-17)
 
 
