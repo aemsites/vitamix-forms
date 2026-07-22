@@ -51,6 +51,28 @@ the batch's max `DateUpdated` only on a successful run. The first run cold-start
 `{{digest}}` placeholder where the recipe table is injected). No recipient env
 var.
 
+### `feeds/feeds` (web action)
+
+Serves product-catalog feeds for downstream service providers over HTTP, from a
+single endpoint. The source is the (enriched) Google Merchant Center feed
+published per locale; each provider gets it in the format it expects. This is a
+**pull model** — providers fetch the URL on their own schedule.
+
+Supported providers:
+
+- **`meta`** — Facebook/Instagram (Advantage+/DPA). Non-namespaced `<rss>` feed
+  (`availability` in the spaced spec form, `in stock`).
+- **`pinterest`** — Pinterest catalogs. Same non-namespaced `<rss>` feed as Meta;
+  includes `product_type` and `google_product_category` from the source feed.
+- **`cj`** — Commission Junction. Bare `<feed>` root, non-namespaced, Google-spec
+  `availability` (`in_stock`); replaces the current SFTP drop.
+- **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
+  from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
+  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`).
+
+Not served here: **Google Ads** — no separate feed; it serves from the linked
+Merchant Center account (i.e. the source GMC feed itself).
+
 ## APIs
 
 ### Form Submission
@@ -112,6 +134,42 @@ Content-Type: application/json
 `dryRun` bypasses the prod gate and never sends or advances the cursor, so stage
 can be exercised on demand. It returns the computed new-recipe set with resolved
 deep links.
+
+### Provider Feeds
+
+```
+GET /feeds/feeds?provider=<meta|pinterest|cj|bazaarvoice>&locale=<cc/ll_cc>
+```
+
+Returns the catalog in the provider's format (`application/xml`). `locale`
+defaults to `us/en_us` and must match `cc/ll_cc` (e.g. `ca/en_us`). When
+`FEEDS_TOKEN` is set, requests must authenticate with `Authorization: Bearer
+<token>` or `?token=<token>` (the query form is for providers that only accept a
+plain URL). Responses are cacheable (`max-age=3600`).
+
+The per-provider feed URLs to hand to each platform (locale `us/en_us` shown;
+swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
+
+**Stage** (`https://60038-161ivoryjackal-stage.adobeioruntime.net`):
+
+| Provider | Feed URL |
+|---|---|
+| Meta | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=meta&locale=us/en_us` |
+| Pinterest | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
+| Commission Junction | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
+| Bazaarvoice | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+
+**Production** (`https://60038-161ivoryjackal.adobeioruntime.net`):
+
+| Provider | Feed URL |
+|---|---|
+| Meta | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=meta&locale=us/en_us` |
+| Pinterest | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
+| Commission Junction | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
+| Bazaarvoice | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+
+Google Ads has no URL here — it serves from the linked Google Merchant Center
+account (the source feed at `{FEED_SITE_BASE}/<locale>/products/merchant-center-feed.xml`).
 
 ## Deployment
 
@@ -183,6 +241,15 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 | `RECIPE_DIGEST_TEMPLATE` | DA path of the digest template | `/config/recipes/digest-template` |
 | `RECIPE_NOTIFY_TOKEN` | Bearer token for the status/trigger HTTP APIs (HTTP access denied if unset) | — |
 | `RECIPE_NOTIFY_ENABLED` | Prod-only gate — scheduled run sends only when `"true"`. Set in prod deploy env only. | unset (no-op) |
+
+### feeds package
+
+| Variable | Description | Default |
+|---|---|---|
+| `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
+| `LOG_LEVEL` | Logging level | `info` |
+| `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://www.vitamix.com` |
+| `FEEDS_TOKEN` | Optional bearer/token gate for the feed URLs. When unset, feeds are public. | unset (public) |
 
 ## Setup (first-time per environment)
 
