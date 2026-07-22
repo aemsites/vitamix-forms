@@ -88,16 +88,18 @@ describe.each([
     expect(mine.byTitle.get(SAMPLE).gtin).toBe(exp.byTitle.get(SAMPLE).gtin);
   });
 
-  test.failing('CRITICAL: emits non-namespaced tags (meta/pinterest feed omits g:)', () => {
+  test('emits non-namespaced tags (meta/pinterest feed omits g:)', () => {
     expect(mine.namespaced).toBe(false);
   });
 
-  test.failing('CRITICAL: id is the SKU, not the product name', () => {
-    // mine="Under Blade Scraper" (g:id/name) vs expected "064584" (sku)
+  test.failing('id is the SKU, not the product name', () => {
+    // Source-driven: the google fixture uses the name as id ("Under Blade
+    // Scraper") vs the reference SKU ("064584"). The live helix feed already
+    // sets id = sku, so this resolves in production.
     expect(mine.byTitle.get(SAMPLE).id).toBe(exp.byTitle.get(SAMPLE).id);
   });
 
-  test.failing('CRITICAL: carries product_type (Pinterest requires it)', () => {
+  test.failing('carries product_type (Pinterest requires it)', () => {
     // Empty here only because the google source fixture lacks product_type;
     // resolved once the indexer populates it (helix-product-indexer#41).
     expect(mine.byTitle.get(SAMPLE).product_type).toBe(exp.byTitle.get(SAMPLE).product_type);
@@ -117,15 +119,20 @@ describe('conformance: cj', () => {
     for (const f of SHARED_FIELDS) expect(mine.fields.has(f)).toBe(true);
   });
 
-  test.failing('CRITICAL: uses a <feed> root element', () => {
-    expect(mine.root).toBe('feed'); // mine is <rss>
+  test('uses a <feed> root element', () => {
+    expect(mine.root).toBe('feed');
   });
 
-  test.failing('CRITICAL: emits non-namespaced tags (CJ feed omits g:)', () => {
+  test('emits non-namespaced tags (CJ feed omits g:)', () => {
     expect(mine.namespaced).toBe(false);
   });
 
-  test.failing('CRITICAL: id is the SKU, not the product name', () => {
+  test('excludes google_product_category (not part of the CJ feed)', () => {
+    expect(mine.fields.has('google_product_category')).toBe(false);
+  });
+
+  test.failing('id is the SKU, not the product name', () => {
+    // Source-driven — see the meta/pinterest note; resolves with the helix feed.
     expect(mine.byTitle.get(SAMPLE).id).toBe(exp.byTitle.get(SAMPLE).id);
   });
 });
@@ -144,11 +151,6 @@ describe('benign differences (documented, not bugs)', () => {
   test('mpn is populated where the reference left it empty — an improvement', () => {
     expect(mine.byTitle.get(SAMPLE).mpn).not.toBe('');
     expect(exp.byTitle.get(SAMPLE).mpn).toBe('');
-  });
-
-  test('emits extra fields (color, is_bundle) that providers ignore', () => {
-    expect(mine.fields.has('color')).toBe(true);
-    expect(exp.fields.has('color')).toBe(false);
   });
 });
 

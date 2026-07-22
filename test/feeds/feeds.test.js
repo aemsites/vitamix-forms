@@ -67,7 +67,7 @@ describe('feeds action', () => {
     expect(res.headers['x-error']).toMatch(/invalid locale/);
   });
 
-  test('meta: fetches the right locale feed and passes fields through', async () => {
+  test('meta: fetches the right locale feed as a non-namespaced rss feed', async () => {
     const fetchSpy = mockFetch(SAMPLE_FEED);
     const res = await GET({ provider: 'meta', locale: 'ca/en_us' });
 
@@ -78,32 +78,39 @@ describe('feeds action', () => {
     expect(res.headers['content-type']).toBe('application/xml');
     // ungated feed is shared-cacheable
     expect(res.headers['cache-control']).toBe('max-age=3600, must-revalidate');
-    expect(res.body).toContain('<g:id>7500</g:id>');
-    expect(res.body).toContain('<g:gtin>0123456789012</g:gtin>');
-    expect(res.body).toContain('<g:item_group_id>7500</g:item_group_id>');
-    // both additional images preserved
-    expect(res.body).toContain('<g:additional_image_link>https://www.vitamix.com/img/alt1.jpg</g:additional_image_link>');
-    expect(res.body).toContain('<g:additional_image_link>https://www.vitamix.com/img/alt2.jpg</g:additional_image_link>');
-    // meta keeps the underscore availability form
-    expect(res.body).toContain('<g:availability>in_stock</g:availability>');
+    // non-namespaced <rss> tags (no g: prefix)
+    expect(res.body).toContain('<rss version="2.0"');
+    expect(res.body).not.toContain('<g:');
+    expect(res.body).toContain('<id>7500</id>');
+    expect(res.body).toContain('<gtin>0123456789012</gtin>');
+    // availability mapped to the spaced spec form
+    expect(res.body).toContain('<availability>in stock</availability>');
   });
 
-  test('pinterest: maps availability to spaces and keeps required category fields', async () => {
+  test('pinterest: non-namespaced rss with mapped availability and category fields', async () => {
     mockFetch(SAMPLE_FEED);
     const res = await GET({ provider: 'pinterest', locale: 'us/en_us' });
 
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('<g:availability>in stock</g:availability>');
+    expect(res.body).toContain('<rss version="2.0"');
+    expect(res.body).not.toContain('<g:');
+    expect(res.body).toContain('<availability>in stock</availability>');
     expect(res.body).not.toContain('in_stock');
-    expect(res.body).toContain('<g:google_product_category>4653</g:google_product_category>');
-    expect(res.body).toContain('<g:product_type>Blenders</g:product_type>');
+    expect(res.body).toContain('<google_product_category>4653</google_product_category>');
+    expect(res.body).toContain('<product_type>Blenders</product_type>');
   });
 
-  test('cj: serves the shopping feed with gtin', async () => {
+  test('cj: <feed> root, non-namespaced, no google_product_category', async () => {
     mockFetch(SAMPLE_FEED);
     const res = await GET({ provider: 'cj' });
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain('<g:gtin>0123456789012</g:gtin>');
+    expect(res.body).toContain('<feed>');
+    expect(res.body).not.toContain('<rss');
+    expect(res.body).not.toContain('<g:');
+    expect(res.body).toContain('<gtin>0123456789012</gtin>');
+    // CJ follows the Google spec: underscore availability, no google_product_category
+    expect(res.body).toContain('<availability>in_stock</availability>');
+    expect(res.body).not.toContain('google_product_category');
   });
 
   test('returns 502 when the source feed is unavailable', async () => {

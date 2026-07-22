@@ -14,7 +14,7 @@
 
 import { Core } from '@adobe/aio-sdk';
 import { fetchGmcFeed } from './source.js';
-import { buildRssXml } from './serialize.js';
+import { buildFeed } from './serialize.js';
 import { PROVIDERS } from './providers/index.js';
 
 const DEFAULT_LOCALE = 'us/en_us';
@@ -82,7 +82,7 @@ export async function main(params) {
   try {
     const feed = await fetchGmcFeed(ctx, locale);
     const items = feed.items.map(serializer.transformItem);
-    const body = buildRssXml({ channel: feed.channel, items });
+    const body = buildFeed({ channel: feed.channel, items }, serializer);
 
     // Only ungated feeds may be shared-cached. When FEEDS_TOKEN gates access, the
     // response is Bearer-authenticated, so keep it out of shared/CDN caches.
