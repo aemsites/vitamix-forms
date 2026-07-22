@@ -76,6 +76,8 @@ describe('feeds action', () => {
     );
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('application/xml');
+    // ungated feed is shared-cacheable
+    expect(res.headers['cache-control']).toBe('max-age=3600, must-revalidate');
     expect(res.body).toContain('<g:id>7500</g:id>');
     expect(res.body).toContain('<g:gtin>0123456789012</g:gtin>');
     expect(res.body).toContain('<g:item_group_id>7500</g:item_group_id>');
@@ -131,6 +133,15 @@ describe('feeds action', () => {
         provider: 'meta', FEEDS_TOKEN: TOKEN, __ow_headers: { authorization: `Bearer ${TOKEN}` },
       });
       expect(res.statusCode).toBe(200);
+    });
+
+    test('gated response is not shared-cacheable', async () => {
+      mockFetch(SAMPLE_FEED);
+      const res = await GET({
+        provider: 'meta', FEEDS_TOKEN: TOKEN, __ow_headers: { authorization: `Bearer ${TOKEN}` },
+      });
+      expect(res.statusCode).toBe(200);
+      expect(res.headers['cache-control']).toBe('private, no-store');
     });
 
     test('200 with ?token query param', async () => {

@@ -84,11 +84,17 @@ export async function main(params) {
     const items = feed.items.map(serializer.transformItem);
     const body = buildRssXml({ channel: feed.channel, items });
 
+    // Only ungated feeds may be shared-cached. When FEEDS_TOKEN gates access, the
+    // response is Bearer-authenticated, so keep it out of shared/CDN caches.
+    const cacheControl = params.FEEDS_TOKEN
+      ? 'private, no-store'
+      : 'max-age=3600, must-revalidate';
+
     return {
       statusCode: 200,
       headers: {
         'content-type': serializer.contentType,
-        'cache-control': 'max-age=3600, must-revalidate',
+        'cache-control': cacheControl,
       },
       body,
     };
