@@ -51,12 +51,22 @@ export async function fetchGmcFeed(ctx, locale) {
   const url = `${base}/${locale}/products/merchant-center-feed.xml`;
   ctx.log.info(`fetching GMC feed: ${url}`);
 
-  const resp = await fetch(url);
+  let resp;
+  try {
+    resp = await fetch(url);
+  } catch (err) {
+    // Network/egress/DNS failures reject rather than return !ok — surface them.
+    throw errorWithResponse(
+      `failed to fetch GMC feed ${url}: ${err.message}`,
+      502,
+      `failed to fetch source feed: ${err.message}`,
+    );
+  }
   if (!resp.ok) {
     throw errorWithResponse(
       `failed to fetch GMC feed ${url}: ${resp.status}`,
       502,
-      'failed to fetch source feed',
+      `failed to fetch source feed: ${resp.status}`,
     );
   }
 

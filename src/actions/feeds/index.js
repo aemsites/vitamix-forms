@@ -110,7 +110,8 @@ export async function main(params) {
   } catch (err) {
     log.error(`failed to build ${provider} feed for ${locale}: ${err.message}`);
     const statusCode = err.response?.error?.statusCode || 500;
-    const message = err.response?.error?.headers?.['x-error'] || 'failed to build feed';
+    const message = err.response?.error?.headers?.['x-error']
+      || `failed to build feed: ${err.message}`;
     return errorResponse(statusCode, message);
   }
 }
