@@ -60,17 +60,18 @@ published per locale; each provider gets it in the format it expects. This is a
 
 Supported providers:
 
-- **`meta`** — Facebook/Instagram (Advantage+/DPA). Ingests the Google `g:`
-  format as-is.
-- **`pinterest`** — Pinterest catalogs. Same `g:` format; `availability` values
-  are mapped to the space form (`in stock`). Requires `google_product_category`
-  and `product_type`, which flow from the source feed.
-- **`cj`** — Commission Junction. The Shopping feed follows the Google spec, so
-  the `g:` RSS is accepted directly (replaces the current SFTP drop).
+- **`meta`** — Facebook/Instagram (Advantage+/DPA). Non-namespaced `<rss>` feed
+  (`availability` in the spaced spec form, `in stock`).
+- **`pinterest`** — Pinterest catalogs. Same non-namespaced `<rss>` feed as Meta;
+  includes `product_type` and `google_product_category` from the source feed.
+- **`cj`** — Commission Junction. Bare `<feed>` root, non-namespaced, Google-spec
+  `availability` (`in_stock`); replaces the current SFTP drop.
+- **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
+  from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
+  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`).
 
-Not served here: **Google Ads** (no separate feed — it serves from the linked
-Merchant Center account), and **Bazaarvoice** (needs a distinct `ProductFeed.xml`
-schema; planned as a dedicated feed type in the indexer).
+Not served here: **Google Ads** — no separate feed; it serves from the linked
+Merchant Center account (i.e. the source GMC feed itself).
 
 ## APIs
 
@@ -137,7 +138,7 @@ deep links.
 ### Provider Feeds
 
 ```
-GET /feeds/feeds?provider=<meta|pinterest|cj>&locale=<cc/ll_cc>
+GET /feeds/feeds?provider=<meta|pinterest|cj|bazaarvoice>&locale=<cc/ll_cc>
 ```
 
 Returns the catalog in the provider's format (`application/xml`). `locale`
@@ -145,6 +146,21 @@ defaults to `us/en_us` and must match `cc/ll_cc` (e.g. `ca/en_us`). When
 `FEEDS_TOKEN` is set, requests must authenticate with `Authorization: Bearer
 <token>` or `?token=<token>` (the query form is for providers that only accept a
 plain URL). Responses are cacheable (`max-age=3600`).
+
+Deployed web-action base: `https://<namespace>.adobeioruntime.net/api/v1/web/feeds/feeds`
+(`<namespace>` per environment — e.g. `60038-161ivoryjackal-stage` on stage).
+The per-provider feed URLs to hand to each platform (locale `us/en_us` shown;
+swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`):
+
+| Provider | Feed URL |
+|---|---|
+| Meta | `…/api/v1/web/feeds/feeds?provider=meta&locale=us/en_us` |
+| Pinterest | `…/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
+| Commission Junction | `…/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
+| Bazaarvoice | `…/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+
+Google Ads has no URL here — it serves from the linked Google Merchant Center
+account (the source feed at `{FEED_SITE_BASE}/<locale>/products/merchant-center-feed.xml`).
 
 ## Deployment
 
