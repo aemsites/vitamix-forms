@@ -1,0 +1,760 @@
+{
+  "categories": {
+    "28": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/commercial",
+        "ca": "https://www.vitamix.com/ca/fr_ca/commercial"
+      },
+      "name": "Commercial"
+    },
+    "29": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/commercial/products",
+        "ca": "https://www.vitamix.com/ca/fr_ca/commercial/products"
+      },
+      "name": "Products",
+      "parent": "28"
+    },
+    "55": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop"
+      },
+      "name": "Shop"
+    },
+    "58": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/accessories"
+      },
+      "name": "Accessories",
+      "parent": "55"
+    },
+    "61": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/ascent-series-accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/ascent-series-accessories"
+      },
+      "name": "Ascent Series Accessories",
+      "parent": "55"
+    },
+    "64": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/blenders"
+      },
+      "name": "All Blenders",
+      "parent": "55"
+    },
+    "67": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/blending-cups-and-bowls",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/blending-cups-and-bowls"
+      },
+      "name": "Blending Cups and Bowls",
+      "parent": "55"
+    },
+    "70": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/certified-reconditioned-series",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/certified-reconditioned-series"
+      },
+      "name": "Certified Reconditioned Series",
+      "parent": "55"
+    },
+    "73": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/classic-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/classic-blenders"
+      },
+      "name": "Legacy Series Blenders",
+      "parent": "55"
+    },
+    "76": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/classic-series-accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/classic-series-accessories"
+      },
+      "name": "Legacy Series Accessories",
+      "parent": "55"
+    },
+    "79": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/compact-food-recycling",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/compact-food-recycling"
+      },
+      "name": "Compact Food Recycling",
+      "parent": "55"
+    },
+    "82": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/containers",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/containers"
+      },
+      "name": "Blender Containers",
+      "parent": "55"
+    },
+    "85": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/cookbooks",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/cookbooks"
+      },
+      "name": "Cookbooks",
+      "parent": "55"
+    },
+    "88": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/corporate-accounts"
+      },
+      "name": "Corporate Wellness Program",
+      "parent": "55"
+    },
+    "91": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/c-series-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/c-series-blenders"
+      },
+      "name": "C-Series: Classic Blenders",
+      "parent": "55"
+    },
+    "94": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/explorian-series-accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/explorian-series-accessories"
+      },
+      "name": "Explorian Series",
+      "parent": "55"
+    },
+    "97": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/g-series-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/g-series-blenders"
+      },
+      "name": "G-Series: Next Generation Blenders",
+      "parent": "55"
+    },
+    "100": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/kitchen-tools",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/kitchen-tools"
+      },
+      "name": "Kitchen Tools",
+      "parent": "55"
+    },
+    "106": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/shop-collections",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/shop-collections"
+      },
+      "name": "All Collections",
+      "parent": "55"
+    },
+    "109": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/smart-system-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/smart-system-blenders"
+      },
+      "name": "Ascent Series Blenders",
+      "parent": "55"
+    },
+    "112": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/smoothie-cups",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/smoothie-cups"
+      },
+      "name": "Smoothie Cups",
+      "parent": "55"
+    },
+    "115": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/space-saving-accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/space-saving-accessories"
+      },
+      "name": "Space Saving Blenders Accessories",
+      "parent": "55"
+    },
+    "118": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/space-saving-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/space-saving-blenders"
+      },
+      "name": "Space Saving Blenders",
+      "parent": "55"
+    },
+    "121": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/tampers",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/tampers"
+      },
+      "name": "Tampers",
+      "parent": "55"
+    },
+    "127": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders"
+      },
+      "name": "Beverage Blenders",
+      "parent": "55"
+    },
+    "130": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/beverage-blenders/barboss",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/barboss"
+      },
+      "name": "BarBoss",
+      "parent": "127"
+    },
+    "136": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/blending-station"
+      },
+      "name": "Blending Station",
+      "parent": "127"
+    },
+    "142": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/immersion-blending",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/immersion-blending"
+      },
+      "name": "Immersion Blender",
+      "parent": "55"
+    },
+    "145": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/frozen-treat-mixers"
+      },
+      "name": "Frozen Treat Mixers",
+      "parent": "55"
+    },
+    "148": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/frozen-treat-mixers/mix-n-machine"
+      },
+      "name": "Mix&#039;n Machine",
+      "parent": "145"
+    },
+    "151": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/certified-reconditioned-collection"
+      },
+      "name": "Certified Reconditioned Collection",
+      "parent": "55"
+    },
+    "154": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/drink-machine"
+      },
+      "name": "Drink Machine",
+      "parent": "127"
+    },
+    "157": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/container-rinsers"
+      },
+      "name": "Container Rinsers",
+      "parent": "55"
+    },
+    "160": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/container-rinsers/rinse-o-matic-1",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/container-rinsers/rinse-o-matic-1"
+      },
+      "name": "Rinse-O-Matic",
+      "parent": "157"
+    },
+    "163": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/",
+        "ca": "https://www.vitamix.com/ca/fr_ca/"
+      },
+      "name": "The Quiet One",
+      "parent": "127"
+    },
+    "169": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/food-preparation"
+      },
+      "name": "Food Preparation",
+      "parent": "55"
+    },
+    "172": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/food-preparation/vita-prep",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/food-preparation/vita-prep"
+      },
+      "name": "Vita-Prep",
+      "parent": "169"
+    },
+    "175": {
+      "url": {
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/venturist-series"
+      },
+      "name": "Venturist Series",
+      "parent": "127"
+    },
+    "178": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/food-preparation/vitamix-xl",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/food-preparation/vitamix-xl"
+      },
+      "name": "Vitamix-XL",
+      "parent": "169"
+    },
+    "191": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/in-home-trial",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/in-home-trial"
+      },
+      "name": "In Home Trial",
+      "parent": "55"
+    },
+    "194": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/commercial/products/accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/commercial/products/accessories"
+      },
+      "name": "Accessories",
+      "parent": "29"
+    },
+    "197": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/commercial/products/frozen-treat-mixers",
+        "ca": "https://www.vitamix.com/ca/fr_ca/commercial/products/frozen-treat-mixers"
+      },
+      "name": "Frozen-Treat-Mixers",
+      "parent": "29"
+    },
+    "200": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/commercial/products/food-preparation",
+        "ca": "https://www.vitamix.com/ca/fr_ca/commercial/products/food-preparation"
+      },
+      "name": "Food-Preparation",
+      "parent": "29"
+    },
+    "201": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/food-processing",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/food-processing"
+      },
+      "name": "Food Processing",
+      "parent": "55"
+    },
+    "208": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/allblenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/allblenders"
+      },
+      "name": "Blenders",
+      "parent": "55"
+    },
+    "228": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/sale",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/sale"
+      },
+      "name": "Shop Now!",
+      "parent": "55"
+    },
+    "229": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/sale-skus",
+        "ca": "https://www.vitamix.com/ca/fr_ca/sale-skus"
+      },
+      "name": "Sale SKUs (Sale Exclusion Products)"
+    },
+    "232": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/kitchen-systems",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/kitchen-systems"
+      },
+      "name": "Kitchen Systems",
+      "parent": "55"
+    },
+    "237": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/propel-series-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/propel-series-blenders"
+      },
+      "name": "Propel Series Blenders",
+      "parent": "55"
+    },
+    "239": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/accessories/immersion-blender-accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/accessories/immersion-blender-accessories"
+      },
+      "name": "Immersion Blender Accessories",
+      "parent": "58"
+    },
+    "245": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/accessories/food-processor-accessories",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/accessories/food-processor-accessories"
+      },
+      "name": "Food Processor Accessories",
+      "parent": "58"
+    },
+    "254": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/full-size-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/full-size-blenders"
+      },
+      "name": "Full Size Blenders",
+      "parent": "55"
+    },
+    "257": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/employee-sale-exclusions",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/employee-sale-exclusions"
+      },
+      "name": "Employee Sale Exclusions",
+      "parent": "55"
+    },
+    "260": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/why-buy-direct",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/why-buy-direct"
+      },
+      "name": "Why Buy Direct",
+      "parent": "55"
+    },
+    "272": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/explorian-series-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/explorian-series-blenders"
+      },
+      "name": "Explorian Series Blenders",
+      "parent": "55"
+    },
+    "273": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/ascent-x-series-blenders",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/ascent-x-series-blenders"
+      },
+      "name": "Ascent X Series Blenders",
+      "parent": "55"
+    },
+    "278": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/eligible-discount-employee",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/eligible-discount-employee"
+      },
+      "name": "Eligible Employee Discount",
+      "parent": "55"
+    },
+    "281": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/availableproducts",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/availableproducts"
+      },
+      "name": "Available Products",
+      "parent": "55"
+    },
+    "284": {
+      "url": {
+        "us": "https://www.vitamix.com/us/en_us/shop/classic-series-accessories/legacy-series",
+        "ca": "https://www.vitamix.com/ca/fr_ca/shop/classic-series-accessories/legacy-series"
+      },
+      "name": "Legacy Series",
+      "parent": "76"
+    }
+  },
+  "productCategory": {
+    "5300": "91",
+    "6500": "91",
+    "7500": "55",
+    "57465": "118",
+    "59404": "97",
+    "61165": "151",
+    "61627": "91",
+    "64904": "91",
+    "66707": "97",
+    "VBND5200LB": "272",
+    "Certified_bv32_Reconditioned_bv32_Venturist_bv32_Pro": "175",
+    "075698": "175",
+    "075699": "175",
+    "X4_bv32_Kitchen_bv32_System": "232",
+    "075708-100": "232",
+    "X2_bv32_Kitchen_bv32_System": "254",
+    "075710-100": "254",
+    "5-Speed_bv32_Immersion_bv32_Blender_bv32_3-Piece_bv32_Bundle": "142",
+    "071238": "142",
+    "075251": "194",
+    "A2500_bv32__bv43__bv32_Aer_bv32_Disc_bv32_Container": "208",
+    "070871": "208",
+    "070872": "208",
+    "070873": "208",
+    "070874": "208",
+    "Alta_bv32_Pro": "208",
+    "075700": "208",
+    "075701": "208",
+    "sku-10-year-limited-warranty": "55",
+    "074104-04": "273",
+    "075805-04": "273",
+    "075807-04": "273",
+    "VBND5200SS": "257",
+    "X5_bv32_with_bv32_Stainless_bv32_Steel_bv32_Container": "273",
+    "075845": "273",
+    "073055": "194",
+    "073053": "194",
+    "073051": "29",
+    "071771": "29",
+    "073511": "208",
+    "2-Speed_bv32_Immersion_bv32_Blender_bv32__bv43__bv32_Whisk_bv32_Attachment": "208",
+    "Propel_bv32_410": "237",
+    "074511": "237",
+    "2-Speed_bv32_Immersion_bv32_Blender_bv32_Bundle": "208",
+    "073512": "208",
+    "Ascent_bv32_X2": "273",
+    "073492-04": "273",
+    "074094-04": "273",
+    "074095-04": "273",
+    "074096-04": "273",
+    "Ascent_bv32_X3": "273",
+    "073493": "273",
+    "074097": "273",
+    "074102-04": "273",
+    "074100-04": "273",
+    "074101-04": "273",
+    "073494-04": "273",
+    "Ascent_bv32_X4": "273",
+    "Ascent_bv32_X5": "273",
+    "073495-04": "273",
+    "VBNDAX5KS": "273",
+    "VBNDE310": "272",
+    "VBNDP750": "272",
+    "Venturist_bv32_Pro": "175",
+    "074352": "175",
+    "073832": "175",
+    "VBNDIBCB": "257",
+    "071511": "64",
+    "071239": "142",
+    "073792": "142",
+    "073791": "142",
+    "074591": "237",
+    "Certified_bv32_Reconditioned_bv32_Propel_bv32_510": "237",
+    "074592": "237",
+    "Certified_bv32_Reconditioned_bv32_Propel_bv32_750": "237",
+    "071774": "194",
+    "073052": "194",
+    "073056": "194",
+    "071592": "100",
+    "071833-100": "64",
+    "A3500_bv32_Kitchen_bv32_System": "64",
+    "071351": "100",
+    "Propel510": "64",
+    "071395": "64",
+    "Propel750": "64",
+    "foodcycler-eco-5": "79",
+    "071593": "79",
+    "071952": "79",
+    "071594": "79",
+    "48-ounce_bv32_Color_bv32_Container_bv32_with_bv32_SELF-DETECT_bv194__bv174_": "82",
+    "072532": "82",
+    "Eco_bv32_5_bv32_Bucket_bv32_and_bv32_Lid": "79",
+    "V1200_bv32_Super_bv32_Pack": "208",
+    "064224": "208",
+    "064264": "208",
+    "065615": "208",
+    "064265": "208",
+    "073011": "109",
+    "A3500_bv32_BlueSky_bv32_Bundle": "109",
+    "Certified_bv32_Reconditioned_bv32_Explorian_bv32_with_bv32_Programs": "94",
+    "072612": "94",
+    "072611": "94",
+    "A3500_bv32_Gold_bv32_Label": "109",
+    "072435-04": "109",
+    "072751-100": "109",
+    "A3300_bv32_SmartPrep_bv32_Kitchen_bv32_System": "109",
+    "073296": "64",
+    "073295": "64",
+    "073294": "64",
+    "062327": "254",
+    "067892": "142",
+    "057728-04": "91",
+    "057725-04": "91",
+    "A3500_bv32_Entertaining_bv32_Bundle": "109",
+    "071091": "254",
+    "001972": "151",
+    "069836": "100",
+    "e520": "55",
+    "5-Speed_bv32_Immersion_bv32_Blender_bv32_4-Piece_bv32_Bundle": "64",
+    "5-Speed_bv32_Immersion_bv32_Blender_bv32_4-Piece_bv32_Deluxe_bv32_Bundle": "142",
+    "065491": "109",
+    "065494": "109",
+    "A2300_bv32_Blender_bv32_Super_bv32_Bundle": "64",
+    "7500-super-bundle": "97",
+    "A2500-SmartPrep-Kitchen-System": "109",
+    "A2300-smartprep-kitchen-system": "64",
+    "071611-100": "109",
+    "071831-100": "64",
+    "058004": "254",
+    "064146": "94",
+    "064147": "94",
+    "sku-10-year-standard-warranty": "55",
+    "001314": "55",
+    "s30-5-year-standard": "55",
+    "sku-warranty-5yr-std": "55",
+    "sku-warranty-7yr-std": "55",
+    "s30-standard-7-yr": "55",
+    "sku-warranty-3yr-std": "55",
+    "070791": "55",
+    "066193-04": "85",
+    "069811": "100",
+    "069813": "100",
+    "069772": "100",
+    "069774": "100",
+    "069775": "100",
+    "069773": "100",
+    "069776": "100",
+    "069812": "100",
+    "069815": "100",
+    "069814": "100",
+    "068172": "100",
+    "068171": "100",
+    "a3500-with-stainless-steel-container": "109",
+    "070951": "109",
+    "062071": "254",
+    "062849": "109",
+    "061624": "91",
+    "TurboBlend_bv32_Three_bv32_Speed": "55",
+    "vitamixone": "64",
+    "060624": "85",
+    "062827": "200",
+    "062826": "200",
+    "001152": "194",
+    "015858": "85",
+    "005201-1191": "200",
+    "015902": "194",
+    "015899-1206": "194",
+    "062324-04": "223",
+    "062326": "223",
+    "001725-2151": "55",
+    "001726-2152": "55",
+    "067932": "175",
+    "067933": "175",
+    "001442": "157",
+    "065632": "121",
+    "057465": "118",
+    "069834": "100",
+    "064585": "121",
+    "069835": "100",
+    "056205": "58",
+    "067891": "278",
+    "001195": "194",
+    "000760": "121",
+    "036019-ABAB": "29",
+    "Total_bv32_Nutrition_bv32_Center_bv32_-_bv32_Complete_bv32_Kitchen": "91",
+    "068255-ABAB": "29",
+    "067591": "201",
+    "068612": "100",
+    "068051": "223",
+    "068173": "100",
+    "068196": "55",
+    "068192": "55",
+    "068151": "100",
+    "016041": "121",
+    "015033": "121",
+    "000570": "197",
+    "056393": "197",
+    "005132": "29",
+    "061724-04": "82",
+    "Professional_bv32_Series_bv32_750": "97",
+    "001957-3579": "97",
+    "066791": "97",
+    "Certified_bv32_Reconditioned_bv32_5300": "91",
+    "Certified_bv32_Reconditioned_bv32_7500": "106",
+    "001963": "142",
+    "Certified_bv32_Reconditioned_bv32_Professional_bv32_Series_bv32_750": "151",
+    "Certified_bv32_Reconditioned_bv32_Standard": "106",
+    "060488": "121",
+    "000477": "100",
+    "Drink_bv32_Machine_bv32_Advance": "154",
+    "062828": "154",
+    "000891": "194",
+    "E310": "223",
+    "E320": "94",
+    "E320_bv32__bv43__bv32_Personal_bv32_Cup_bv32_Adapter": "64",
+    "066852": "64",
+    "067191": "64",
+    "065471": "121",
+    "Colored_bv32_Advance_bv32_Container": "194",
+    "058988": "194",
+    "058989": "194",
+    "058990": "194",
+    "058991": "194",
+    "Certified_bv32_Reconditioned_bv32_A2500": "109",
+    "Certified_bv32_Reconditioned_bv32_A3500": "109",
+    "Creations_bv32_II": "55",
+    "Creations_bv32_Gallery": "91",
+    "070011": "55",
+    "056407": "55",
+    "069333-04": "82",
+    "Certified_bv32_Reconditioned_bv32_Explorian_bv32_Series": "106",
+    "Certified_bv32_Reconditioned_bv32_Venturist_bv32_V1200": "109",
+    "073473": "109",
+    "073472": "109",
+    "073471": "109",
+    "069833": "100",
+    "066192-04": "82",
+    "061165": "151",
+    "061164": "151",
+    "5-Speed_bv32_Immersion_bv32_Blender": "223",
+    "A2300": "223",
+    "062325": "223",
+    "A2300_bv32_Family_bv32_Pack": "109",
+    "A2500": "64",
+    "A3300": "109",
+    "066871": "109",
+    "A3500": "254",
+    "015990": "194",
+    "015978": "194",
+    "062947": "194",
+    "065421": "278",
+    "Venturist_bv32_V1200": "175",
+    "064584": "100",
+    "065205": "85",
+    "056264": "112",
+    "015842": "278",
+    "059427": "278",
+    "059666": "55",
+    "015255-2668": "278",
+    "063886": "278",
+    "063854": "278",
+    "5200_bv32_Standard_bv32_-_bv32_Getting_bv32_Started": "91",
+    "060865": "278",
+    "060904": "278",
+    "063126": "278",
+    "064306": "73",
+    "VBNDX5SS": "273",
+    "075804-04": "254",
+    "075769": "55",
+    "VX1": "254",
+    "075764": "55",
+    "VBNDVX1": "257",
+    "067991": "223",
+    "074051": "223",
+    "VBNDP750-CA": "254",
+    "016147": "85",
+    "061050": "85",
+    "063370": "118",
+    "061048": "82",
+    "061049": "82",
+    "015399": "82",
+    "062436": "254",
+    "063304-04": "254",
+    "066165": "254",
+    "066166": "254",
+    "062424-04": "109",
+    "Total_bv32_Nutrition_bv32_Center": "91",
+    "001884-3318": "91",
+    "001919-3413": "91",
+    "064207": "254",
+    "001372-1093": "91",
+    "001392-1138": "91",
+    "001371-1092": "91",
+    "075861-04": "254",
+    "VBNDVX1-CA": "254"
+  }
+}
