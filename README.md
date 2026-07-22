@@ -51,6 +51,27 @@ the batch's max `DateUpdated` only on a successful run. The first run cold-start
 `{{digest}}` placeholder where the recipe table is injected). No recipient env
 var.
 
+### `feeds/feeds` (web action)
+
+Serves product-catalog feeds for downstream service providers over HTTP, from a
+single endpoint. The source is the (enriched) Google Merchant Center feed
+published per locale; each provider gets it in the format it expects. This is a
+**pull model** — providers fetch the URL on their own schedule.
+
+Supported providers:
+
+- **`meta`** — Facebook/Instagram (Advantage+/DPA). Ingests the Google `g:`
+  format as-is.
+- **`pinterest`** — Pinterest catalogs. Same `g:` format; `availability` values
+  are mapped to the space form (`in stock`). Requires `google_product_category`
+  and `product_type`, which flow from the source feed.
+- **`cj`** — Commission Junction. The Shopping feed follows the Google spec, so
+  the `g:` RSS is accepted directly (replaces the current SFTP drop).
+
+Not served here: **Google Ads** (no separate feed — it serves from the linked
+Merchant Center account), and **Bazaarvoice** (needs a distinct `ProductFeed.xml`
+schema; planned as a dedicated feed type in the indexer).
+
 ## APIs
 
 ### Form Submission
@@ -112,6 +133,18 @@ Content-Type: application/json
 `dryRun` bypasses the prod gate and never sends or advances the cursor, so stage
 can be exercised on demand. It returns the computed new-recipe set with resolved
 deep links.
+
+### Provider Feeds
+
+```
+GET /feeds/feeds?provider=<meta|pinterest|cj>&locale=<cc/ll_cc>
+```
+
+Returns the catalog in the provider's format (`application/xml`). `locale`
+defaults to `us/en_us` and must match `cc/ll_cc` (e.g. `ca/en_us`). When
+`FEEDS_TOKEN` is set, requests must authenticate with `Authorization: Bearer
+<token>` or `?token=<token>` (the query form is for providers that only accept a
+plain URL). Responses are cacheable (`max-age=3600`).
 
 ## Deployment
 
@@ -183,6 +216,15 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 | `RECIPE_DIGEST_TEMPLATE` | DA path of the digest template | `/config/recipes/digest-template` |
 | `RECIPE_NOTIFY_TOKEN` | Bearer token for the status/trigger HTTP APIs (HTTP access denied if unset) | — |
 | `RECIPE_NOTIFY_ENABLED` | Prod-only gate — scheduled run sends only when `"true"`. Set in prod deploy env only. | unset (no-op) |
+
+### feeds package
+
+| Variable | Description | Default |
+|---|---|---|
+| `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
+| `LOG_LEVEL` | Logging level | `info` |
+| `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://main--vitamix--aemsites.aem.network` |
+| `FEEDS_TOKEN` | Optional bearer/token gate for the feed URLs. When unset, feeds are public. | unset (public) |
 
 ## Setup (first-time per environment)
 

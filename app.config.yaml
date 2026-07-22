@@ -156,3 +156,26 @@ application:
           recipe-notify-rule:
             trigger: recipe-notify-schedule
             action: recipe-notify
+
+      feeds:
+        license: Apache-2.0
+        actions:
+          feeds:
+            function: dist/actions/feeds/index.js
+            runtime: nodejs:22
+            web: 'yes'
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 60000   # fetch source feed + transform + serialize
+              memory: 512
+              concurrency: 1
+            inputs:
+              ORG: aemsites
+              SITE: vitamix
+              LOG_LEVEL: $LOG_LEVEL
+              # base host serving the Merchant Center feed per locale
+              FEED_SITE_BASE: $FEED_SITE_BASE
+              # optional bearer/token gate for the feed URLs handed to providers
+              FEEDS_TOKEN: $FEEDS_TOKEN
