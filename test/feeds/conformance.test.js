@@ -159,14 +159,7 @@ describe('unsupported providers (gaps to close)', () => {
     const res = await main({ __ow_method: 'GET', provider: 'google', LOG_LEVEL: 'error' });
     expect(res.statusCode).toBe(400);
   });
-
-  test('bazaarvoice is not served — needs the BV ProductFeed schema, not the GMC feed', async () => {
-    const res = await main({ __ow_method: 'GET', provider: 'bazaarvoice', LOG_LEVEL: 'error' });
-    expect(res.statusCode).toBe(400);
-    // The reference is a completely different schema:
-    const bv = fixture('expected-bazaarvoice.xml');
-    expect(bv).toContain('bazaarvoice.com/xs/PRR/ProductFeed');
-  });
+  // bazaarvoice IS served now — see bazaarvoice.test.js.
 });
 
 describe('locale plumbing', () => {

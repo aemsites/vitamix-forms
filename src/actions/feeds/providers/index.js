@@ -1,21 +1,21 @@
 import meta from './meta.js';
 import pinterest from './pinterest.js';
 import cj from './cj.js';
+import bazaarvoice from './bazaarvoice.js';
 
 /**
- * Registry of supported providers.
+ * Registry of supported providers. A provider is either "simple" (a `{ root,
+ * namespaced, fields, transformItem }` descriptor serialized by buildFeed) or
+ * "custom" (supplies an async `build(ctx, feed, locale)` — e.g. bazaarvoice,
+ * whose schema differs from the Google shapes).
  *
- * Not yet included:
- * - google:      no separate feed — Google Ads serves from the linked Merchant
- *                Center account, i.e. the GMC feed itself.
- * - bazaarvoice: needs a distinct ProductFeed.xml schema (ExternalId, category
- *                hierarchy, review families) that the GMC feed does not carry;
- *                planned as a dedicated feed type in the indexer.
- *
- * @type {Record<string, { contentType: string, transformItem: (item: Record<string, unknown>) => Record<string, unknown> }>}
+ * Not included:
+ * - google: no separate feed — Google Ads serves from the linked Merchant
+ *   Center account, i.e. the GMC feed itself.
  */
 export const PROVIDERS = {
   meta,
   pinterest,
   cj,
+  bazaarvoice,
 };

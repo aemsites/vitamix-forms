@@ -75,14 +75,23 @@ export async function main(params) {
   }
 
   const ctx = {
-    env: { FEED_SITE_BASE: params.FEED_SITE_BASE || DEFAULT_FEED_SITE_BASE },
+    env: {
+      FEED_SITE_BASE: params.FEED_SITE_BASE || DEFAULT_FEED_SITE_BASE,
+      BV_CATEGORY_SHEET_URL: params.BV_CATEGORY_SHEET_URL,
+    },
     log,
   };
 
   try {
     const feed = await fetchGmcFeed(ctx, locale);
-    const items = feed.items.map(serializer.transformItem);
-    const body = buildFeed({ channel: feed.channel, items }, serializer);
+    // Custom-schema providers (e.g. bazaarvoice) supply their own async builder;
+    // the rest use the shared field/format serializer.
+    const body = serializer.build
+      ? await serializer.build(ctx, feed, locale)
+      : buildFeed(
+        { channel: feed.channel, items: feed.items.map(serializer.transformItem) },
+        serializer,
+      );
 
     // Only ungated feeds may be shared-cached. When FEEDS_TOKEN gates access, the
     // response is Bearer-authenticated, so keep it out of shared/CDN caches.
