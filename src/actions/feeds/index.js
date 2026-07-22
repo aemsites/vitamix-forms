@@ -76,10 +76,14 @@ export async function main(params) {
     return errorResponse(400, 'invalid locale; expected form "cc/ll_cc" e.g. "us/en_us"');
   }
 
+  // Use an env value only when it's a real http(s) URL — this tolerates the var
+  // being unset (empty) or left as an unsubstituted "$VAR" literal by the
+  // deploy, falling back to the in-code default in both cases.
+  const httpUrl = (value) => (/^https?:\/\//.test(value || '') ? value : undefined);
   const ctx = {
     env: {
-      FEED_SITE_BASE: params.FEED_SITE_BASE || DEFAULT_FEED_SITE_BASE,
-      BV_CATEGORY_SHEET_URL: params.BV_CATEGORY_SHEET_URL,
+      FEED_SITE_BASE: httpUrl(params.FEED_SITE_BASE) || DEFAULT_FEED_SITE_BASE,
+      BV_CATEGORY_SHEET_URL: httpUrl(params.BV_CATEGORY_SHEET_URL),
     },
     log,
   };
