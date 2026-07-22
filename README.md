@@ -248,7 +248,7 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 |---|---|---|
 | `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
 | `LOG_LEVEL` | Logging level | `info` |
-| `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://main--vitamix--aemsites.aem.network` |
+| `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://www.vitamix.com` |
 | `FEEDS_TOKEN` | Optional bearer/token gate for the feed URLs. When unset, feeds are public. | unset (public) |
 
 ## Setup (first-time per environment)

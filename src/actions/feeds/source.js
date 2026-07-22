@@ -55,11 +55,13 @@ export async function fetchGmcFeed(ctx, locale) {
   try {
     resp = await fetch(url);
   } catch (err) {
-    // Network/egress/DNS failures reject rather than return !ok — surface them.
+    // Network/egress/DNS failures reject rather than return !ok — surface them,
+    // including err.cause (undici puts the real reason there, e.g. ETIMEDOUT).
+    const reason = `${err.message}${err.cause ? ` (${err.cause.message || err.cause})` : ''}`;
     throw errorWithResponse(
-      `failed to fetch GMC feed ${url}: ${err.message}`,
+      `failed to fetch GMC feed ${url}: ${reason}`,
       502,
-      `failed to fetch source feed: ${err.message}`,
+      `failed to fetch source feed: ${reason}`,
     );
   }
   if (!resp.ok) {

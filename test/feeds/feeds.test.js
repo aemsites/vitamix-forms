@@ -72,7 +72,7 @@ describe('feeds action', () => {
     const res = await GET({ provider: 'meta', locale: 'ca/en_us' });
 
     expect(fetchSpy).toHaveBeenCalledWith(
-      'https://main--vitamix--aemsites.aem.network/ca/en_us/products/merchant-center-feed.xml',
+      'https://www.vitamix.com/ca/en_us/products/merchant-center-feed.xml',
     );
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-type']).toBe('application/xml');

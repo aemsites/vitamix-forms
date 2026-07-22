@@ -18,7 +18,9 @@ import { buildFeed } from './serialize.js';
 import { PROVIDERS } from './providers/index.js';
 
 const DEFAULT_LOCALE = 'us/en_us';
-const DEFAULT_FEED_SITE_BASE = 'https://main--vitamix--aemsites.aem.network';
+// Production public domain — serves the merchant feed and is reachable from the
+// runtime (a direct fetch of the aem.network host fails at runtime: "fetch failed").
+const DEFAULT_FEED_SITE_BASE = 'https://www.vitamix.com';
 
 /**
  * @param {string | undefined} value
