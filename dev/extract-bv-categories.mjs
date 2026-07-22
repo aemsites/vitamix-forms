@@ -103,10 +103,24 @@ const doc = {
 mkdirSync(dirname(OUT), { recursive: true });
 writeFileSync(OUT, `${JSON.stringify(doc, null, 2)}\n`);
 
+// Tab-delimited dumps for copy/paste into a DA sheet (same as Google Sheets:
+// header row + rows, columns separated by tabs). One file per sheet.
+const tsv = (rows) => {
+  const cols = Object.keys(rows[0]);
+  const line = (obj) => cols.map((c) => String(obj[c] ?? '').replace(/[\t\r\n]+/g, ' ')).join('\t');
+  return [cols.join('\t'), ...rows.map(line)].join('\n');
+};
+const CATEGORIES_TSV = `${HERE}/bv-categories.categories.tsv`;
+const PRODUCTS_TSV = `${HERE}/bv-categories.products.tsv`;
+writeFileSync(CATEGORIES_TSV, `${tsv(categoryRows)}\n`);
+writeFileSync(PRODUCTS_TSV, `${tsv(productRows)}\n`);
+
 // Report
 const orphanCats = categoryRows.filter((c) => c.parentExternalId && !categories[c.parentExternalId]).map((c) => c.externalId);
 const missingCatRefs = [...new Set(productRows.map((p) => p.categoryExternalId))].filter((id) => !categories[id]);
 console.log(`wrote ${OUT}`);
+console.log(`wrote ${CATEGORIES_TSV}`);
+console.log(`wrote ${PRODUCTS_TSV}`);
 console.log(`categories sheet: ${categoryRows.length} rows`);
 console.log(`products sheet:   ${productRows.length} rows`);
 console.log(`us/ca conflicts (kept US): ${conflicts.length}${conflicts.length ? ` ${JSON.stringify(conflicts)}` : ''}`);
