@@ -147,17 +147,26 @@ defaults to `us/en_us` and must match `cc/ll_cc` (e.g. `ca/en_us`). When
 <token>` or `?token=<token>` (the query form is for providers that only accept a
 plain URL). Responses are cacheable (`max-age=3600`).
 
-Deployed web-action base: `https://<namespace>.adobeioruntime.net/api/v1/web/feeds/feeds`
-(`<namespace>` per environment — e.g. `60038-161ivoryjackal-stage` on stage).
 The per-provider feed URLs to hand to each platform (locale `us/en_us` shown;
-swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`):
+swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
+
+**Stage** (`https://60038-161ivoryjackal-stage.adobeioruntime.net`):
 
 | Provider | Feed URL |
 |---|---|
-| Meta | `…/api/v1/web/feeds/feeds?provider=meta&locale=us/en_us` |
-| Pinterest | `…/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
-| Commission Junction | `…/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
-| Bazaarvoice | `…/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+| Meta | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=meta&locale=us/en_us` |
+| Pinterest | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
+| Commission Junction | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
+| Bazaarvoice | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+
+**Production** (`https://60038-161ivoryjackal.adobeioruntime.net`):
+
+| Provider | Feed URL |
+|---|---|
+| Meta | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=meta&locale=us/en_us` |
+| Pinterest | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
+| Commission Junction | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
+| Bazaarvoice | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
 
 Google Ads has no URL here — it serves from the linked Google Merchant Center
 account (the source feed at `{FEED_SITE_BASE}/<locale>/products/merchant-center-feed.xml`).
