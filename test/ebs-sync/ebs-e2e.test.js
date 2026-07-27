@@ -321,6 +321,7 @@ const PP_BUNDLE_WARRANTY_ORDER = {
   items: [
     {
       sku: '001372-1093-VB',
+      path: '/ca/en_ca/products/5200-legacy-bundle',
       quantity: 1,
       name: '5200 Standard - Getting Started',
       price: { final: '899.95', currency: 'CAD' },
