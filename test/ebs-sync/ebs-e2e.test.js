@@ -608,6 +608,17 @@ describe('ebs-sync e2e', () => {
       expect(addressValidation(xml, 'BillTo')).toBe('true');
     });
 
+    test('both ShipTo and BillTo are false when the shared address is not validated', async () => {
+      const order = clone(PP_APPROVED_ORDER);
+      order.shipping.isValidated = false;
+      delete order.billing;
+
+      const xml = await buildXml(order, loadJournal('journal-pp-approved.ndjson'));
+
+      expect(addressValidation(xml, 'ShipTo')).toBe('false');
+      expect(addressValidation(xml, 'BillTo')).toBe('false');
+    });
+
     test.each([undefined, true])('ShipTo IsValidated defaults to true for %s', async (isValidated) => {
       const order = clone(PP_APPROVED_ORDER);
       if (isValidated !== undefined) order.shipping.isValidated = isValidated;
@@ -621,13 +632,38 @@ describe('ebs-sync e2e', () => {
       ['paypal', PP_APPROVED_ORDER, 'journal-pp-approved.ndjson'],
       ['affirm', AFFIRM_APPROVED_ORDER, 'journal-affirm-approved.ndjson'],
       ['applepay', AP_APPROVED_ORDER, 'journal-ap-approved.ndjson'],
-    ])('BillTo IsValidated stays true for non-Chase method %s', async (_method, baseOrder, fixture) => {
+    ])('BillTo IsValidated is false when billing.isValidated is false for non-Chase method %s', async (_method, baseOrder, fixture) => {
       const order = clone(baseOrder);
       order.billing.isValidated = false;
 
       const xml = await buildXml(order, loadJournal(fixture));
 
+      expect(addressValidation(xml, 'BillTo')).toBe('false');
+    });
+
+    test.each([
+      ['paypal', PP_APPROVED_ORDER, 'journal-pp-approved.ndjson'],
+      ['affirm', AFFIRM_APPROVED_ORDER, 'journal-affirm-approved.ndjson'],
+      ['applepay', AP_APPROVED_ORDER, 'journal-ap-approved.ndjson'],
+    ])('BillTo IsValidated stays true for non-Chase method %s when billing is validated', async (_method, baseOrder, fixture) => {
+      const order = clone(baseOrder);
+      order.billing.isValidated = true;
+
+      const xml = await buildXml(order, loadJournal(fixture));
+
       expect(addressValidation(xml, 'BillTo')).toBe('true');
+    });
+
+    test('BillTo IsValidated is false when billing.isValidated is false even if Chase AVS would pass', async () => {
+      const order = clone(CC_APPROVED_ORDER);
+      order.billing.isValidated = false;
+
+      const xml = await buildXml(
+        order,
+        withCompletedPayment(loadJournal('journal-cc-approved.ndjson'), { avsMatch: 'Y' }),
+      );
+
+      expect(addressValidation(xml, 'BillTo')).toBe('false');
     });
 
     test.each(['1', '2 ', 'G', 'M1', 'UK'])('BillTo IsValidated is false for Chase AVS %s', async (avsMatch) => {

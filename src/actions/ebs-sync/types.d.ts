@@ -123,7 +123,7 @@ export interface StoredOrderAddress {
   company?: string;
   phone?: string;
   isDefault?: boolean;
-  /** Stored address metadata; ShipTo uses shipping.isValidated, while BillTo is resolved from payment AVS rules */
+  /** Address validation flag from checkout; when false EBS reports the matching ShipTo/BillTo as not validated. BillTo additionally falls back to Chase AVS rules when this flag is absent or true */
   isValidated?: boolean;
 }
 

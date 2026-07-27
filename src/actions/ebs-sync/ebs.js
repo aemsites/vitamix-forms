@@ -391,9 +391,10 @@ function buildCustomerXml(order, paymentSnapshot) {
   );
 
   // billing falls back to shipping when absent
+  const billingSource = order.billing || order.shipping || {};
   const billing = {
-    ...(order.billing || order.shipping || {}),
-    isValidated: resolveBillingIsValidated(paymentSnapshot),
+    ...billingSource,
+    isValidated: resolveBillingIsValidated(billingSource, paymentSnapshot),
   };
   const shipping = {
     ...(order.shipping || {}),
@@ -426,13 +427,23 @@ function resolveShippingIsValidated(order) {
 }
 
 /**
- * Resolve BillTo validation using Magento's Chase AVS rules.
- * Non-Chase methods and zero-total Chase orders are always considered validated.
+ * Resolve BillTo validation.
  *
+ * 1. Honour the stored address-validation flag first: when the billing address
+ *    (or the shipping address it falls back to) was explicitly not validated at
+ *    checkout, BillTo is reported as not validated regardless of payment method.
+ *    This keeps ShipTo and BillTo consistent when the same unvalidated address is
+ *    used for both.
+ * 2. Otherwise apply Magento's Chase AVS rules: non-Chase methods and zero-total
+ *    Chase orders are always considered validated; Chase orders are marked not
+ *    validated when the AVS response is one of the unvalidated codes.
+ *
+ * @param {object} billingAddress - effective billing address (billing or shipping fallback)
  * @param {object} paymentSnapshot
  * @returns {boolean}
  */
-function resolveBillingIsValidated(paymentSnapshot) {
+function resolveBillingIsValidated(billingAddress, paymentSnapshot) {
+  if (billingAddress?.isValidated === false) return false;
   if (paymentSnapshot?.method !== 'chasehpp') return true;
   if (Number(paymentSnapshot.amount || 0) === 0) return true;
   return !CHASE_AVS_UNVALIDATED_CODES.has(String(paymentSnapshot.avsMatch || '').trim());
