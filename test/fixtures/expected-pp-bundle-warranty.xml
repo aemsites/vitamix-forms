@@ -126,6 +126,7 @@
             UnitSellingPrice="200.96"
             UnitOfMeasure="Each">
             <ns2:Tax Amount="26.13" Provisional="true" />
+            <ns2:PromotionCode>VBND10</ns2:PromotionCode>
           </ns2:LineItem>
         <ns2:LineItem
             Sku="069834"
@@ -133,6 +134,7 @@
             UnitSellingPrice="17.43"
             UnitOfMeasure="Each">
             <ns2:Tax Amount="2.26" Provisional="true" />
+            <ns2:PromotionCode>VBND10</ns2:PromotionCode>
           </ns2:LineItem>
         <ns2:LineItem
             Sku="060488"
@@ -140,6 +142,7 @@
             UnitSellingPrice="43.65"
             UnitOfMeasure="Each">
             <ns2:Tax Amount="5.67" Provisional="true" />
+            <ns2:PromotionCode>VBND10</ns2:PromotionCode>
           </ns2:LineItem>
         <ns2:LineItem
             Sku="001372-1093"
@@ -148,6 +151,7 @@
             UnitOfMeasure="Each">
             <ns2:Tax Amount="82.94" Provisional="true" />
             <ns2:SerialNumber>ciomuat5711040325-1</ns2:SerialNumber>
+            <ns2:PromotionCode>VBND10</ns2:PromotionCode>
           </ns2:LineItem>
         <ns2:LineItem
             Sku="001314"

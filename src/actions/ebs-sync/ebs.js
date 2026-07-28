@@ -50,6 +50,7 @@
  */
 
 import { proxyFetch } from '../../proxy.js';
+import { resolveVbndReasonCode } from './discount-reason-codes.js';
 
 const TRANSIENT_ERROR_PATTERN = /timeout|timed out|aborted|fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i;
 
@@ -677,6 +678,10 @@ function buildLineItemsXml(order) {
       // Bundle: emit each child as its own line item, drop the virtual wrapper.
       // Children carry a '-VB' suffix in the order data; EBS expects the
       // original SKU, so strip it here (warranty lookup still uses the raw SKU).
+      // The bundle's Discount Reason Code (VBND) is resolved once from the
+      // parent line and stamped on every child line, mirroring the legacy
+      // Magento sync. Warranty lines below intentionally omit it.
+      const reasonCode = resolveVbndReasonCode(item);
       for (const child of item.bundleItems) {
         const hasWarranty = warrantyBySku.has(child.sku);
         const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
@@ -684,6 +689,7 @@ function buildLineItemsXml(order) {
         lines.push(buildLineItemXml(
           stripBundleSuffix(child.sku), child.quantity ?? 1,
           child.price?.final || '0.00', child.taxAmount || '0.00', 'Each', serial,
+          reasonCode,
         ));
 
         if (hasWarranty) {
@@ -710,16 +716,32 @@ function buildLineItemsXml(order) {
   return lines.join('\n        ');
 }
 
-function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber) {
+/**
+ * Build a single `<ns2:LineItem>` element.
+ *
+ * @param {string} sku - EBS product SKU.
+ * @param {number} qty - line quantity.
+ * @param {string} price - unit selling price.
+ * @param {string} tax - provisional tax amount.
+ * @param {string} unitOfMeasure - `Each` or `Years`.
+ * @param {string} serialNumber - warranty link serial, or `''`.
+ * @param {string} [promotionCode] - VBND Discount Reason Code for virtual
+ *   bundle child lines; omitted for simple products and warranty lines.
+ * @returns {string} the LineItem XML fragment.
+ */
+function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, promotionCode = '') {
   const serialEl = serialNumber
     ? `\n            <ns2:SerialNumber>${escapeXml(serialNumber)}</ns2:SerialNumber>`
+    : '';
+  const promoEl = promotionCode
+    ? `\n            <ns2:PromotionCode>${escapeXml(promotionCode)}</ns2:PromotionCode>`
     : '';
   return `<ns2:LineItem
             Sku="${escapeXml(sku)}"
             Quantity="${qty}"
             UnitSellingPrice="${price}"
             UnitOfMeasure="${unitOfMeasure}">
-            <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}
+            <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}${promoEl}
           </ns2:LineItem>`;
 }
 
