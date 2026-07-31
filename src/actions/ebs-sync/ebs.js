@@ -55,7 +55,7 @@ import { resolveVbndReasonCode } from './discount-reason-codes.js';
 const TRANSIENT_ERROR_PATTERN = /timeout|timed out|aborted|fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i;
 
 const CHASE_AVS_UNVALIDATED_CODES = new Set([
-  '1', '2', '3', '4', '5', '6', '8', 'G', 'J', 'M1', 'M8', 'N4', 'N6', 'R', 'UK',
+  '1', '2', '3', '4', '5', '6', '8', 'G', 'J', 'M1', 'M8', 'N4', 'N6', 'R', 'UK', 'UNKNOWN',
 ]);
 
 /**
@@ -436,7 +436,7 @@ function resolveShippingIsValidated(order) {
 function resolveBillingIsValidated(paymentSnapshot) {
   if (paymentSnapshot?.method !== 'chasehpp') return true;
   if (Number(paymentSnapshot.amount || 0) === 0) return true;
-  return !CHASE_AVS_UNVALIDATED_CODES.has(String(paymentSnapshot.avsMatch || '').trim());
+  return !CHASE_AVS_UNVALIDATED_CODES.has(String(paymentSnapshot.avsMatch || '').trim().toUpperCase());
 }
 
 /**
