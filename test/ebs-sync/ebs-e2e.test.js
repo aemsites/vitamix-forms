@@ -631,7 +631,7 @@ describe('ebs-sync e2e', () => {
       expect(addressValidation(xml, 'BillTo')).toBe('true');
     });
 
-    test.each(['1', '2 ', 'G', 'M1', 'UK'])('BillTo IsValidated is false for Chase AVS %s', async (avsMatch) => {
+    test.each(['1', '2 ', 'G', 'M1', 'UK', 'Unknown'])('BillTo IsValidated is false for Chase AVS %s', async (avsMatch) => {
       const xml = await buildXml(
         clone(CC_APPROVED_ORDER),
         withCompletedPayment(loadJournal('journal-cc-approved.ndjson'), { avsMatch }),
