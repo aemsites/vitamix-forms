@@ -1,3 +1,10 @@
+## [1.3.4](https://github.com/aemsites/vitamix-forms/compare/v1.3.3...v1.3.4) (2026-07-31)
+
+
+### Bug Fixes
+
+* **ebs-sync:** reject unknown Chase AVS results ([a0e0a6e](https://github.com/aemsites/vitamix-forms/commit/a0e0a6e69fbfca8fc6e2f3cec749f2adca46a823))
+
 ## [1.3.3](https://github.com/aemsites/vitamix-forms/compare/v1.3.2...v1.3.3) (2026-07-28)
 
 
