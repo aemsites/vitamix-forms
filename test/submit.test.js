@@ -309,6 +309,30 @@ describe('submit action', () => {
       expect(result.body.order.delivery).toHaveLength(1);
     });
 
+    test('returns the Magento-compatible status derived from EBS line items', async () => {
+      const bookedBody = {
+        Response: {
+          '@_Id': 'booked-order',
+          '@_Outcome': 'Success',
+          '@_Succeeded': 'true',
+          'Order': {
+            '@_Key': 'om-booked',
+            'LineItem': [
+              { '@_UnitOfMeasure': 'Each', '@_Status': 'Booked', '@_Quantity': '1' },
+              { '@_UnitOfMeasure': 'Years', '@_Status': 'Entered', '@_Quantity': '1' },
+            ],
+          },
+        },
+      };
+
+      mockMakeContext.mockResolvedValue(makeOrderCtx('om-booked'));
+      mockQueryOrder.mockResolvedValue({ status: 200, body: bookedBody });
+
+      const result = await main({});
+      expect(result.body.order.status).toBe('processed');
+      expect(result.body.order).not.toHaveProperty('lineItem');
+    });
+
     test('omits PII fields from response', async () => {
       mockMakeContext.mockResolvedValue(makeOrderCtx());
       mockQueryOrder.mockResolvedValue({ status: 200, body: successBody });

@@ -3,6 +3,7 @@ import { publishEvent } from '../../events.js';
 import makeContext from '../../context.js';
 import { createProductRegistration, queryOrder } from '../../ebs.js';
 import { proxyFetch } from '../../proxy.js';
+import { deriveOrderStatus } from '../../order-status.js';
 
 const MAX_PAYLOAD_SIZE = 16_000; // 16KB
 
@@ -233,6 +234,7 @@ async function handleOrderStatus(ctx, formId, data) {
       body.outcome = 'Partially Cancelled';
     }
   }
+  body.order.status = deriveOrderStatus(lineItems);
 
   // remove PII from data
   delete body.order?.customer;
