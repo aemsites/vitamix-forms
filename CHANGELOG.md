@@ -1,3 +1,10 @@
+## [1.3.6](https://github.com/aemsites/vitamix-forms/compare/v1.3.5...v1.3.6) (2026-08-07)
+
+
+### Bug Fixes
+
+* **ebs-sync:** use persisted line discount allocations ([35cb107](https://github.com/aemsites/vitamix-forms/commit/35cb10798255abf33a9724b77abadb47aed9bf5a))
+
 ## [1.3.5](https://github.com/aemsites/vitamix-forms/compare/v1.3.4...v1.3.5) (2026-08-06)
 
 
