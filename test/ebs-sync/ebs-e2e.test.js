@@ -758,6 +758,116 @@ describe('ebs-sync e2e', () => {
     });
   });
 
+  // ── Persisted Commerce API line discount allocations ───────────────────
+
+  describe('persisted line discount allocations', () => {
+    const ccJournal = loadJournal('journal-cc-approved.ndjson');
+    const bundleJournal = loadJournal('journal-pp-bundle-warranty.ndjson');
+
+    test('consumes the persisted Commerce API bundle and warranty contract fixture', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items = JSON.parse(loadFixture('commerce-api-persisted-line-discounts.json')).items;
+
+      const xml = await buildXml(order, bundleJournal);
+      expect(xml).toMatch(/Sku="061724-04"[\s\S]*?UnitSellingPrice="192\.96"/);
+      expect(xml).toMatch(/Sku="069834"[\s\S]*?UnitSellingPrice="5\.43"/);
+      expect(xml).toMatch(/Sku="060488"[\s\S]*?UnitSellingPrice="43\.65"/);
+      expect(xml).toMatch(/Sku="001372-1093"[\s\S]*?UnitSellingPrice="637\.91"/);
+      expect(xml).toMatch(/Sku="001314"[\s\S]*?UnitSellingPrice="33\.00"/);
+    });
+
+    test('uses a simple line’s persisted coupon and override allocations with cents rounding', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.items[0] = {
+        ...order.items[0],
+        price: { final: '799.95', currency: 'CAD' },
+        discounts: [
+          { id: 'coupon:SAVE100', amount: '100.00' },
+          { id: 'promo:override', amount: '99.99' },
+        ],
+      };
+      order.items.push({
+        sku: 'unaffected-sku',
+        quantity: 1,
+        price: { final: '50.00', currency: 'CAD' },
+      });
+
+      const xml = await buildXml(order, ccJournal);
+      expect(xml).toMatch(/Sku="068051-04"[\s\S]*?UnitSellingPrice="599\.96"/);
+      expect(xml).toMatch(/Sku="unaffected-sku"[\s\S]*?UnitSellingPrice="50\.00"/);
+    });
+
+    test('uses the discounted total across a multi-quantity simple line', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.items[0] = {
+        ...order.items[0],
+        quantity: 2,
+        price: { final: '100.00', currency: 'CAD' },
+        discounts: [
+          { id: 'coupon:SAVE8', amount: '8.00' },
+          { id: 'promo:targeted', amount: '12.00' },
+        ],
+      };
+
+      const xml = await buildXml(order, ccJournal);
+      expect(xml).toMatch(/Quantity="2"[\s\S]*?UnitSellingPrice="90\.00"/);
+    });
+
+    test('rounds a persisted half-cent split to two decimal places', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.items[0] = {
+        ...order.items[0],
+        quantity: 2,
+        price: { final: '100.00', currency: 'CAD' },
+        discounts: [{ id: 'coupon:ONE-CENT', amount: '0.01' }],
+      };
+
+      const xml = await buildXml(order, ccJournal);
+      // (100.00 × 2 − 0.01) ÷ 2 = 99.995, which Magento rounds to 100.00.
+      expect(xml).toMatch(/Quantity="2"[\s\S]*?UnitSellingPrice="100\.00"/);
+    });
+
+    test('does not infer merchandise prices from aggregate or free-shipping estimates', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.estimates.discounts = [
+        { id: 'coupon:UNSCOPED', amount: 200, source: 'coupon' },
+        { id: 'free-shipping', amount: 0, freeShipping: true, source: 'pricing_rule' },
+      ];
+
+      const xml = await buildXml(order, ccJournal);
+      expect(xml).toMatch(/Sku="068051-04"[\s\S]*?UnitSellingPrice="449\.95"/);
+    });
+
+    test('uses only component allocations when emitting bundle children', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[0].discounts = [{ id: 'coupon:BUNDLE', amount: '20.00' }];
+      order.items[0].bundleItems[0].discounts = [{ id: 'coupon:BUNDLE', amount: '8.00' }];
+      order.items[0].bundleItems[1].discounts = [{ id: 'coupon:BUNDLE', amount: '12.00' }];
+
+      const xml = await buildXml(order, bundleJournal);
+      expect(xml).toMatch(/Sku="061724-04"[\s\S]*?UnitSellingPrice="192\.96"/);
+      expect(xml).toMatch(/Sku="069834"[\s\S]*?UnitSellingPrice="5\.43"/);
+      expect(xml).toMatch(/Sku="060488"[\s\S]*?UnitSellingPrice="43\.65"/);
+      expect(xml).toMatch(/Sku="001372-1093"[\s\S]*?UnitSellingPrice="637\.91"/);
+      expect(xml).toMatch(/Sku="001314"[\s\S]*?UnitSellingPrice="39\.00"/);
+    });
+
+    test('allocates a discounted warranty across every purchased coverage year', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      order.items[1].quantity = 2;
+      order.items[1].discounts = [
+        { id: 'coupon:WARRANTY', amount: '12.00' },
+        { id: 'promo:WARRANTY', amount: '6.00' },
+      ];
+
+      const xml = await buildXml(order, bundleJournal);
+      const line = xml.match(/<ns2:LineItem\s+Sku="001314"[\s\S]*?<\/ns2:LineItem>/)[0];
+      expect(line).toMatch(/Quantity="6"/);
+      expect(line).toMatch(/UnitSellingPrice="36\.00"/);
+      expect(line).toMatch(/UnitOfMeasure="Years"/);
+    });
+  });
+
   // ── Warranty VitamixProductId lookup ────────────────────────────────────
 
   describe('warranty vitamixProductId mapping', () => {

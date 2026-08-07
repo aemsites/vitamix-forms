@@ -1,0 +1,53 @@
+{
+  "items": [
+    {
+      "sku": "001372-1093-VB",
+      "path": "/ca/en_ca/products/5200-legacy-bundle",
+      "quantity": 1,
+      "name": "5200 Standard - Getting Started",
+      "price": { "final": "899.95", "currency": "CAD" },
+      "discounts": [{ "id": "coupon:EXAMPLE", "amount": "20.00" }],
+      "bundleItems": [
+        {
+          "sku": "061724-04-VB",
+          "name": "Personal Cup Adapter",
+          "quantity": 1,
+          "price": { "final": "200.96", "currency": "CAD" },
+          "taxAmount": "26.13",
+          "discounts": [{ "id": "coupon:EXAMPLE", "amount": "8.00" }]
+        },
+        {
+          "sku": "069834-VB",
+          "name": "Silicone Blender Spatula",
+          "quantity": 1,
+          "price": { "final": "17.43", "currency": "CAD" },
+          "taxAmount": "2.26",
+          "discounts": [{ "id": "coupon:EXAMPLE", "amount": "12.00" }]
+        },
+        {
+          "sku": "060488-VB",
+          "name": "Classic Series Tamper Holder",
+          "quantity": 1,
+          "price": { "final": "43.65", "currency": "CAD" },
+          "taxAmount": "5.67"
+        },
+        {
+          "sku": "001372-1093-VB",
+          "name": "5200 Standard - Getting Started",
+          "quantity": 1,
+          "price": { "final": "637.91", "currency": "CAD" },
+          "taxAmount": "82.94"
+        }
+      ]
+    },
+    {
+      "sku": "001314",
+      "quantity": 1,
+      "name": "Extended Warranty, add 3 yrs",
+      "price": { "final": "117.00", "currency": "CAD" },
+      "custom": { "linkedTo": "001372-1093-VB", "coverageYears": 3 },
+      "taxAmount": "15.20",
+      "discounts": [{ "id": "coupon:EXAMPLE", "amount": "18.00" }]
+    }
+  ]
+}

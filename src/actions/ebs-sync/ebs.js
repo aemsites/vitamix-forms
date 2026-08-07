@@ -656,6 +656,83 @@ function stripBundleSuffix(sku) {
   return String(sku || '').replace(/-VB$/, '');
 }
 
+/**
+ * Convert a non-negative decimal amount to integer cents without floating-point
+ * arithmetic. Persisted Commerce API allocations are fixed two-decimal strings;
+ * accepting numbers as well keeps the reader tolerant of historical data.
+ *
+ * @param {string|number} value monetary amount
+ * @returns {number} non-negative integer cents, or zero for an invalid value
+ */
+function moneyToCents(value) {
+  const match = /^(\d+)(?:\.(\d{1,2}))?$/.exec(String(value ?? ''));
+  if (!match) return 0;
+  return (Number(match[1]) * 100) + Number((match[2] || '').padEnd(2, '0'));
+}
+
+/**
+ * Return the purchasable quantity used to turn a unit catalogue price into a
+ * line total. Orders use positive integer quantities; malformed data falls
+ * back to one so EBS never receives a division-by-zero price.
+ *
+ * @param {object} item stored order item or bundle component
+ * @returns {number} positive quantity
+ */
+function lineQuantity(item) {
+  const quantity = Number(item.quantity);
+  return Number.isFinite(quantity) && quantity > 0 ? quantity : 1;
+}
+
+/**
+ * Sum persisted allocations for one stored line. Aggregated
+ * `estimates.discounts` deliberately never appears here: it no longer has the
+ * eligibility information necessary to price EBS lines correctly.
+ *
+ * @param {object} item stored order item or bundle component
+ * @returns {number} non-negative integer cents
+ */
+function allocatedDiscountCents(item) {
+  if (!Array.isArray(item.discounts)) return 0;
+  return item.discounts.reduce((total, discount) => total + moneyToCents(discount?.amount), 0);
+}
+
+/**
+ * Compute the discounted line total from the catalogue unit price and the
+ * server-authoritative allocations persisted on that same line.
+ *
+ * @param {object} item stored order item or bundle component
+ * @returns {number} non-negative cents
+ */
+function effectiveLineTotalCents(item) {
+  const unitCents = moneyToCents(item.price?.final || item.price?.regular || '0.00');
+  return Math.max(0, (unitCents * lineQuantity(item)) - allocatedDiscountCents(item));
+}
+
+/**
+ * Format an EBS unit selling price. EBS accepts only two decimal places, so
+ * round the authoritative discounted line total once when dividing it across
+ * the emitted quantity, matching Magento's `number_format(..., 2)` behavior.
+ *
+ * @param {number} lineTotalCents discounted line total, in cents
+ * @param {number} quantity EBS line quantity
+ * @returns {string} fixed two-decimal unit price
+ */
+function unitSellingPrice(lineTotalCents, quantity) {
+  return (Math.round(lineTotalCents / quantity) / 100).toFixed(2);
+}
+
+/**
+ * Derive the EBS price of a simple product or resolved bundle component from
+ * its own persisted allocation. Bundle parents are never passed here: their
+ * allocation is an alternate, non-additive view of component allocations.
+ *
+ * @param {object} item stored order item or bundle component
+ * @returns {string} fixed two-decimal EBS unit price
+ */
+function effectiveItemUnitPrice(item) {
+  return unitSellingPrice(effectiveLineTotalCents(item), lineQuantity(item));
+}
+
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
 
@@ -688,7 +765,7 @@ function buildLineItemsXml(order) {
 
         lines.push(buildLineItemXml(
           stripBundleSuffix(child.sku), child.quantity ?? 1,
-          child.price?.final || '0.00', child.taxAmount || '0.00', 'Each', serial,
+          effectiveItemUnitPrice(child), child.taxAmount || '0.00', 'Each', serial,
           reasonCode,
         ));
 
@@ -703,7 +780,7 @@ function buildLineItemsXml(order) {
 
       lines.push(buildLineItemXml(
         item.sku || '', item.quantity ?? 1,
-        item.price?.final || item.price?.regular || '0.00', item.taxAmount || '0.00',
+        effectiveItemUnitPrice(item), item.taxAmount || '0.00',
         'Each', serial,
       ));
 
@@ -748,20 +825,22 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
 /**
  * Build a warranty line item (UnitOfMeasure="Years").
  *
- * The order carries the warranty's price.final as the total for the full
- * coverage term, with the number of years in custom.coverageYears. EBS models
- * warranties as a per-year unit price billed against a quantity of years, so we
- * split the total back out:
- *   Quantity         = coverageYears
- *   UnitSellingPrice = price.final / coverageYears
+ * The order carries the warranty's price.final as the per-warranty total for
+ * its full coverage term. EBS models warranties as a per-year unit price, so
+ * divide the discounted full-term total across every purchased coverage year:
+ *   Quantity         = coverageYears × item.quantity
+ *   UnitSellingPrice = effective warranty total / Quantity
+ *
+ * A warranty uses only its own persisted allocations. Its linked product's
+ * allocations must never change its price.
  */
 function buildWarrantyLineItemXml(w, serial) {
   const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
   const coverageYears = Number(w.custom?.coverageYears) || 1;
-  const total = Number(w.price?.final) || 0;
-  const unitPrice = String((total / coverageYears).toFixed(2));
+  const quantity = coverageYears * lineQuantity(w);
+  const unitPrice = unitSellingPrice(effectiveLineTotalCents(w), quantity);
   return buildLineItemXml(
-    wSku, coverageYears, unitPrice, w.taxAmount || '0.00', 'Years', serial,
+    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial,
   );
 }
 
