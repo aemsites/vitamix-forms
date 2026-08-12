@@ -71,7 +71,9 @@ export async function main(params) {
     );
   }
 
-  const locale = normalizeLocale(params.locale);
+  // A provider may pin its locale (e.g. openai is US-only); otherwise honor the
+  // request (default us/en_us).
+  const locale = serializer.locale || normalizeLocale(params.locale);
   if (!locale) {
     return errorResponse(400, 'invalid locale; expected form "cc/ll_cc" e.g. "us/en_us"');
   }

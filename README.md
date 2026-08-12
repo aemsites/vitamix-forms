@@ -69,6 +69,9 @@ Supported providers:
 - **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
   from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
   (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`).
+- **`openai`** — OpenAI commerce "ads" feed (**CSV, US-only**). Columns match the
+  spec/sample (`docs/vitamix-openai-ads-feed-*`), mapped ~1:1 from GMC with a few
+  static launch fields and `preorder`→`pre_order`. Pinned to `us/en_us`.
 
 Not served here: **Google Ads** — no separate feed; it serves from the linked
 Merchant Center account (i.e. the source GMC feed itself).
@@ -138,11 +141,12 @@ deep links.
 ### Provider Feeds
 
 ```
-GET /feeds/feeds?provider=<meta|pinterest|cj|bazaarvoice>&locale=<cc/ll_cc>
+GET /feeds/feeds?provider=<meta|pinterest|cj|bazaarvoice|openai>&locale=<cc/ll_cc>
 ```
 
-Returns the catalog in the provider's format (`application/xml`). `locale`
-defaults to `us/en_us` and must match `cc/ll_cc` (e.g. `ca/en_us`). When
+Returns the catalog in the provider's format (`application/xml`, or `text/csv`
+for `openai`). `locale` defaults to `us/en_us` and must match `cc/ll_cc` (e.g.
+`ca/en_us`); `openai` ignores it and always serves `us/en_us`. When
 `FEEDS_TOKEN` is set, requests must authenticate with `Authorization: Bearer
 <token>` or `?token=<token>` (the query form is for providers that only accept a
 plain URL). Responses are cacheable (`max-age=3600`).
@@ -158,6 +162,7 @@ swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
 | Pinterest | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
 | Commission Junction | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
 | Bazaarvoice | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+| OpenAI (CSV, US) | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=openai` |
 
 **Production** (`https://60038-161ivoryjackal.adobeioruntime.net`):
 
@@ -167,6 +172,7 @@ swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
 | Pinterest | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=pinterest&locale=us/en_us` |
 | Commission Junction | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
 | Bazaarvoice | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
+| OpenAI (CSV, US) | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=openai` |
 
 Google Ads has no URL here — it serves from the linked Google Merchant Center
 account (the source feed at `{FEED_SITE_BASE}/<locale>/products/merchant-center-feed.xml`).
