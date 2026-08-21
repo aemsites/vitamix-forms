@@ -257,6 +257,25 @@ async function handleOrderStatus(ctx, formId, data) {
 }
 
 /**
+ * Interpret an SMS opt-in flag from a submitted form. It arrives either as a
+ * boolean or as an HTML checkbox value. A checkbox only appears in the payload
+ * when it was ticked, and its value is the checkbox's `value` attribute, which
+ * differs per form — "yes" on product registration, but the entire consent
+ * sentence on the newsletter popup. So treat any present, non-empty value that
+ * is not an explicit negative as an opt-in; treat absent, empty, or negative
+ * values as not opted in so a customer is never auto-opted-in.
+ * @param {unknown} value - Raw opt-in flag as submitted by the form.
+ * @returns {boolean} True when the customer explicitly opted in.
+ */
+function isOptedIn(value) {
+  if (typeof value === 'boolean') return value;
+  if (typeof value !== 'string') return false;
+  const normalized = value.trim().toLowerCase();
+  if (normalized === '') return false;
+  return !['false', 'no', '0', 'off'].includes(normalized);
+}
+
+/**
  * Build the newsletter API payload and send it via the proxy.
  * Caller is responsible for ensuring data.email and data.emailOptIn are valid.
  * @param {Context} ctx
@@ -306,10 +325,13 @@ async function callNewsletterApi(ctx, formId, data) {
   }
   if (data.mobile && typeof data.mobile === 'string') {
     payload.Mobile = data.mobile;
-    // infer opt-in from lack of explicit opt-out
-    if (data.smsOptIn === undefined || data.smsOptIn === null) payload.SMSOptIn = true;
   }
-  if (data.smsOptIn && typeof data.smsOptIn === 'boolean') payload.SMSOptIn = data.smsOptIn;
+  // SFDC records SMS consent as a "Mobile Opt Out" flag that is the inverse of
+  // this opt-in. The checkbox arrives as a string ("yes"/"on") or is absent, so
+  // normalise it here: an affirmative value opts the customer in; anything
+  // absent or falsy leaves them opted out. Set unconditionally so registrations
+  // (which send `phone` rather than `mobile`) still carry the correct flag.
+  payload.SMSOptIn = isOptedIn(data.smsOptIn);
   if (data.smsPreferenceDate && typeof data.smsPreferenceDate === 'string') payload.SMSPreferenceDate = data.smsPreferenceDate;
 
   const { baseUrl, apiKey } = getEbsJsonSettings(ctx, formId);

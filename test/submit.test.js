@@ -748,6 +748,36 @@ describe('submit action', () => {
       expect(mockProxyFetch).toHaveBeenCalledTimes(1);
     });
 
+    // defect 20: a checked SMS box on registration submits smsOptIn: 'yes' and
+    // must reach EBS as SMSOptIn: true (SFDC "Mobile Opt Out" then clears).
+    test('forwards a checked SMS opt-in ("yes") as SMSOptIn true', async () => {
+      const ctx = makeRegistrationCtx({ marketingOptIn: 'yes', smsOptIn: 'yes' });
+      ctx.env.EBS_JSON_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.EBS_JSON_API_KEY = 'nl-prod-key';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, , opts] = mockProxyFetch.mock.calls[0];
+      expect(JSON.parse(opts.body).SMSOptIn).toBe(true);
+    });
+
+    test('leaves SMSOptIn false when the SMS box is unchecked', async () => {
+      const ctx = makeRegistrationCtx({ marketingOptIn: 'yes' });
+      ctx.env.EBS_JSON_BASE_URL = 'https://newsletter.example.com/prod';
+      ctx.env.EBS_JSON_API_KEY = 'nl-prod-key';
+      mockMakeContext.mockResolvedValue(ctx);
+      mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
+      mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+
+      await main({});
+
+      const [, , opts] = mockProxyFetch.mock.calls[0];
+      expect(JSON.parse(opts.body).SMSOptIn).toBe(false);
+    });
+
     test('does not fire newsletter when marketingOptIn is absent', async () => {
       mockMakeContext.mockResolvedValue(makeRegistrationCtx());
       mockCreateProductRegistration.mockResolvedValue({ status: 200, body: successBody });
@@ -1011,6 +1041,64 @@ describe('submit action', () => {
 
       expect(result.error.statusCode).toBe(500);
       expect(mockProxyFetch).not.toHaveBeenCalled();
+    });
+
+    // -- SMS opt-in mapping (defect 30) -----------------------------------
+    // The checkbox submits a string ("yes"/"on") or is omitted when unchecked.
+    // SMSOptIn is opt-in; SFDC stores its inverse as "Mobile Opt Out".
+    describe('SMS opt-in', () => {
+      async function newsletterBody(dataOverride) {
+        mockMakeContext.mockResolvedValue(makeNewsletterCtx(dataOverride));
+        mockProxyFetch.mockResolvedValue({ status: 200, json: jest.fn().mockResolvedValue({}) });
+        await main({});
+        // read the most recent call so helpers invoked twice in one test are safe
+        const calls = mockProxyFetch.mock.calls;
+        const [, , opts] = calls[calls.length - 1];
+        return JSON.parse(opts.body);
+      }
+
+      test('checkbox string "yes" opts the customer in', async () => {
+        const body = await newsletterBody({ mobile: '2165551212', smsOptIn: 'yes' });
+        expect(body.SMSOptIn).toBe(true);
+        expect(body.Mobile).toBe('2165551212');
+      });
+
+      // The newsletter popup checkbox submits its entire label as the value, so a
+      // ticked box arrives as the full consent sentence rather than "yes"/"on".
+      test("the newsletter popup's full consent-sentence value opts in", async () => {
+        const consentSentence = 'By checking this box, I am opting in to receive promotional SMS'
+          + ' messages from Vitamix. Message frequency varies. Text HELP for help. Text STOP to'
+          + ' end. Msg & data rates may apply. By leaving this box unchecked, I will not be'
+          + ' opting in for SMS messages at this time.';
+        const body = await newsletterBody({ mobile: '2165551212', smsOptIn: consentSentence });
+        expect(body.SMSOptIn).toBe(true);
+      });
+
+      test('other affirmative strings ("on"/"true"/"1") opt in', async () => {
+        expect((await newsletterBody({ smsOptIn: 'on' })).SMSOptIn).toBe(true);
+        expect((await newsletterBody({ smsOptIn: 'true' })).SMSOptIn).toBe(true);
+        expect((await newsletterBody({ smsOptIn: '1' })).SMSOptIn).toBe(true);
+      });
+
+      test('absent smsOptIn stays opted out even when a mobile is present', async () => {
+        const body = await newsletterBody({ mobile: '2165551212' });
+        expect(body.SMSOptIn).toBe(false);
+        expect(body.Mobile).toBe('2165551212');
+      });
+
+      test('empty and explicit-negative strings stay opted out', async () => {
+        expect((await newsletterBody({ smsOptIn: '' })).SMSOptIn).toBe(false);
+        expect((await newsletterBody({ smsOptIn: '   ' })).SMSOptIn).toBe(false);
+        expect((await newsletterBody({ smsOptIn: 'no' })).SMSOptIn).toBe(false);
+        expect((await newsletterBody({ smsOptIn: 'false' })).SMSOptIn).toBe(false);
+        expect((await newsletterBody({ smsOptIn: '0' })).SMSOptIn).toBe(false);
+        expect((await newsletterBody({ smsOptIn: 'off' })).SMSOptIn).toBe(false);
+      });
+
+      test('boolean smsOptIn is honoured in both directions', async () => {
+        expect((await newsletterBody({ smsOptIn: true })).SMSOptIn).toBe(true);
+        expect((await newsletterBody({ smsOptIn: false })).SMSOptIn).toBe(false);
+      });
     });
   });
 
