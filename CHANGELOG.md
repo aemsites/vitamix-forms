@@ -1,3 +1,10 @@
+## [1.3.7](https://github.com/aemsites/vitamix-forms/compare/v1.3.6...v1.3.7) (2026-08-23)
+
+
+### Bug Fixes
+
+* **submit:** normalize SMS opt-in so SFDC Mobile Opt Out isn't flipped ([eeb21fb](https://github.com/aemsites/vitamix-forms/commit/eeb21fb0ad20858e2be6cb1b76a76c362297b0e1)), closes [aemsites/vitamix#828](https://github.com/aemsites/vitamix/issues/828)
+
 ## [1.3.6](https://github.com/aemsites/vitamix-forms/compare/v1.3.5...v1.3.6) (2026-08-07)
 
 
