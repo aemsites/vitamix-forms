@@ -1,6 +1,6 @@
 # vitamix-forms
 
-Adobe I/O Runtime actions for the Vitamix storefront. Handles form submissions (product registration, newsletter signup, checkout-related EBS calls) and automated order synchronization to Oracle EBS.
+Adobe I/O Runtime actions for the Vitamix storefront. Handles form submissions (product registration, newsletter signup, checkout-related EBS calls) and automated order sync to Oracle EBS.
 
 ## Actions
 
@@ -78,6 +78,8 @@ Merchant Center account (i.e. the source GMC feed itself).
 
 ## APIs
 
+
+
 ### Form Submission
 
 ```
@@ -86,6 +88,8 @@ Content-Type: application/json
 
 { "formId": "product-registration", "data": { ... } }
 ```
+
+
 
 ### EBS Sync Status
 
@@ -181,72 +185,88 @@ account (the source feed at `{FEED_SITE_BASE}/<locale>/products/merchant-center-
 
 Deployed via GitHub Actions using `aio app deploy` and semantic-release.
 
-| Environment | Trigger | Workflow |
-|---|---|---|
-| Stage | PR opened/updated against `main` | `.github/workflows/deploy_stage.yml` |
-| Production | Push to `main` | `.github/workflows/deploy_prod.yml` |
+
+| Environment | Trigger                          | Workflow                             |
+| ----------- | -------------------------------- | ------------------------------------ |
+| Stage       | PR opened/updated against `main` | `.github/workflows/deploy_stage.yml` |
+| Production  | Push to `main`                   | `.github/workflows/deploy_prod.yml`  |
+
 
 Production deployments use semantic-release to version and tag releases automatically.
 
 ## Environment Variables
 
+
+
 ### forms package
 
-| Variable | Description |
-|---|---|
-| `ORG` | Organization slug (hardcoded: `aemsites`) |
-| `SITE` | Site slug (hardcoded: `vitamix`) |
-| `LOG_LEVEL` | Logging level (default: `info`) |
-| `AIO_CLIENTID` | Adobe I/O client ID |
-| `AIO_CLIENTSECRET` | Adobe I/O client secret |
-| `AIO_SCOPES` | Adobe I/O OAuth scopes |
-| `AIO_IMSORGID` | Adobe IMS org ID |
-| `AIO_EVENTS_PROVIDER_ID` | I/O Events provider ID |
-| `EMAIL_TOKEN` | Token for sending notification emails |
-| `PROXY_TOKEN` | Bearer token for the static-IP proxy (AWS API Gateway) |
-| `EBS_BASE_URL` | Production EBS SOAP endpoint |
-| `EBS_BASE_URL_STAGE` | Stage EBS SOAP endpoint |
-| `EBS_API_KEY` | Production EBS API key |
-| `EBS_API_KEY_STAGE` | Stage EBS API key |
-| `NEWSLETTER_BASE_URL` | Production newsletter API base |
-| `NEWSLETTER_BASE_URL_STAGE` | Stage newsletter API base |
-| `NEWSLETTER_API_KEY` | Production newsletter API key |
-| `NEWSLETTER_API_KEY_STAGE` | Stage newsletter API key |
+
+| Variable                    | Description                                            |
+| --------------------------- | ------------------------------------------------------ |
+| `ORG`                       | Organization slug (hardcoded: `aemsites`)              |
+| `SITE`                      | Site slug (hardcoded: `vitamix`)                       |
+| `LOG_LEVEL`                 | Logging level (default: `info`)                        |
+| `AIO_CLIENTID`              | Adobe I/O client ID                                    |
+| `AIO_CLIENTSECRET`          | Adobe I/O client secret                                |
+| `AIO_SCOPES`                | Adobe I/O OAuth scopes                                 |
+| `AIO_IMSORGID`              | Adobe IMS org ID                                       |
+| `AIO_EVENTS_PROVIDER_ID`    | I/O Events provider ID                                 |
+| `EMAIL_TOKEN`               | Token for sending notification emails                  |
+| `PROXY_TOKEN`               | Bearer token for the static-IP proxy (AWS API Gateway) |
+| `EBS_BASE_URL`              | Production EBS SOAP endpoint                           |
+| `EBS_BASE_URL_STAGE`        | Stage EBS SOAP endpoint                                |
+| `EBS_API_KEY`               | Production EBS API key                                 |
+| `EBS_API_KEY_STAGE`         | Stage EBS API key                                      |
+| `NEWSLETTER_BASE_URL`       | Production newsletter API base                         |
+| `NEWSLETTER_BASE_URL_STAGE` | Stage newsletter API base                              |
+| `NEWSLETTER_API_KEY`        | Production newsletter API key                          |
+| `NEWSLETTER_API_KEY_STAGE`  | Stage newsletter API key                               |
+
+
+
 
 ### ebs-sync package
 
-| Variable | Description |
-|---|---|
-| `ORG` | Organization slug (hardcoded: `aemsites`) |
-| `SITE` | Site slug (hardcoded: `vitamix`) |
-| `LOG_LEVEL` | Logging level |
-| `SYNC_STATUS_TOKEN` | Bearer token for the status/trigger HTTP APIs |
-| `EDGE_COMMERCE_API_BASE` | Edge Commerce API base URL |
-| `EDGE_COMMERCE_API_ORDERS_TOKEN` | Bearer token for the orders/journal API |
-| `EBS_BASE_URL` | Production EBS SOAP endpoint |
-| `EBS_BASE_URL_STAGE` | Stage EBS SOAP endpoint |
-| `EBS_API_KEY` | Production EBS API key |
-| `EBS_API_KEY_STAGE` | Stage EBS API key |
-| `PROXY_TOKEN` | Bearer token for the static-IP proxy |
+
+| Variable                         | Description                                   |
+| -------------------------------- | --------------------------------------------- |
+| `ORG`                            | Organization slug (hardcoded: `aemsites`)     |
+| `SITE`                           | Site slug (hardcoded: `vitamix`)              |
+| `LOG_LEVEL`                      | Logging level                                 |
+| `SYNC_STATUS_TOKEN`              | Bearer token for the status/trigger HTTP APIs |
+| `EDGE_COMMERCE_API_BASE`         | Edge Commerce API base URL                    |
+| `EDGE_COMMERCE_API_ORDERS_TOKEN` | Bearer token for the orders/journal API       |
+| `EBS_BASE_URL`                   | Production EBS SOAP endpoint                  |
+| `EBS_BASE_URL_STAGE`             | Stage EBS SOAP endpoint                       |
+| `EBS_API_KEY`                    | Production EBS API key                        |
+| `EBS_API_KEY_STAGE`              | Stage EBS API key                             |
+| `PROXY_TOKEN`                    | Bearer token for the static-IP proxy          |
+
+
+
 
 ### recipe-notify package
 
 All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only if they change.
 
-| Variable | Description | Default |
-|---|---|---|
-| `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
-| `LOG_LEVEL` | Logging level | `info` |
-| `EMAIL_TOKEN` | Productbus email service token (reused from forms) | — |
-| `AIO_CLIENTID` / `AIO_CLIENTSECRET` / `AIO_SCOPES` | S2S creds to mint the IMS token for reading the DA template (reused from forms) | — |
-| `RECIPE_API_URL` | CalcMenu `GetUpdatedRecipes` base URL | `https://vitamix.calcmenuweb.com/ws/service.asmx/GetUpdatedRecipes` |
-| `RECIPE_API_ID` | CalcMenu API user id | `API` |
-| `RECIPE_API_PSWD` | CalcMenu API password | `Vitamix!` |
-| `RECIPE_SITE_BASE` | Deep-link site base | `https://www.vitamix.com` |
-| `RECIPE_LINK_LOCALE` | Deep-link locale path | `us/en_us` |
-| `RECIPE_DIGEST_TEMPLATE` | DA path of the digest template | `/config/recipes/digest-template` |
-| `RECIPE_NOTIFY_TOKEN` | Bearer token for the status/trigger HTTP APIs (HTTP access denied if unset) | — |
-| `RECIPE_NOTIFY_ENABLED` | Prod-only gate — scheduled run sends only when `"true"`. Set in prod deploy env only. | unset (no-op) |
+
+| Variable                                           | Description                                                                           | Default                                                             |
+| -------------------------------------------------- | ------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| `ORG` / `SITE`                                     | Org/site slug                                                                         | `aemsites` / `vitamix`                                              |
+| `LOG_LEVEL`                                        | Logging level                                                                         | `info`                                                              |
+| `EMAIL_TOKEN`                                      | Productbus email service token (reused from forms)                                    | —                                                                   |
+| `AIO_CLIENTID` / `AIO_CLIENTSECRET` / `AIO_SCOPES` | S2S creds to mint the IMS token for reading the DA template (reused from forms)       | —                                                                   |
+| `RECIPE_API_URL`                                   | CalcMenu `GetUpdatedRecipes` base URL                                                 | `https://vitamix.calcmenuweb.com/ws/service.asmx/GetUpdatedRecipes` |
+| `RECIPE_API_ID`                                    | CalcMenu API user id                                                                  | `API`                                                               |
+| `RECIPE_API_PSWD`                                  | CalcMenu API password                                                                 | `Vitamix!`                                                          |
+| `RECIPE_SITE_BASE`                                 | Deep-link site base                                                                   | `https://www.vitamix.com`                                           |
+| `RECIPE_LINK_LOCALE`                               | Deep-link locale path                                                                 | `us/en_us`                                                          |
+| `RECIPE_DIGEST_TEMPLATE`                           | DA path of the digest template                                                        | `/config/recipes/digest-template`                                   |
+| `RECIPE_NOTIFY_TOKEN`                              | Bearer token for the status/trigger HTTP APIs (HTTP access denied if unset)           | —                                                                   |
+| `RECIPE_NOTIFY_ENABLED`                            | Prod-only gate — scheduled run sends only when `"true"`. Set in prod deploy env only. | unset (no-op)                                                       |
+
+
+
 
 ### feeds package
 
@@ -264,9 +284,11 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 3. [Generate OAuth Server-to-Server credentials](https://developer.adobe.com/developer-console/docs/guides/credentials)
 4. Set `.env` values using `example.env` template and values from Adobe Developer Console
 5. Configure I/O Events:
-   1. [Create Event Provider](./dev/create-event-provider.sh) — response `id` becomes `AIO_EVENTS_PROVIDER_ID`
-   2. [Create Provider Metadata](./dev/create-event-meta-submitted.sh) for `form.submitted` event
-   3. [Register action handler](./dev/create-action-registration.sh) for `forms/processor` on `form.submitted`
+  1. [Create Event Provider](./dev/create-event-provider.sh) — response `id` becomes `AIO_EVENTS_PROVIDER_ID`
+  2. [Create Provider Metadata](./dev/create-event-meta-submitted.sh) for `form.submitted` event
+  3. [Register action handler](./dev/create-action-registration.sh) for `forms/processor` on `form.submitted`
+
+
 
 ## Development
 
@@ -284,3 +306,4 @@ Tests use Jest with ESM support (`--experimental-vm-modules`). The ebs-sync E2E 
 - [Creating Runtime Actions](https://developer.adobe.com/app-builder/docs/guides/runtime_guides/creating-actions)
 - [Events Registration API](https://developer.adobe.com/events/docs/guides/api/registration-api)
 - [Events Publishing API](https://developer.adobe.com/events/docs/guides/api/eventsingress-api)
+
