@@ -1,0 +1,60 @@
+externalId	parentExternalId	name	url_us	url_ca
+28		Commercial	https://www.vitamix.com/us/en_us/commercial	https://www.vitamix.com/ca/fr_ca/commercial
+29	28	Products	https://www.vitamix.com/us/en_us/commercial/products	https://www.vitamix.com/ca/fr_ca/commercial/products
+55		Shop	https://www.vitamix.com/us/en_us/shop	https://www.vitamix.com/ca/fr_ca/shop
+58	55	Accessories	https://www.vitamix.com/us/en_us/shop/accessories	https://www.vitamix.com/ca/fr_ca/shop/accessories
+61	55	Ascent Series Accessories	https://www.vitamix.com/us/en_us/shop/ascent-series-accessories	https://www.vitamix.com/ca/fr_ca/shop/ascent-series-accessories
+64	55	All Blenders	https://www.vitamix.com/us/en_us/shop/blenders	https://www.vitamix.com/ca/fr_ca/shop/blenders
+67	55	Blending Cups and Bowls	https://www.vitamix.com/us/en_us/shop/blending-cups-and-bowls	https://www.vitamix.com/ca/fr_ca/shop/blending-cups-and-bowls
+70	55	Certified Reconditioned Series	https://www.vitamix.com/us/en_us/shop/certified-reconditioned-series	https://www.vitamix.com/ca/fr_ca/shop/certified-reconditioned-series
+73	55	Legacy Series Blenders	https://www.vitamix.com/us/en_us/shop/classic-blenders	https://www.vitamix.com/ca/fr_ca/shop/classic-blenders
+76	55	Legacy Series Accessories	https://www.vitamix.com/us/en_us/shop/classic-series-accessories	https://www.vitamix.com/ca/fr_ca/shop/classic-series-accessories
+79	55	Compact Food Recycling	https://www.vitamix.com/us/en_us/shop/compact-food-recycling	https://www.vitamix.com/ca/fr_ca/shop/compact-food-recycling
+82	55	Blender Containers	https://www.vitamix.com/us/en_us/shop/containers	https://www.vitamix.com/ca/fr_ca/shop/containers
+85	55	Cookbooks	https://www.vitamix.com/us/en_us/shop/cookbooks	https://www.vitamix.com/ca/fr_ca/shop/cookbooks
+88	55	Corporate Wellness Program	https://www.vitamix.com/us/en_us/shop/corporate-accounts	
+91	55	C-Series: Classic Blenders	https://www.vitamix.com/us/en_us/shop/c-series-blenders	https://www.vitamix.com/ca/fr_ca/shop/c-series-blenders
+94	55	Explorian Series	https://www.vitamix.com/us/en_us/shop/explorian-series-accessories	https://www.vitamix.com/ca/fr_ca/shop/explorian-series-accessories
+97	55	G-Series: Next Generation Blenders	https://www.vitamix.com/us/en_us/shop/g-series-blenders	https://www.vitamix.com/ca/fr_ca/shop/g-series-blenders
+100	55	Kitchen Tools	https://www.vitamix.com/us/en_us/shop/kitchen-tools	https://www.vitamix.com/ca/fr_ca/shop/kitchen-tools
+106	55	All Collections	https://www.vitamix.com/us/en_us/shop/shop-collections	https://www.vitamix.com/ca/fr_ca/shop/shop-collections
+109	55	Ascent Series Blenders	https://www.vitamix.com/us/en_us/shop/smart-system-blenders	https://www.vitamix.com/ca/fr_ca/shop/smart-system-blenders
+112	55	Smoothie Cups	https://www.vitamix.com/us/en_us/shop/smoothie-cups	https://www.vitamix.com/ca/fr_ca/shop/smoothie-cups
+115	55	Space Saving Blenders Accessories	https://www.vitamix.com/us/en_us/shop/space-saving-accessories	https://www.vitamix.com/ca/fr_ca/shop/space-saving-accessories
+118	55	Space Saving Blenders	https://www.vitamix.com/us/en_us/shop/space-saving-blenders	https://www.vitamix.com/ca/fr_ca/shop/space-saving-blenders
+121	55	Tampers	https://www.vitamix.com/us/en_us/shop/tampers	https://www.vitamix.com/ca/fr_ca/shop/tampers
+127	55	Beverage Blenders		https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders
+130	127	BarBoss	https://www.vitamix.com/us/en_us/shop/beverage-blenders/barboss	https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/barboss
+136	127	Blending Station		https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/blending-station
+142	55	Immersion Blender	https://www.vitamix.com/us/en_us/shop/immersion-blending	https://www.vitamix.com/ca/fr_ca/shop/immersion-blending
+145	55	Frozen Treat Mixers		https://www.vitamix.com/ca/fr_ca/shop/frozen-treat-mixers
+148	145	Mix&#039;n Machine		https://www.vitamix.com/ca/fr_ca/shop/frozen-treat-mixers/mix-n-machine
+151	55	Certified Reconditioned Collection		https://www.vitamix.com/ca/fr_ca/shop/certified-reconditioned-collection
+154	127	Drink Machine		https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/drink-machine
+157	55	Container Rinsers		https://www.vitamix.com/ca/fr_ca/shop/container-rinsers
+160	157	Rinse-O-Matic	https://www.vitamix.com/us/en_us/shop/container-rinsers/rinse-o-matic-1	https://www.vitamix.com/ca/fr_ca/shop/container-rinsers/rinse-o-matic-1
+163	127	The Quiet One	https://www.vitamix.com/us/en_us/	https://www.vitamix.com/ca/fr_ca/
+169	55	Food Preparation		https://www.vitamix.com/ca/fr_ca/shop/food-preparation
+172	169	Vita-Prep	https://www.vitamix.com/us/en_us/shop/food-preparation/vita-prep	https://www.vitamix.com/ca/fr_ca/shop/food-preparation/vita-prep
+175	127	Venturist Series		https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/venturist-series
+178	169	Vitamix-XL	https://www.vitamix.com/us/en_us/shop/food-preparation/vitamix-xl	https://www.vitamix.com/ca/fr_ca/shop/food-preparation/vitamix-xl
+191	55	In Home Trial	https://www.vitamix.com/us/en_us/shop/in-home-trial	https://www.vitamix.com/ca/fr_ca/shop/in-home-trial
+194	29	Accessories	https://www.vitamix.com/us/en_us/commercial/products/accessories	https://www.vitamix.com/ca/fr_ca/commercial/products/accessories
+197	29	Frozen-Treat-Mixers	https://www.vitamix.com/us/en_us/commercial/products/frozen-treat-mixers	https://www.vitamix.com/ca/fr_ca/commercial/products/frozen-treat-mixers
+200	29	Food-Preparation	https://www.vitamix.com/us/en_us/commercial/products/food-preparation	https://www.vitamix.com/ca/fr_ca/commercial/products/food-preparation
+201	55	Food Processing	https://www.vitamix.com/us/en_us/shop/food-processing	https://www.vitamix.com/ca/fr_ca/shop/food-processing
+208	55	Blenders	https://www.vitamix.com/us/en_us/shop/allblenders	https://www.vitamix.com/ca/fr_ca/shop/allblenders
+228	55	Shop Now!	https://www.vitamix.com/us/en_us/shop/sale	https://www.vitamix.com/ca/fr_ca/shop/sale
+229		Sale SKUs (Sale Exclusion Products)	https://www.vitamix.com/us/en_us/sale-skus	https://www.vitamix.com/ca/fr_ca/sale-skus
+232	55	Kitchen Systems	https://www.vitamix.com/us/en_us/shop/kitchen-systems	https://www.vitamix.com/ca/fr_ca/shop/kitchen-systems
+237	55	Propel Series Blenders	https://www.vitamix.com/us/en_us/shop/propel-series-blenders	https://www.vitamix.com/ca/fr_ca/shop/propel-series-blenders
+239	58	Immersion Blender Accessories	https://www.vitamix.com/us/en_us/shop/accessories/immersion-blender-accessories	https://www.vitamix.com/ca/fr_ca/shop/accessories/immersion-blender-accessories
+245	58	Food Processor Accessories	https://www.vitamix.com/us/en_us/shop/accessories/food-processor-accessories	https://www.vitamix.com/ca/fr_ca/shop/accessories/food-processor-accessories
+254	55	Full Size Blenders	https://www.vitamix.com/us/en_us/shop/full-size-blenders	https://www.vitamix.com/ca/fr_ca/shop/full-size-blenders
+257	55	Employee Sale Exclusions	https://www.vitamix.com/us/en_us/shop/employee-sale-exclusions	https://www.vitamix.com/ca/fr_ca/shop/employee-sale-exclusions
+260	55	Why Buy Direct	https://www.vitamix.com/us/en_us/shop/why-buy-direct	https://www.vitamix.com/ca/fr_ca/shop/why-buy-direct
+272	55	Explorian Series Blenders	https://www.vitamix.com/us/en_us/shop/explorian-series-blenders	https://www.vitamix.com/ca/fr_ca/shop/explorian-series-blenders
+273	55	Ascent X Series Blenders	https://www.vitamix.com/us/en_us/shop/ascent-x-series-blenders	https://www.vitamix.com/ca/fr_ca/shop/ascent-x-series-blenders
+278	55	Eligible Employee Discount	https://www.vitamix.com/us/en_us/shop/eligible-discount-employee	https://www.vitamix.com/ca/fr_ca/shop/eligible-discount-employee
+281	55	Available Products	https://www.vitamix.com/us/en_us/shop/availableproducts	https://www.vitamix.com/ca/fr_ca/shop/availableproducts
+284	76	Legacy Series	https://www.vitamix.com/us/en_us/shop/classic-series-accessories/legacy-series	https://www.vitamix.com/ca/fr_ca/shop/classic-series-accessories/legacy-series
