@@ -2,7 +2,7 @@
 
 - Constructs a Meta CAPI `events` payload for purchase events
 - Sends the payload to the Graph API using the configured pixel and access token
-- Uses a small state lock (`order-processing/{orderId}`) to claim and complete order processing
+- Uses a small state lock (`{orderId}`) to claim and complete order processing
 
 ## Required params / environment
 
@@ -15,7 +15,7 @@ The action accepts either a raw JSON body or a base64-encoded JSON payload in `_
 
 ## State and locking
 
-The action uses Adobe I/O State (via `@adobe/aio-lib-state`) to claim orders under the key `order-processing/{orderId}`. `claimOrder` sets a `PROCESSING` status and a TTL; `completeOrder` marks orders as `PROCESSED`.
+The action uses Adobe I/O State (via `@adobe/aio-lib-state`) to claim orders under the key `{orderId}`. `claimOrder` sets a `PROCESSING` status and a TTL; `completeOrder` marks orders as `PROCESSED`.
 
 ## Errors and logging
 
