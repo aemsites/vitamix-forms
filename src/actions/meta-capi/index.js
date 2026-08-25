@@ -1,16 +1,3 @@
-/**
- * Adobe I/O Runtime action: consumes Adobe I/O Events CloudEvents and forwards
- * them to Meta Conversion API as purchase events.
- *
- * Expected request shape:
- *   {
- *     "__ow_body": "<base64-encoded CloudEvent JSON>",
- *     ...or a raw JSON body
- *   }
- *
- * This action is intended as the downstream consumer for the event emitted by
- * the EBS sync flow (type: meta.capi.purchase).
- */
 import { Core } from '@adobe/aio-sdk';
 import crypto from 'crypto';
 import { getJournalEntries, getOrder } from '../ebs-sync/commerce.js';
