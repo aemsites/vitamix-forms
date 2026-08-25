@@ -1,7 +1,3 @@
-# Meta CAPI consumer action
-
-This action consumes events produced by the EBS sync flow and forwards purchase events to Meta's Conversion API (CAPI).
-
 ## What it does
 
 - Constructs a Meta CAPI `events` payload for purchase events
