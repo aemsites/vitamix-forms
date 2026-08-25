@@ -1,3 +1,23 @@
+# [1.4.0](https://github.com/aemsites/vitamix-forms/compare/v1.3.7...v1.4.0) (2026-08-25)
+
+
+### Bug Fixes
+
+* **feeds:** default FEED_SITE_BASE to www.vitamix.com (runtime-reachable) ([5a58040](https://github.com/aemsites/vitamix-forms/commit/5a580407c494a0123c1401b0b8927391e8de042b))
+* **feeds:** don't shared-cache Bearer-gated feed responses ([2db8588](https://github.com/aemsites/vitamix-forms/commit/2db8588f4d6339098682b946e78efbbd306d0d49))
+* **feeds:** fall back to defaults unless env host/url is a valid http(s) URL ([cbaa1d3](https://github.com/aemsites/vitamix-forms/commit/cbaa1d389f1f92e3fb02c0941580caf13990b0b6))
+* **feeds:** surface the underlying error and catch fetch rejections ([7472d0d](https://github.com/aemsites/vitamix-forms/commit/7472d0d980c2d5aeff0831538ff7667c623c6b88))
+
+
+### Features
+
+* **feeds:** add bazaarvoice provider generating ProductFeed.xml ([67a2eea](https://github.com/aemsites/vitamix-forms/commit/67a2eeaa2a8639bbaffbe2c779af2f82d240dad2))
+* **feeds:** add multi-provider product feed endpoint ([119b961](https://github.com/aemsites/vitamix-forms/commit/119b9618b11b4b7dd715430b3bec0a164b80e8c3))
+* **feeds:** add openai provider (CSV, US-only) ([178aa5f](https://github.com/aemsites/vitamix-forms/commit/178aa5fec93937d3ac6c848bb373fda49fd51ee6))
+* **feeds:** also emit BV category data as tab-delimited files for sheet paste ([b3e9ec7](https://github.com/aemsites/vitamix-forms/commit/b3e9ec7f08abb724fe6c43c1466586cc4c910300))
+* **feeds:** extract Bazaarvoice category taxonomy into a lookup file ([0ef3a29](https://github.com/aemsites/vitamix-forms/commit/0ef3a2981193dc35f472f907dee92a49e0869c59))
+* **feeds:** per-provider output shapes matching the reference feeds ([7e18f50](https://github.com/aemsites/vitamix-forms/commit/7e18f50eac9e9aee9475156630ea6ad22bfe117e))
+
 ## [1.3.7](https://github.com/aemsites/vitamix-forms/compare/v1.3.6...v1.3.7) (2026-08-23)
 
 
