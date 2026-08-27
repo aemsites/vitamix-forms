@@ -75,6 +75,7 @@ application:
               require-adobe-auth: false
               final: true
             inputs:
+              SYNC_STATUS_TOKEN: $SYNC_STATUS_TOKEN
               META_BASE_URL: $META_BASE_URL
               META_PIXEL_ID: $META_PIXEL_ID
               META_PIXEL_ID_STAGE: $META_PIXEL_ID_STAGE

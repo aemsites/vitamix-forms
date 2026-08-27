@@ -6,10 +6,23 @@ import { init } from '@adobe/aio-lib-state';
 /** @type {import('@adobe/aio-lib-state').AdobeState | null} */
 let _client = null;
 
+/** @type {ReturnType<typeof Core.Logger> | null} */
+let _log = null;
+
+/**
+ * Returns (or lazily initialises) the shared logger instance.
+ * @param {string} [level]
+ */
+function getLogger(level = 'info') {
+  if (!_log) _log = Core.Logger('meta-capi', { level });
+  return _log;
+}
+
 async function client() {
   if (!_client) _client = await init();
   return _client;
 }
+
 /**
  * Main entry point for the Adobe I/O Runtime action.
  * Meta CAPI server to server call to fire Purchase event.
@@ -17,15 +30,10 @@ async function client() {
  * @returns 
  */
 export async function main(params) {
-  //return jsonResponse(202, { message: 'done for now'});
-  const authorize = requireAuth(params);
-  
-  if (!authorize) {
-    return jsonResponse(400, { error: 'Missing required parameters for commerce API' });
-  }
+  const authErr = requireAuth(params);
+  if (authErr) return authErr;
 
-  let log = null;
-  log = Core.Logger('meta-capi', { level: params.LOG_LEVEL ?? 'info' });
+  const log = getLogger(params.LOG_LEVEL ?? 'info');
 
   try {
     const sinceDate = new Date();
@@ -37,38 +45,54 @@ export async function main(params) {
         params, sinceDate.toISOString(), log, untilDate.toISOString()
     );
 
-    const uniqueEntries = Object.values(
-      entries.reduce((acc, entry) => {
-        if (!entry.orderId) return acc;
-
-        acc[entry.orderId] ??= entry;
-        return acc;
-      }, {})
-      
+    const TERMINAL_EVENTS = new Set(['payment_completed']);
+    const terminalEntries = entries.filter(
+      (e) => e.orderId && TERMINAL_EVENTS.has(e.event),
     );
+
+    // Deduplicate to unique orderIds, preserving oldest-first order.
+    const seen = new Set();
+    const orderIds = [];
+    for (const e of terminalEntries) {
+      if (!seen.has(e.orderId)) {
+        seen.add(e.orderId);
+        orderIds.push(e.orderId);
+      }
+    }
+
+    if (entries.length > 0 && terminalEntries.length === 0) {
+      // Entries came back but none were terminal — log event type breakdown to diagnose.
+      const eventCounts = {};
+      for (const e of entries) {
+        eventCounts[e.event ?? '(missing)'] = (eventCounts[e.event ?? '(missing)'] || 0) + 1;
+      }
+      log.info(`[meta-capi] No terminal events found. Event breakdown: ${JSON.stringify(eventCounts)}`);
+    }
+
+    log.info(
+      `[meta-capi] ${terminalEntries.length} terminal entries, ${orderIds.length} unique order IDs to evaluate${orderIds.length > 0 ? `: ${orderIds.join(', ')}` : ''}`,
+    );
+
     const runId = `cron-${Date.now()}`;
-    for (const order of uniqueEntries) {
-      const orderNumber = order.orderId;
-      const orderValue = orderNumber.split('-').pop();
+    for (const order of orderIds) {
+      const orderValue = order.split('-').pop();
       const claimed = await claimOrder(orderValue, runId);
-      
       if (!claimed) continue;
       try {
           const payload = await buildMetaRequestPayload(params, order);
-          const response = await sendToMeta(payload, params);
+          const response = await sendToMeta(payload, params, log);
           await completeOrder(orderValue);
-          log.info('Successfully fired Meta CAPI event for order', {orderIdProcessed: orderValue, metaStatus: response.status, metaResponse: response.body});
-      } catch (error) {
-          log.error('Error occurred while processing order', { orderId: orderValue, error: error.message });
-          await failOrder(orderValue, error);
-          return jsonResponse(500, { 
-            error: 'meta_capi_failed', 
-            detail: error.message 
+          log.info('Successfully fired Meta CAPI event for order', {
+            orderIdProcessed: orderValue, metaStatus: response.status, metaResponse: response.body
           });
+      } catch (error) {
+          log.error('Error occurred while processing order', { orderId: orderValue, error: JSON.stringify(error) });
+          await failOrder(orderValue, error);
+          continue;
       }
     }
   } catch (error) {
-    log.error('meta-capi consumer failed', error);
+    log.error('meta-capi consumer failed', { error: error.message });
     return jsonResponse(500, {
       error: 'meta_capi_failed',
       detail: error.message,
@@ -78,25 +102,18 @@ export async function main(params) {
 }
 
 /**
- * Check the authorization to use the commerce API and its resources.
+ * Validate the shared status/trigger Bearer token
  * @param {*} params 
  * @returns 
  */
 function requireAuth(params) {
+  const authHeader = (params.__ow_headers || {}).authorization || '';
+  const provided = authHeader.replace(/^Bearer\s+/i, '').trim();
 
-  let log = null;
-  log = Core.Logger('meta-capi', { level: params.LOG_LEVEL ?? 'info' });
-
-  const EDGE_COMMERCE_API_BASE = params.EDGE_COMMERCE_API_BASE;
-  const EDGE_COMMERCE_API_ORDERS_TOKEN = params.EDGE_COMMERCE_API_ORDERS_TOKEN;
-  const ORG = params.ORG;
-  const SITE = params.SITE;
-
-  if (!EDGE_COMMERCE_API_BASE || !EDGE_COMMERCE_API_ORDERS_TOKEN || !ORG || !SITE) {
-    log.error('Missing required parameters for commerce API');
-    return false;
+  if (!params.SYNC_STATUS_TOKEN || !provided || provided !== params.SYNC_STATUS_TOKEN) {
+    return jsonResponse(401, { error: 'Unauthorized' });
   }
-  return true;
+  return null;
 }
 
 /**
@@ -110,7 +127,7 @@ function requireAuth(params) {
  */
 async function claimOrder(orderId, runId) {
   const c = await client();
-  const key = `${orderId}`;
+  const key = `meta-capi:${orderId}`;
   const existing = await c.get(key);
   if (existing && existing.value?.status === "PROCESSED") {
     return false;
@@ -129,13 +146,9 @@ async function claimOrder(orderId, runId) {
       orderId,
       status: "PROCESSING",
       lockedBy: runId,
-      lockedUntil: new Date(
-        Date.now() + 15 * 60 * 1000
-      ).toISOString()
+      lockedUntil: new Date(Date.now() + 10 * 60 * 1000).toISOString()
     },
-    {
-      ttl: 600
-    }
+    { ttl: 600 }
   );
   return true;
 }
@@ -147,17 +160,16 @@ async function claimOrder(orderId, runId) {
 async function completeOrder(orderId) {
   const state = await client();
 
-  await state.put(`${orderId}`,
+  await state.put(`meta-capi:${orderId}`,
     {
       orderId,
       status: "PROCESSED",
       processedAt: new Date().toISOString()
     },
-    {
-      ttl: -1
-    }
+    { ttl: -1 }
   );
 }
+
 /**
  * This function marks an order as failed and records the error message.
  * It is used to track orders that could not be processed successfully.
@@ -167,7 +179,7 @@ async function completeOrder(orderId) {
  */
 async function failOrder(orderId, error) {
   const state = await client();
-  await state.put(`${orderId}`,
+  await state.put(`meta-capi:${orderId}`,
     {
         orderId: orderId,
         status: "FAILED",
@@ -181,11 +193,22 @@ async function failOrder(orderId, error) {
 
 /**
  * Builds the request payload for the Meta Conversion API.
+ * @param {*} params
+ * @param {*} orderValue
  * @returns 
  */
-async function buildMetaRequestPayload(params, order) {
-  const eventId = order.orderId;
-  const orderData = await getOrder(params, eventId);
+async function buildMetaRequestPayload(params, orderValue) {
+
+  const [timestamp, orderId] = orderValue.split("Z-");
+  const actualTimestamp = `${timestamp}Z`;
+  //eventId.split('-').pop()
+
+  const orderData = await getOrder(params, orderValue);
+  const event_time =
+  actualTimestamp &&
+  !isNaN(Date.parse(actualTimestamp))
+    ? Math.floor(new Date(actualTimestamp).getTime() / 1000)
+    : Math.floor(Date.now() / 1000);
 
   const hashValue = (value) => {
     if (!value) return null;
@@ -195,8 +218,8 @@ async function buildMetaRequestPayload(params, order) {
     data: [
       {
         event_name: 'Purchase',
-        event_time: new Date().toISOString(),
-        event_id: eventId.split('-').pop(),
+        event_time: event_time,
+        event_id: orderId,
         action_source: 'website',
         user_data: {
             em: [hashValue(orderData?.customer?.email || '')],
@@ -232,7 +255,7 @@ function normalizeCustomData(customData) {
             return {
                 id: item?.sku ? item.sku : '',
                 quantity: Number(item?.quantity || item?.qty || 1) || 1,
-                price: parseFloat(item.price.final)
+                price: parseFloat(item?.price.final)
             };
         });
         metaCustomData['contents'] = contents;
@@ -243,11 +266,11 @@ function normalizeCustomData(customData) {
 /**
  * Sends the payload to the Meta Conversion API.
  * @param {Record<string, unknown>} payload 
- * @param {Record<string, unknown>} params 
+ * @param {Record<string, unknown>} params
+ * @param {ReturnType<typeof Core.Logger>} log
  * @returns {Promise<Record<string, unknown>>}
  */
-async function sendToMeta(payload, params) {
-
+async function sendToMeta(payload, params, log) {
   const NAMESPACE = process.env.AIO_RUNTIME_NAMESPACE;
   const WORKSPACE_NAME = process.env.AIO_PROJECT_WORKSPACE_NAME;
   
@@ -266,12 +289,10 @@ async function sendToMeta(payload, params) {
   } else {
     metaPixelId = params.META_PIXEL_ID_UAT; // default to UAT if not prod or stage
   }
-  let log = null;
   const pixelId = metaPixelId;
   const metaBaseUrl = params.META_BASE_URL || 'https://graph.facebook.com';
   const accessToken = params.META_ACCESS_TOKEN;
   const apiVersion = params.META_API_VERSION || 'v22.0';
-  log = Core.Logger('meta-capi', { level: params.LOG_LEVEL ?? 'info' });
 
   log.info(`Meta CAPI consumer: isProd=${isProd}, isStage=${isStage}, pixelId=${pixelId}, apiVersion=${apiVersion}`);
 
@@ -280,29 +301,44 @@ async function sendToMeta(payload, params) {
   }
 
   const url = `${metaBaseUrl}/${apiVersion}/${pixelId}/events`;
-  const response = await fetch(url, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      access_token: accessToken,
-      ...payload,
-    }),
-  });
-  log.info(`[meta-capi] Meta API response status: ${response.status}`);
-  const body = await response.text();
-  let parsedBody = body;
+
+  let response;
+  let body;
+  let parsedBody;
+
+  try {
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        access_token: accessToken,
+        ...payload,
+      }),
+    });
+    body = await response.text();
+  } catch (networkError) {
+    const errMsg = networkError instanceof Error ? networkError.message : String(networkError);
+    log.error('[meta-capi] Network error calling Meta API', { url, error: errMsg });
+    throw new Error(`Meta API network error: ${errMsg}`);
+  }
   try {
     parsedBody = JSON.parse(body);
   } catch {
-    log.error('Failed to parse Meta API response', { body });
+    log.error('[meta-capi] Failed to parse Meta API response', { body });
+    parsedBody = body;
   }
+
+  if (!response.ok || parsedBody?.error) {
+    log.error('[meta-capi] Meta API returned error', {body: parsedBody});
+    throw new Error(`Meta API responded with status : ${JSON.stringify(parsedBody)}`);
+  }
+
   return {
-    status: response.ok ? 200 : response.status,
+    status: parsedBody?.events_received,
     body: {
-      ok: response.ok,
-      metaStatus: response.status,
+      metaStatus: parsedBody?.events_received,
       metaResponse: parsedBody,
     },
   };

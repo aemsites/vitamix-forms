@@ -1,17 +1,17 @@
 {
   "type": "meta.capi.purchase",
   "data": {
-    "eventId": "order-123",
-    "eventName": "Purchase",
-    "eventTime": "2026-08-06T12:00:00.000Z",
-    "actionSource": "website",
-    "userData": {
+    "event_id": "order-123",
+    "event_name": "Purchase",
+    "event_time": "2026-08-06T12:00:00.000Z",
+    "action_source": "website",
+    "user_data": {
       "em": ["3f4b8e5b9d1f2a6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c"],
       "ph": ["9f8e7d6c5b4a3b2a1f0e9d8c7b6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0"],
       "fn": ["1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0"],
       "ln": ["f0e1d2c3b4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c"]
     },
-    "customData": {
+    "custom_data": {
       "currency": "USD",
       "value": 99.99,
       "order_id": "order-123",
@@ -20,9 +20,6 @@
         { "id": "SKU1", "quantity": 1, "item_price": 49.99 },
         { "id": "SKU2", "quantity": 1, "item_price": 49.99 }
       ]
-    },
-    "orderId": "order-123",
-    "orderKey": "order-123",
-    "customerEmail": "customer@example.com"
+    }
   }
 }
