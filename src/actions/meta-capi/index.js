@@ -298,8 +298,6 @@ async function sendToMeta(payload, params, log) {
         ...payload,
       }),
     });
-    // holds the raw string in the body of fetch call for Meta.
-    // text waits for full body to load from meta
     body = await response.text();
   } catch (networkError) {
     const errMsg = networkError instanceof Error ? networkError.message : String(networkError);
