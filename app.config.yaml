@@ -70,12 +70,12 @@ application:
           meta-capi:
             function: dist/actions/meta-capi/index.js
             runtime: nodejs:22
-            web: 'yes'
+            web: false
             annotations:
               require-adobe-auth: false
               final: true
             inputs:
-              SYNC_STATUS_TOKEN: $SYNC_STATUS_TOKEN
+              LOG_LEVEL: info
               META_BASE_URL: $META_BASE_URL
               META_PIXEL_ID: $META_PIXEL_ID
               META_PIXEL_ID_STAGE: $META_PIXEL_ID_STAGE
