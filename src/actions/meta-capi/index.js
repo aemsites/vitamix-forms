@@ -190,27 +190,30 @@ async function buildMetaRequestPayload(params, orderValue) {
     return crypto.createHash('sha256').update(value.trim().toLowerCase()).digest('hex');
   };
 
-  const userData = /** @type {Record<string, (string | null)[]>} */ ({
-    em: [hashValue(orderData?.customer?.email || '')],
-    fn: [hashValue(orderData?.customer?.firstName || '')],
-    ln: [hashValue(orderData?.customer?.lastName || '')],
-  });
+  const email = orderData?.customer?.email;
+  const firstName = orderData?.customer?.firstName;
+  const lastName = orderData?.customer?.lastName;
   const phone = orderData?.customer?.phone;
 
+  const userData = /** @type {Record<string, (string | null)[]>} */ ({});
+  if (email) { userData.em = [hashValue(email)]; }
+  if (firstName) { userData.fn = [hashValue(firstName)]; }
+  if (lastName) { userData.ln = [hashValue(lastName)]; }
   if (phone) { userData.ph = [hashValue(phone)]; }
 
-  return {
-    data: [
-      {
-        event_name: 'Purchase',
-        event_time: event_time,
-        event_id: orderId,
-        action_source: 'website',
-        user_data: userData,
-        custom_data: normalizeCustomData(orderData),
-      },
-    ],
-  };
+  const event = /** @type {Record<string, unknown>} */ ({
+    event_name: 'Purchase',
+    event_time: event_time,
+    event_id: orderId,
+    action_source: 'website',
+    custom_data: normalizeCustomData(orderData),
+  });
+
+  if (Object.keys(userData).length > 0) {
+    event.user_data = userData;
+  }
+
+  return { data: [event] };
 }
 
 /**

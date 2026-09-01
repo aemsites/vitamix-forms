@@ -1,25 +1,24 @@
 {
-  "type": "meta.capi.purchase",
-  "data": {
-    "event_id": "order-123",
-    "event_name": "Purchase",
-    "event_time": "2026-08-06T12:00:00.000Z",
-    "action_source": "website",
-    "user_data": {
-      "em": ["3f4b8e5b9d1f2a6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c"],
-      "ph": ["9f8e7d6c5b4a3b2a1f0e9d8c7b6a5b4c3d2e1f0a9b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3f2a1b0c9d8e7f6a5b4c3d2e1f0"],
-      "fn": ["1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0"],
-      "ln": ["f0e1d2c3b4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c"]
-    },
-    "custom_data": {
-      "currency": "USD",
-      "value": 99.99,
-      "order_id": "order-123",
-      "num_items": 2,
-      "contents": [
-        { "id": "SKU1", "quantity": 1, "item_price": 49.99 },
-        { "id": "SKU2", "quantity": 1, "item_price": 49.99 }
-      ]
+  "data": [
+    {
+      "event_name": "Purchase",
+      "event_time": 1787936707,
+      "event_id": "1001",
+      "action_source": "website",
+      "user_data": {
+        "em": ["e02114351a8748308c9a0d6fa069a967c64ac5ff4d646dc9eeb95d1fbd8d4432"],
+        "fn": ["96d9632f363564cc3032521409cf22a852f2032eec099ed5967c0d000cec607a"],
+        "ln": ["799ef92a11af918e3fb741df42934f3b568ed2d93ac1df74f1b8d41a27932a6f"],
+        "ph": ["b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514"]
+      },
+      "custom_data": {
+        "currency": "USD",
+        "value": 310.25,
+        "content_type": "product",
+        "contents": [
+          { "id": "075804-04", "quantity": 1, "price": 379.95 }
+        ]
+      }
     }
-  }
+  ]
 }
