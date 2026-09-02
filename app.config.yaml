@@ -67,6 +67,34 @@ application:
             annotations:
               require-adobe-auth: false
               final: true
+          meta-capi:
+            function: dist/actions/meta-capi/index.js
+            runtime: nodejs:22
+            web: false
+            annotations:
+              require-adobe-auth: false
+              final: true
+            inputs:
+              LOG_LEVEL: info
+              META_BASE_URL: $META_BASE_URL
+              META_PIXEL_ID: $META_PIXEL_ID
+              META_PIXEL_ID_STAGE: $META_PIXEL_ID_STAGE
+              META_PIXEL_ID_UAT: $META_PIXEL_ID_UAT
+              META_ACCESS_TOKEN: $META_ACCESS_TOKEN
+              META_API_VERSION: $META_API_VERSION
+              EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
+              EDGE_COMMERCE_API_ORDERS_TOKEN: $EDGE_COMMERCE_API_ORDERS_TOKEN
+        triggers:
+          meta-capi-schedule:
+            feed: /whisk.system/alarms/alarm
+            inputs:
+              cron: '0 */3 * * *'
+              timezone: UTC
+
+        rules:
+          meta-capi-rule:
+            trigger: meta-capi-schedule
+            action: meta-capi
 
       ebs-sync:
         license: Apache-2.0

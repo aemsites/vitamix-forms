@@ -1,0 +1,24 @@
+{
+  "data": [
+    {
+      "event_name": "Purchase",
+      "event_time": 1787936707,
+      "event_id": "1001",
+      "action_source": "website",
+      "user_data": {
+        "em": ["e02114351a8748308c9a0d6fa069a967c64ac5ff4d646dc9eeb95d1fbd8d4432"],
+        "fn": ["96d9632f363564cc3032521409cf22a852f2032eec099ed5967c0d000cec607a"],
+        "ln": ["799ef92a11af918e3fb741df42934f3b568ed2d93ac1df74f1b8d41a27932a6f"],
+        "ph": ["b4c9a289323b21a01c3e940f150eb9b8c542587f1abfd8f0e1cc1ffc5e475514"]
+      },
+      "custom_data": {
+        "currency": "USD",
+        "value": 310.25,
+        "content_type": "product",
+        "contents": [
+          { "id": "075804-04", "quantity": 1, "price": 379.95 }
+        ]
+      }
+    }
+  ]
+}
