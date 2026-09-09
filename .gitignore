@@ -45,3 +45,5 @@ output
 
 # historical submissions
 historical_export
+
+docs/.local
