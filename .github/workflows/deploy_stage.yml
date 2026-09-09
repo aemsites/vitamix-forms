@@ -80,6 +80,13 @@ jobs:
           EBS_JSON_API_KEY_STAGE: ${{ secrets.EBS_JSON_API_KEY_STAGE }}
           EDGE_COMMERCE_API_BASE: ${{ secrets.EDGE_COMMERCE_API_BASE_STAGE }}
           EDGE_COMMERCE_API_BASE_STAGE: ${{ secrets.EDGE_COMMERCE_API_BASE_STAGE }}
+          # meta-capi — action picks the pixel by runtime namespace (prod/stage/uat),
+          # so all three pixel ids must be present regardless of deploy env.
+          # META_BASE_URL / META_API_VERSION have in-code defaults and are omitted.
+          META_PIXEL_ID: ${{ secrets.META_PIXEL_ID_STAGE }}
+          META_PIXEL_ID_STAGE: ${{ secrets.META_PIXEL_ID_STAGE }}
+          META_PIXEL_ID_UAT: ${{ secrets.META_PIXEL_ID_UAT }}
+          META_ACCESS_TOKEN: ${{ secrets.META_ACCESS_TOKEN_STAGE }}
           # recipe-notify — RECIPE_NOTIFY_ENABLED intentionally NOT set on stage,
           # so the scheduled digest no-ops here (no duplicate emails).
           RECIPE_NOTIFY_TOKEN: ${{ secrets.RECIPE_NOTIFY_TOKEN_STAGE }}
