@@ -28,7 +28,16 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
+      - name: Generate release token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
       - uses: actions/checkout@v4
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: false
       - name: Use Node.js 24.x
         uses: actions/setup-node@v4
         with:
@@ -53,7 +62,7 @@ jobs:
       - name: Semantic Release
         run: npm run semantic-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_PROD }}
           AIO_RUNTIME_AUTH: ${{ secrets.AIO_RUNTIME_AUTH_PROD }}
           AIO_PROJECT_ID: ${{ secrets.AIO_PROJECT_ID_PROD }}
