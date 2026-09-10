@@ -1,3 +1,11 @@
+# [1.5.0](https://github.com/aemsites/vitamix-forms/compare/v1.4.1...v1.5.0) (2026-09-10)
+
+
+### Features
+
+* **ebs-sync:** expose EBS target config on status endpoint ([2cb41e6](https://github.com/aemsites/vitamix-forms/commit/2cb41e6e441dd8b65a37f8febd8f12918f07d4a6))
+* **version:** add booleans-only EBS/EBS-JSON config health check ([470ce24](https://github.com/aemsites/vitamix-forms/commit/470ce244b83ea56a4ca6d11245047b2baddf7f2b))
+
 ## [1.4.1](https://github.com/aemsites/vitamix-forms/compare/v1.4.0...v1.4.1) (2026-09-10)
 
 
