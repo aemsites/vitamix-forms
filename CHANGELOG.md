@@ -1,3 +1,11 @@
+## [1.4.1](https://github.com/aemsites/vitamix-forms/compare/v1.4.0...v1.4.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **ci:** pass meta-capi env vars through deploy workflows ([#89](https://github.com/aemsites/vitamix-forms/issues/89)) ([5d0af49](https://github.com/aemsites/vitamix-forms/commit/5d0af498828edd2433cf2f7f87dc1f9b5b37a96e))
+* force deploy ([22bd3d6](https://github.com/aemsites/vitamix-forms/commit/22bd3d6b72741b004cad33685833fcb7a90aa01e))
+
 # [1.4.0](https://github.com/aemsites/vitamix-forms/compare/v1.3.7...v1.4.0) (2026-08-25)
 
 
