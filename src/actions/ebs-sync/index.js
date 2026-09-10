@@ -73,7 +73,43 @@ async function handleStatusRequest(params) {
     processedCount: state.processedCount,
     failedCount: state.failedCount,
     lastError: state.lastError,
+    ebs: describeEbsConfig(params),
   });
+}
+
+/**
+ * Non-secret fingerprint of the EBS target this deployment will actually use.
+ *
+ * Order sync always uses the deployment-default EBS_BASE_URL/EBS_API_KEY
+ * (see ebs.js:syncOrderToEbs) — never the _STAGE pair. Both the default and the
+ * _STAGE values are injected into every deployment, so a *prod* deployment whose
+ * default equals the stage value is misconfigured: it will sync live orders to
+ * the staging EBS. We detect that directly instead of guessing prod-ness from
+ * the URL string (which assumes a naming convention that may not hold).
+ *
+ * Returns only booleans and the URL host — never the API key or full URL.
+ *
+ * @param {object} params - action params (env inputs injected by the Runtime)
+ */
+function describeEbsConfig(params) {
+  const base = params.EBS_BASE_URL || '';
+  const baseStage = params.EBS_BASE_URL_STAGE || '';
+  const key = params.EBS_API_KEY || '';
+  const keyStage = params.EBS_API_KEY_STAGE || '';
+
+  let host = null;
+  try {
+    host = base ? new URL(base).host : null;
+  } catch {
+    host = 'invalid-url';
+  }
+
+  return {
+    host,                                        // endpoint host, for eyeballing (no key)
+    configured: Boolean(base && key),            // false → missing/empty secret at deploy
+    targetsStage: base !== '' && base === baseStage,        // ← the prod→stage misroute
+    apiKeyMatchesStage: key !== '' && key === keyStage,     // ← mismatched/stage key
+  };
 }
 
 /**
