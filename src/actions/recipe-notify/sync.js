@@ -21,6 +21,7 @@ import { getAccessToken } from '../../auth.js';
 import { loadState, saveState, acquireLock, releaseLock } from './state.js';
 import { fetchRecipes } from './recipes.js';
 import { detectNewRecipes } from './detect.js';
+import { errorInfo } from '../../utils.js';
 import { buildDigest, sendDigest } from './notify.js';
 
 const DEFAULTS = {
@@ -154,7 +155,7 @@ export async function run(params, options = {}) {
     summary.newCursor = maxUpdated;
   } catch (err) {
     const message = err?.stack || String(err);
-    log.error(`[recipe-notify] Run failed — cursor not advanced.\n${message}`);
+    log.error('[recipe-notify] Run failed — cursor not advanced.', errorInfo(err));
     summary.error = err.message;
     if (!dryRun) {
       await saveState({ status: 'error', lastError: message, lastRun: new Date().toISOString() }).catch(() => {});

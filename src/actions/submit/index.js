@@ -1,4 +1,4 @@
-import { errorResponse } from '../../utils.js';
+import { errorResponse, errorInfo } from '../../utils.js';
 import { publishEvent } from '../../events.js';
 import makeContext from '../../context.js';
 import { createProductRegistration, queryOrder } from '../../ebs.js';
@@ -165,7 +165,7 @@ async function handleProductRegistration(ctx, formId, data) {
   const marketingOptIn = data.marketingOptIn === true || data.marketingOptIn === 'yes';
   const newsletterPromise = marketingOptIn
     ? callNewsletterApi(ctx, formId, { ...data, emailOptIn: true }).catch(err => {
-      log.warn(`newsletter subscription failed for product registration formId=${formId}: ${err.message}`);
+      log.warn(`newsletter subscription failed for product registration formId=${formId}`, errorInfo(err));
     })
     : Promise.resolve();
 
@@ -397,7 +397,7 @@ function logStageSubmission(ctx, formId, request, response) {
     const { statusCode, body } = response?.error ?? response ?? {};
     ctx.log.info(`[stage-submission] ${JSON.stringify({ formId, request, response: { statusCode, body } })}`);
   } catch (err) {
-    ctx.log.warn(`failed to log stage submission for formId=${formId}: ${err.message}`);
+    ctx.log.warn(`failed to log stage submission for formId=${formId}`, errorInfo(err));
   }
 }
 
