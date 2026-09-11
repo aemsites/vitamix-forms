@@ -16,6 +16,7 @@ import { Core } from '@adobe/aio-sdk';
 import { fetchGmcFeed } from './source.js';
 import { buildFeed } from './serialize.js';
 import { PROVIDERS } from './providers/index.js';
+import { errorInfo } from '../../utils.js';
 
 const DEFAULT_LOCALE = 'us/en_us';
 // Production public domain — serves the merchant feed and is reachable from the
@@ -116,7 +117,7 @@ export async function main(params) {
       body,
     };
   } catch (err) {
-    log.error(`failed to build ${provider} feed for ${locale}: ${err.message}`);
+    log.error(`failed to build ${provider} feed for ${locale}`, errorInfo(err));
     const statusCode = err.response?.error?.statusCode || 500;
     const message = err.response?.error?.headers?.['x-error']
       || `failed to build feed: ${err.message}`;

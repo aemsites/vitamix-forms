@@ -2,6 +2,7 @@ import { Core } from '@adobe/aio-sdk';
 import crypto from 'crypto';
 import { getJournalEntries, getOrder } from '../ebs-sync/commerce.js';
 import { init } from '@adobe/aio-lib-state';
+import { errorInfo } from '../../utils.js';
 
 /** @type {import('@adobe/aio-lib-state').AdobeState | null} */
 let _client = null;
@@ -75,15 +76,14 @@ export async function main(params) {
         });
         await completeOrder(orderValue);
       } catch (error) {
-        const errMsg = error instanceof Error ? error.message : String(error);
-        log.error('Error occurred while processing order', { orderId: orderValue, error: errMsg });
+        log.error('Error occurred while processing order', { orderId: orderValue, error: errorInfo(error) });
         await failOrder(orderValue, error);
         continue;
       }
     }
   } catch (error) {
     const errMsg = error instanceof Error ? error.message : String(error);
-    log.error('meta-capi consumer failed', { error: errMsg });
+    log.error('meta-capi consumer failed', { error: errorInfo(error) });
     return jsonResponse(500, {
       error: 'meta_capi_failed',
       detail: errMsg,
@@ -304,7 +304,7 @@ async function sendToMeta(payload, params, log) {
     body = await response.text();
   } catch (networkError) {
     const errMsg = networkError instanceof Error ? networkError.message : String(networkError);
-    log.error('[meta-capi] Network error calling Meta API', { url, error: errMsg });
+    log.error('[meta-capi] Network error calling Meta API', { url, error: errorInfo(networkError) });
     throw new Error(`Meta API network error: ${errMsg}`);
   }
   try {

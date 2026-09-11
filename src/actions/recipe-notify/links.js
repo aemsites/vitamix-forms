@@ -9,6 +9,8 @@
  * notification time; if a recipe isn't found, its link is left null.
  */
 
+import { errorInfo } from '../../utils.js';
+
 /**
  * The index also carries each recipe's `image` (the same asset used for the page
  * `og:image`), so we resolve a small thumbnail URL from it here — no extra
@@ -45,7 +47,7 @@ export async function resolveLinks(ctx, recipes) {
       log.warn(`[recipe-notify] query-index fetch failed: ${resp.status} — links will be omitted`);
     }
   } catch (err) {
-    log.warn(`[recipe-notify] query-index fetch error: ${err.message} — links will be omitted`);
+    log.warn('[recipe-notify] query-index fetch error — links will be omitted', errorInfo(err));
   }
 
   return recipes.map((r) => {

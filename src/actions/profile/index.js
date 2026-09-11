@@ -1,5 +1,5 @@
 import makeContext from '../../context.js';
-import { errorResponse } from '../../utils.js';
+import { errorResponse, errorInfo } from '../../utils.js';
 import { proxyFetch } from '../../proxy.js';
 
 const PROD_ORIGIN = 'www.vitamix.com';
@@ -132,7 +132,7 @@ export async function main(params) {
         smsOptInStatus: profile.SMSOptInStatus,
       };
     } catch (err) {
-      log.warn(`profile status fetch failed for ${email}: ${err.message}`);
+      log.warn(`profile status fetch failed for ${email}`, errorInfo(err));
     }
 
     return {

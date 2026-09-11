@@ -1,5 +1,5 @@
 import { describe, test, expect } from '@jest/globals';
-import { errorResponse } from '../src/utils.js';
+import { errorResponse, errorInfo } from '../src/utils.js';
 
 describe('errorResponse', () => {
   test('returns error with statusCode and x-error header', () => {
@@ -50,5 +50,37 @@ describe('errorResponse', () => {
   test('passes body through to the response', () => {
     const body = { errors: ['a', 'b'] };
     expect(errorResponse(422, 'validation', body).error.body).toEqual(body);
+  });
+});
+
+describe('errorInfo', () => {
+  test('extracts name, message, and stack from an Error instance', () => {
+    const err = new TypeError('boom');
+    const info = errorInfo(err);
+    expect(info.name).toBe('TypeError');
+    expect(info.message).toBe('boom');
+    expect(typeof info.stack).toBe('string');
+    expect(info.stack).toContain('boom');
+  });
+
+  test('preserves the subclass name for custom Error types', () => {
+    class SyncError extends Error {}
+    const err = new SyncError('nope');
+    err.name = 'SyncError';
+    expect(errorInfo(err)).toMatchObject({ name: 'SyncError', message: 'nope' });
+  });
+
+  test('non-Error throwable → only message (String-coerced), no name/stack', () => {
+    const info = errorInfo('just a string');
+    expect(info).toEqual({ message: 'just a string' });
+    expect(info).not.toHaveProperty('name');
+    expect(info).not.toHaveProperty('stack');
+  });
+
+  test('coerces non-Error objects and other primitives to a message string', () => {
+    expect(errorInfo({ code: 42 })).toEqual({ message: '[object Object]' });
+    expect(errorInfo(null)).toEqual({ message: 'null' });
+    expect(errorInfo(undefined)).toEqual({ message: 'undefined' });
+    expect(errorInfo(500)).toEqual({ message: '500' });
   });
 });
