@@ -23,6 +23,7 @@ import { Core } from '@adobe/aio-sdk';
 import { loadState, saveState, acquireLock, releaseLock } from './state.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
 import { syncOrderToEbs, isRetriableError } from './ebs.js';
+import { errorInfo } from '../../utils.js';
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
@@ -200,17 +201,19 @@ export async function run(params) {
             if (body) syncLog.response = typeof body === 'string' ? body : JSON.stringify(body);
           }
           await logOrderSync(params, syncLog).catch((logErr) => {
-            log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}: ${logErr.message}`);
+            log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
           });
 
           if (!isRetriableError(err)) {
             log.warn(
-              `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error: ${err.message}`,
+              `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error`,
+              errorInfo(err),
             );
             break;
           }
           log.warn(
-            `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed: ${err.message}`,
+            `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed`,
+            errorInfo(err),
           );
           if (attempt < MAX_RETRIES) {
             await sleep(RETRY_BASE_DELAY_MS * attempt);
@@ -230,11 +233,12 @@ export async function run(params) {
 
         // Surface the failure on the order itself so it's visible downstream.
         await updateOrderCustom(params, orderId, { syncError: describeSyncError(lastErr) }).catch((patchErr) => {
-          log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
+          log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}`, errorInfo(patchErr));
         });
 
         log.error(
-          `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.\n${errStack}`,
+          `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.`,
+          errorInfo(lastErr),
         );
         break;
       }
