@@ -1,3 +1,10 @@
+## [1.5.1](https://github.com/aemsites/vitamix-forms/compare/v1.5.0...v1.5.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* opslog tweaks ([9fe6d86](https://github.com/aemsites/vitamix-forms/commit/9fe6d86d18df5046900a148edf669eb78258743f))
+
 # [1.5.0](https://github.com/aemsites/vitamix-forms/compare/v1.4.1...v1.5.0) (2026-09-10)
 
 
