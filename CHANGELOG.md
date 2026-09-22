@@ -1,3 +1,10 @@
+## [1.5.3](https://github.com/aemsites/vitamix-forms/compare/v1.5.2...v1.5.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* **proxy:** surface x-upstream-status on proxyFetch errors ([aba7bd0](https://github.com/aemsites/vitamix-forms/commit/aba7bd0dd637b56e1bcd5ac15c2a6a1ba5b0ef6b))
+
 ## [1.5.2](https://github.com/aemsites/vitamix-forms/compare/v1.5.1...v1.5.2) (2026-09-22)
 
 
