@@ -196,6 +196,9 @@ export async function run(params) {
 
           const errStatus = err?.ebsStatus ?? err?.response?.error?.statusCode ?? 0;
           const syncLog = { action: 'order-sync', id: orderId, status: errStatus, error: err.message };
+          // Set only on errors raised by proxyFetch. 'none' means the proxy rejected the
+          // request itself; a status means the proxy forwarded that status from EBS.
+          if (err?.upstreamStatus) syncLog.upstreamStatus = err.upstreamStatus;
           if (errStatus >= 400) {
             const body = err?.response?.error?.body;
             if (body) syncLog.response = typeof body === 'string' ? body : JSON.stringify(body);
