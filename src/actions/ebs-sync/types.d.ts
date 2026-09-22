@@ -155,10 +155,22 @@ export interface StoredOrderItem {
   custom?: Record<string, unknown>;
 }
 
+export interface StoredOrderDiscount {
+  /** Coupon discounts are stored as "coupon:{code}"; other rules use their own id */
+  id?: string;
+  amount?: string | number;
+  /** e.g. "coupon" | "pricing_rule" */
+  source?: string;
+  freeShipping?: boolean;
+  name?: string;
+}
+
 export interface StoredOrderEstimates {
   subtotal?: string;
   taxAmount?: string;
   total?: string;
+  /** Applied order-level discounts (coupon discounts carry id="coupon:{code}") */
+  discounts?: StoredOrderDiscount[];
   shippingMethod?: {
     id: string;
     /** Customer-facing label (e.g. "Standard Shipping: 8-10 Business Days") */
@@ -193,6 +205,19 @@ export interface JournalOrderData {
   /** Stored order payment metadata; payment_completed journal remains the primary EBS payment source */
   payment?: StoredOrderPayment;
   items: StoredOrderItem[];
+  /**
+   * Applied coupon code(s). Scalar for a single coupon; an array when several
+   * coupons apply. `couponCodes` carries the full applied set on newer orders.
+   */
+  couponCode?: string | string[];
+  /** Every applied coupon code (newer orders) — preferred source for the EBS promotion codes */
+  couponCodes?: string[];
+  /**
+   * Coupon source(s), index-aligned with couponCode when both are arrays
+   * ('auto' marks a storefront verified coupon). Not consumed by the EBS sync;
+   * declared so the order shape is complete.
+   */
+  couponSource?: string | string[];
   /** Locked-in estimate snapshot — present when estimateToken was provided at order creation */
   estimates?: StoredOrderEstimates;
   /** Service-managed key/value pairs; only syncedAt is written by this action */

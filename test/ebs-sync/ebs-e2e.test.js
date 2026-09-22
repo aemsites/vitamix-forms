@@ -868,6 +868,64 @@ describe('ebs-sync e2e', () => {
     });
   });
 
+  // ── Coupon promotions & salesperson attribution ─────────────────────────
+
+  describe('coupon promotions and salesperson attribution', () => {
+    const journal = loadJournal('journal-cc-approved.ndjson');
+
+    // Base order with no coupon fields and no estimate discounts, so each test
+    // controls the coupon shape it exercises.
+    const orderWith = (overrides) => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      delete order.estimates.discounts;
+      return { ...order, ...overrides };
+    };
+
+    test('joins multiple applied coupon codes into one comma-separated PromotionCode', async () => {
+      const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', 'IDME20'] }), journal);
+      expect(xml).toContain('<ns2:PromotionCode>SAVE10,IDME20</ns2:PromotionCode>');
+    });
+
+    test('accepts a single coupon code string', async () => {
+      const xml = await buildXml(orderWith({ couponCode: 'SAVE10' }), journal);
+      expect(xml).toContain('<ns2:PromotionCode>SAVE10</ns2:PromotionCode>');
+    });
+
+    test('emits no PromotionCode or SalesPersonId when there are no coupons', async () => {
+      const xml = await buildXml(orderWith({}), journal);
+      expect(xml).not.toContain('<ns2:PromotionCode>');
+      expect(xml).not.toContain('<ns2:SalesPersonId>');
+    });
+
+    test('sets SalesPersonId to the first CJ-prefixed code among several', async () => {
+      const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', '06-AFF1', '06-AFF2'] }), journal);
+      expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
+      // every applied code is still recorded as a promotion
+      expect(xml).toContain('<ns2:PromotionCode>SAVE10,06-AFF1,06-AFF2</ns2:PromotionCode>');
+    });
+
+    test('omits SalesPersonId when no code matches the CJ prefix', async () => {
+      const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', 'IDME20'] }), journal);
+      expect(xml).not.toContain('<ns2:SalesPersonId>');
+    });
+
+    test('falls back to estimates.discounts for orders without the coupon fields', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.estimates.discounts = [
+        { id: 'coupon:06-LEGACY', amount: 25, source: 'coupon' },
+        { id: 'free-shipping', amount: 0, freeShipping: true, source: 'pricing_rule' },
+      ];
+      const xml = await buildXml(order, journal);
+      expect(xml).toContain('<ns2:PromotionCode>06-LEGACY</ns2:PromotionCode>');
+      expect(xml).toContain('<ns2:SalesPersonId>06-LEGACY</ns2:SalesPersonId>');
+    });
+
+    test('XML-escapes coupon codes', async () => {
+      const xml = await buildXml(orderWith({ couponCodes: ['A&B'] }), journal);
+      expect(xml).toContain('<ns2:PromotionCode>A&amp;B</ns2:PromotionCode>');
+    });
+  });
+
   // ── Warranty VitamixProductId lookup ────────────────────────────────────
 
   describe('warranty vitamixProductId mapping', () => {
