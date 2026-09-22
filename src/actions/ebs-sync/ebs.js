@@ -862,34 +862,54 @@ function buildGiftMessageXml(message) {
 const CJ_COUPON_PREFIX = '06-';
 
 /**
- * Extract the applied coupon code from order.estimates.discounts.
- * The commerce API stores coupon discounts with id="coupon:{code}".
+ * Normalize a coupon value that may be a single code, an array of codes, or
+ * absent into an ordered, de-duplicated array of non-empty code strings.
  */
-function getAppliedCouponCode(order) {
-  const entry = (order.estimates?.discounts ?? []).find((d) => d.id?.startsWith('coupon:'));
-  return entry ? entry.id.slice('coupon:'.length) : '';
+function toCouponCodeArray(value) {
+  const list = Array.isArray(value) ? value : (value == null ? [] : [value]);
+  const seen = new Set();
+  const codes = [];
+  list.forEach((raw) => {
+    const code = String(raw ?? '').trim();
+    if (!code || seen.has(code)) return;
+    seen.add(code);
+    codes.push(code);
+  });
+  return codes;
 }
 
 /**
- * If the applied coupon is a CJ affiliate coupon, return it as the SalesPersonId.
- * Returns empty string otherwise.
+ * The coupon codes applied to an order, in the order they were applied.
+ *
+ * Reads the stored order's couponCodes[] / couponCode fields (either of which
+ * may be an array now that an order can carry multiple coupons). Orders that
+ * predate those fields fall back to codes derived from estimates.discounts —
+ * the commerce API stores coupon discounts with id="coupon:{code}".
  */
-function resolveSalesPersonId(order) {
-  const code = getAppliedCouponCode(order);
-  return code.startsWith(CJ_COUPON_PREFIX) ? code : '';
-}
-
-/**
- * Emit a PromotionCode element for each coupon discount on the order.
- */
-function buildPromotionsXml(order) {
+function getAppliedCouponCodes(order) {
+  const fromOrder = toCouponCodeArray(order.couponCodes ?? order.couponCode);
+  if (fromOrder.length) return fromOrder;
   return (order.estimates?.discounts ?? [])
     .filter((d) => d.id?.startsWith('coupon:'))
-    .map((d) => {
-      const code = escapeXml(d.id.slice('coupon:'.length));
-      return `<ns2:PromotionCode>${code}</ns2:PromotionCode>`;
-    })
-    .join('\n        ');
+    .map((d) => d.id.slice('coupon:'.length));
+}
+
+/**
+ * If any applied coupon is a CJ affiliate coupon, return the first such code as
+ * the SalesPersonId. Returns empty string otherwise.
+ */
+function resolveSalesPersonId(order) {
+  return getAppliedCouponCodes(order).find((code) => code.startsWith(CJ_COUPON_PREFIX)) || '';
+}
+
+/**
+ * Emit a single order-level PromotionCode element carrying every applied coupon
+ * code, comma-joined. Emits nothing when the order has no coupons.
+ */
+function buildPromotionsXml(order) {
+  const codes = getAppliedCouponCodes(order);
+  if (!codes.length) return '';
+  return `<ns2:PromotionCode>${escapeXml(codes.join(','))}</ns2:PromotionCode>`;
 }
 
 // ---------------------------------------------------------------------------
