@@ -1,3 +1,10 @@
+## [1.5.2](https://github.com/aemsites/vitamix-forms/compare/v1.5.1...v1.5.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **ebs-sync:** handle multi-coupon order shapes ([3406f87](https://github.com/aemsites/vitamix-forms/commit/3406f87913b09ff7d87a14d12f82df722b735fc9))
+
 ## [1.5.1](https://github.com/aemsites/vitamix-forms/compare/v1.5.0...v1.5.1) (2026-09-11)
 
 
