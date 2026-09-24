@@ -157,8 +157,8 @@ export async function updateOrderCustom(params, orderId, custom) {
 /**
  * Log an order-sync operation to the commerce API operations log.
  *
- * Fire-and-forget from the caller's perspective — errors are caught and
- * logged so that a logging failure never blocks the sync itself.
+ * Throws on network failure or a non-2xx response. Callers are expected to
+ * catch and log so that a logging failure never blocks the sync itself.
  *
  * @param {object} params
  * @param {{ action: string, status: number, error?: string, response?: string }} payload
@@ -167,11 +167,16 @@ export async function logOrderSync(params, payload) {
   const { EDGE_COMMERCE_API_BASE, ORG, SITE } = params;
   const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/operations-log`;
 
-  await fetch(url, {
+  const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`Operations log API ${res.status}: ${body}`);
+  }
 }
 
 /**
