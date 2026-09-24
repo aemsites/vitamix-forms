@@ -45,7 +45,14 @@ async function client() {
  *   processedCount: number,
  *   failedCount: number,
  *   status: 'idle' | 'running' | 'error',
+ *   pendingCustomUpdates: Record<string, PendingCustomUpdate>,
  * }} SyncState
+ */
+
+/**
+ * An order that was accepted by EBS but whose `custom.syncedAt` patch failed.
+ * On later runs we retry only the patch and never send the order to EBS again.
+ * @typedef {{ syncedAt: string, failedAt: string, error: string }} PendingCustomUpdate
  */
 
 /** @type {SyncState} */
@@ -57,13 +64,14 @@ const DEFAULT_STATE = {
   processedCount: 0,
   failedCount: 0,
   status: 'idle',
+  pendingCustomUpdates: {},
 };
 
 /** Load the current sync state, returning defaults if none exists. */
 export async function loadState() {
   const c = await client();
   const result = await c.get(STATE_KEY);
-  if (!result) return { ...DEFAULT_STATE };
+  if (!result) return { ...DEFAULT_STATE, pendingCustomUpdates: {} };
 
   let state = { ...DEFAULT_STATE };
   try {
@@ -71,6 +79,8 @@ export async function loadState() {
   } catch {
     console.log(`[ebs-sync] State already loaded (invalid JSON: ${result.value})`);
   }
+  // Never hand out the shared DEFAULT_STATE object — callers mutate it.
+  state.pendingCustomUpdates = { ...(state.pendingCustomUpdates || {}) };
   return state;
 }
 
