@@ -33,17 +33,21 @@ function parseFeed(xml) {
   const raw = container.item ?? [];
   const arr = Array.isArray(raw) ? raw : [raw];
   const fields = new Set();
-  const byTitle = new Map();
+  // Keyed by link: titles are intentionally rewritten ("Vitamix" prefix,
+  // parent + color for variants), so they no longer match the reference.
+  const byLink = new Map();
+  const ids = new Set();
   for (const it of arr) {
     const o = {};
     for (const [k, v] of Object.entries(it)) {
       o[k] = Array.isArray(v) ? v.map(norm) : norm(v);
       fields.add(k);
     }
-    byTitle.set(norm(o.title), o);
+    if (!byLink.has(norm(o.link))) byLink.set(norm(o.link), o);
+    ids.add(norm(o.id));
   }
   return {
-    root, namespaced, count: arr.length, fields, byTitle,
+    root, namespaced, count: arr.length, fields, byLink, ids,
   };
 }
 
@@ -63,7 +67,10 @@ const SHARED_FIELDS = [
   'id', 'title', 'description', 'link', 'image_link',
   'condition', 'availability', 'price', 'brand', 'gtin', 'identifier_exists',
 ];
-const SAMPLE = 'Under Blade Scraper';
+const SAMPLE = 'https://www.vitamix.com/us/en_us/shop/under-blade-scraper';
+// The reference google feed ids items by product name, so same-named items
+// (e.g. two "A2300" rows) share an id and are deduplicated — one item per id.
+const SOURCE_IDS = parseFeed(GOOGLE_SOURCE).ids.size;
 
 afterEach(() => jest.restoreAllMocks());
 
@@ -76,8 +83,9 @@ describe.each([
   const exp = parseFeed(fixture(expectedFile));
   beforeAll(async () => { mine = await outputFor(provider); });
 
-  test('produces one item per source product', () => {
-    expect(mine.count).toBe(exp.count);
+  test('produces one item per source product id', () => {
+    expect(exp.count).toBe(180);
+    expect(mine.count).toBe(SOURCE_IDS);
   });
 
   test('carries the shared merchant fields', () => {
@@ -85,7 +93,7 @@ describe.each([
   });
 
   test('preserves gtin verbatim (leading zeros intact)', () => {
-    expect(mine.byTitle.get(SAMPLE).gtin).toBe(exp.byTitle.get(SAMPLE).gtin);
+    expect(mine.byLink.get(SAMPLE).gtin).toBe(exp.byLink.get(SAMPLE).gtin);
   });
 
   test('emits non-namespaced tags (meta/pinterest feed omits g:)', () => {
@@ -96,13 +104,13 @@ describe.each([
     // Source-driven: the google fixture uses the name as id ("Under Blade
     // Scraper") vs the reference SKU ("064584"). The live helix feed already
     // sets id = sku, so this resolves in production.
-    expect(mine.byTitle.get(SAMPLE).id).toBe(exp.byTitle.get(SAMPLE).id);
+    expect(mine.byLink.get(SAMPLE).id).toBe(exp.byLink.get(SAMPLE).id);
   });
 
   test.failing('carries product_type (Pinterest requires it)', () => {
     // Empty here only because the google source fixture lacks product_type;
     // resolved once the indexer populates it (helix-product-indexer#41).
-    expect(mine.byTitle.get(SAMPLE).product_type).toBe(exp.byTitle.get(SAMPLE).product_type);
+    expect(mine.byLink.get(SAMPLE).product_type).toBe(exp.byLink.get(SAMPLE).product_type);
   });
 });
 
@@ -111,8 +119,9 @@ describe('conformance: cj', () => {
   const exp = parseFeed(fixture('expected-cj.xml'));
   beforeAll(async () => { mine = await outputFor('cj'); });
 
-  test('produces one item per source product', () => {
-    expect(mine.count).toBe(exp.count);
+  test('produces one item per source product id', () => {
+    expect(exp.count).toBe(180);
+    expect(mine.count).toBe(SOURCE_IDS);
   });
 
   test('carries the shared merchant fields', () => {
@@ -133,7 +142,7 @@ describe('conformance: cj', () => {
 
   test.failing('id is the SKU, not the product name', () => {
     // Source-driven — see the meta/pinterest note; resolves with the helix feed.
-    expect(mine.byTitle.get(SAMPLE).id).toBe(exp.byTitle.get(SAMPLE).id);
+    expect(mine.byLink.get(SAMPLE).id).toBe(exp.byLink.get(SAMPLE).id);
   });
 });
 
@@ -143,14 +152,14 @@ describe('benign differences (documented, not bugs)', () => {
   beforeAll(async () => { mine = await outputFor('pinterest'); });
 
   test('description is fuller than the reference (name-only) — an improvement', () => {
-    const m = mine.byTitle.get(SAMPLE).description;
-    const e = exp.byTitle.get(SAMPLE).description;
+    const m = mine.byLink.get(SAMPLE).description;
+    const e = exp.byLink.get(SAMPLE).description;
     expect(m.length).toBeGreaterThan(e.length);
   });
 
   test('mpn is populated where the reference left it empty — an improvement', () => {
-    expect(mine.byTitle.get(SAMPLE).mpn).not.toBe('');
-    expect(exp.byTitle.get(SAMPLE).mpn).toBe('');
+    expect(mine.byLink.get(SAMPLE).mpn).not.toBe('');
+    expect(exp.byLink.get(SAMPLE).mpn).toBe('');
   });
 });
 
@@ -164,8 +173,9 @@ describe('unsupported providers (gaps to close)', () => {
 
 describe('locale plumbing', () => {
   test('cj honors a non-default locale (ca/en_us)', async () => {
-    const mine = await outputFor('cj', fixture('expected-google-ca.xml'));
-    const exp = parseFeed(fixture('expected-cj-ca.xml'));
-    expect(mine.count).toBe(exp.count);
+    const source = fixture('expected-google-ca.xml');
+    const mine = await outputFor('cj', source);
+    expect(mine.count).toBe(parseFeed(source).ids.size);
+    expect(mine.byLink.has('https://www.vitamix.com/ca/en_us/shop/under-blade-scraper')).toBe(true);
   });
 });

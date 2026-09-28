@@ -205,6 +205,8 @@ application:
               LOG_LEVEL: $LOG_LEVEL
               # base host serving the Merchant Center feed per locale
               FEED_SITE_BASE: $FEED_SITE_BASE
+              # host serving authored PDP content, for missing descriptions
+              FEED_CONTENT_BASE: $FEED_CONTENT_BASE
               # published DA sheet with the Bazaarvoice category taxonomy
               BV_CATEGORY_SHEET_URL: $BV_CATEGORY_SHEET_URL
               # optional bearer/token gate for the feed URLs handed to providers
