@@ -5,8 +5,9 @@
  * Mapping: docs/vitamix-openai-ads-feed-mapping.xlsx (GMC -> OpenAI, near 1:1).
  *
  * Columns match docs/vitamix-openai-ads-feed-SAMPLE.csv exactly. Most fields are
- * a direct copy of a GMC attribute; the rest are static launch config or derived
- * (availability remap, item_group_title via a parent-title lookup).
+ * a direct copy of a (prepared, see ../prepare.js) GMC attribute; the rest are
+ * static launch config or derived (availability remap, variant grouping, sale
+ * window split).
  *
  * Pinned to us/en_us — this is a US-only feed (target_countries/store_country=US).
  */
@@ -14,11 +15,15 @@
 const COLUMNS = [
   'item_id', 'title', 'description', 'url', 'brand', 'image_url', 'price',
   'availability', 'seller_name', 'seller_url', 'return_policy', 'target_countries',
-  'store_country', 'is_eligible_search', 'is_eligible_checkout', 'is_eligible_ads',
+  'store_country', 'is_eligible_search', 'is_eligible_checkout', 'is_ads_eligible',
   'gtin', 'mpn', 'product_category', 'condition', 'color', 'sale_price',
   'sale_price_start_date', 'sale_price_end_date', 'additional_image_urls',
-  'item_group_title',
+  'group_id', 'listing_has_variations', 'variant_dict',
 ];
+
+// UTF-8 byte order mark: lets spreadsheet tools (Excel) detect the encoding, so
+// non-ASCII text (e.g. accents, curly quotes) isn't shown as "Ã©"/"Â®" mojibake.
+const BOM = '\uFEFF';
 
 // Static launch config (see mapping "static" rows). Constants for now — promote
 // to env vars if ops needs to change them without a deploy.
@@ -29,7 +34,7 @@ const TARGET_COUNTRIES = 'US';
 const STORE_COUNTRY = 'US';
 const IS_ELIGIBLE_SEARCH = 'true';
 const IS_ELIGIBLE_CHECKOUT = 'false'; // no in-chat checkout in beta
-const IS_ELIGIBLE_ADS = 'true';
+const IS_ADS_ELIGIBLE = 'true';
 
 // GMC availability -> OpenAI availability (only 'preorder' differs).
 const AVAILABILITY = {
@@ -51,17 +56,13 @@ const csvRow = (cells) => cells.map(csvCell).join(',');
  * @returns {string[]} data rows
  */
 function buildRows(feed) {
-  const { items } = feed;
-  const titleBySku = new Map(items.map((it) => [String(it.id), it.title]));
-  // Parents are skus referenced by a variant's item_group_id.
-  const parentSkus = new Set(
-    items.map((it) => it.item_group_id).filter(Boolean).map(String),
-  );
-
-  return items.map((it) => {
-    // Group variants with their parent, and parents with themselves, by title.
-    const groupSku = it.item_group_id
-      || (parentSkus.has(String(it.id)) ? it.id : undefined);
+  return feed.items.map((it) => {
+    // Variants (simples of a configurable) share the parent sku as group_id and
+    // are distinguished by color. Standalone items and bundles carry no group.
+    const isVariant = Boolean(it.item_group_id) && String(it.item_group_id) !== String(it.id);
+    const variantDict = isVariant && it.color ? JSON.stringify({ color: it.color }) : '';
+    // GMC sale_price_effective_date is "start/end" (ISO 8601).
+    const [saleStart = '', saleEnd = ''] = String(it.sale_price_effective_date || '').split('/');
     const additional = Array.isArray(it.additional_image_link)
       ? it.additional_image_link.join(',')
       : (it.additional_image_link || '');
@@ -82,17 +83,19 @@ function buildRows(feed) {
       STORE_COUNTRY,
       IS_ELIGIBLE_SEARCH,
       IS_ELIGIBLE_CHECKOUT,
-      IS_ELIGIBLE_ADS,
+      IS_ADS_ELIGIBLE,
       it.gtin,
       it.mpn,
       it.google_product_category || it.product_type, // product_category
       it.condition,
       it.color,
       it.sale_price,
-      '', // sale_price_start_date — GMC feed carries no effective-date range yet
-      '', // sale_price_end_date
+      saleStart, // sale_price_start_date
+      saleEnd, // sale_price_end_date
       additional, // additional_image_urls (comma-joined)
-      groupSku ? (titleBySku.get(String(groupSku)) || '') : '', // item_group_title
+      isVariant ? it.item_group_id : '', // group_id
+      isVariant ? 'true' : '', // listing_has_variations
+      variantDict, // variant_dict (JSON)
     ]);
   });
 }
@@ -105,5 +108,5 @@ export default {
    * @param {{ items: Record<string, unknown>[] }} feed
    * @returns {Promise<string>}
    */
-  build: async (ctx, feed) => [csvRow(COLUMNS), ...buildRows(feed)].join('\n'),
+  build: async (ctx, feed) => BOM + [csvRow(COLUMNS), ...buildRows(feed)].join('\n'),
 };

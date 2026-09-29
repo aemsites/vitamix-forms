@@ -14,6 +14,7 @@
 
 import { Core } from '@adobe/aio-sdk';
 import { fetchGmcFeed } from './source.js';
+import { prepareFeed } from './prepare.js';
 import { buildFeed } from './serialize.js';
 import { PROVIDERS } from './providers/index.js';
 import { errorInfo } from '../../utils.js';
@@ -86,13 +87,18 @@ export async function main(params) {
   const ctx = {
     env: {
       FEED_SITE_BASE: httpUrl(params.FEED_SITE_BASE) || DEFAULT_FEED_SITE_BASE,
+      // authored PDP content, for descriptions missing from the source feed
+      FEED_CONTENT_BASE: httpUrl(params.FEED_CONTENT_BASE),
       BV_CATEGORY_SHEET_URL: httpUrl(params.BV_CATEGORY_SHEET_URL),
     },
     log,
   };
 
   try {
-    const feed = await fetchGmcFeed(ctx, locale);
+    const source = await fetchGmcFeed(ctx, locale);
+    // Shared catalog cleanup (product selection, titles, descriptions). A `raw`
+    // provider (bazaarvoice, pending review) receives the source feed as-is.
+    const feed = serializer.raw ? source : await prepareFeed(ctx, source, locale);
     // Custom-schema providers (e.g. bazaarvoice) supply their own async builder;
     // the rest use the shared field/format serializer.
     const body = serializer.build

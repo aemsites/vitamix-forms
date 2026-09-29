@@ -9,7 +9,8 @@ import openai from './openai.js';
  * namespaced, fields, transformItem }` descriptor serialized by buildFeed) or
  * "custom" (supplies an async `build(ctx, feed, locale)` — e.g. bazaarvoice and
  * openai, whose formats differ from the Google shapes). A provider may also pin
- * `locale` (openai is US-only).
+ * `locale` (openai is US-only), and may set `raw: true` to skip the shared
+ * catalog preparation (../prepare.js) and receive the source feed as-is.
  *
  * Not included:
  * - google: no separate feed — Google Ads serves from the linked Merchant

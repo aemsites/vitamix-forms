@@ -58,6 +58,23 @@ single endpoint. The source is the (enriched) Google Merchant Center feed
 published per locale; each provider gets it in the format it expects. This is a
 **pull model** — providers fetch the URL on their own schedule.
 
+Before serializing, every provider except Bazaarvoice gets the same catalog
+preparation (`src/actions/feeds/prepare.js`), matching the legacy Magento feeds:
+
+- **Products:** simple and bundle products only. Configurable parent rows (the
+  PDP-level record whose variants are simples) are dropped — their simple
+  variants are sent, grouped by `item_group_id`. `-VB` rows (duplicate simples
+  Magento creates as bundle options) are dropped; the bundle itself is kept.
+  Duplicate ids are collapsed.
+- **Titles:** prefixed with "Vitamix" (unless present); variant titles are
+  rebuilt as `<parent title> - <color>`; sanitized like the legacy feeds (ASCII
+  letters, digits, space, `-`, `+`, plus `.`; accents transliterated).
+- **Descriptions:** plain text without ®/™, ASCII punctuation. When missing (or
+  just a copy of the title), fall back to the parent's description, then the
+  first paragraph of the authored PDP content
+  (`{FEED_CONTENT_BASE}<pdp path>.plain.html`), then "Description coming soon."
+  ("Description à venir." for `fr_*` locales).
+
 Supported providers:
 
 - **`meta`** — Facebook/Instagram (Advantage+/DPA). Non-namespaced `<rss>` feed
@@ -68,10 +85,14 @@ Supported providers:
   `availability` (`in_stock`); replaces the current SFTP drop.
 - **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
   from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
-  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`).
-- **`openai`** — OpenAI commerce "ads" feed (**CSV, US-only**). Columns match the
-  spec/sample (`docs/vitamix-openai-ads-feed-*`), mapped ~1:1 from GMC with a few
-  static launch fields and `preorder`→`pre_order`. Pinned to `us/en_us`.
+  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`). Built
+  from the unprepared source feed (pending review of the shared preparation).
+- **`openai`** — OpenAI commerce "ads" feed (**CSV, US-only**, UTF-8 with BOM so
+  spreadsheet tools detect the encoding). Columns match the sample
+  (`docs/vitamix-openai-ads-feed-SAMPLE.csv`), mapped ~1:1 from GMC with a few
+  static launch fields, `preorder`→`pre_order`, variant grouping (`group_id`,
+  `listing_has_variations`, `variant_dict`) and the sale window split from
+  `sale_price_effective_date`. Pinned to `us/en_us`.
 
 Not served here: **Google Ads** — no separate feed; it serves from the linked
 Merchant Center account (i.e. the source GMC feed itself).
@@ -255,6 +276,7 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 | `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
 | `LOG_LEVEL` | Logging level | `info` |
 | `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://www.vitamix.com` |
+| `FEED_CONTENT_BASE` | Host serving authored PDP content (`.plain.html`), used for missing descriptions | `https://main--vitamix--aemsites.aem.live` |
 | `FEEDS_TOKEN` | Optional bearer/token gate for the feed URLs. When unset, feeds are public. | unset (public) |
 
 ## Setup (first-time per environment)
