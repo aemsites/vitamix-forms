@@ -6,8 +6,8 @@
  *
  * All payment data is sourced from the payment_completed journal entry plus the
  * fraud_evaluated entry (for Chase SafeTech/Forter state determination).
- * order.custom is never read for field data — only the syncedAt flag set by
- * sync.js is stored there.
+ * order.custom is read only for affiliateCode (SalesPersonId fallback); the
+ * syncedAt flag set by sync.js is also stored there.
  *
  * ── Address field names (OrderAddress interface) ─────────────────────────────
  *   address1, address2, state, zip  (NOT street/region/postalCode)
@@ -895,11 +895,17 @@ function getAppliedCouponCodes(order) {
 }
 
 /**
- * If any applied coupon is a CJ affiliate coupon, return the first such code as
- * the SalesPersonId. Returns empty string otherwise.
+ * Resolve the SalesPersonId from CJ affiliate coupon codes.
+ *
+ * Prefers the first applied coupon with the CJ prefix. Falls back to the
+ * order's custom.affiliateCode, which is recorded even when the affiliate
+ * coupon was not applied to the order. Returns empty string otherwise.
  */
 function resolveSalesPersonId(order) {
-  return getAppliedCouponCodes(order).find((code) => code.startsWith(CJ_COUPON_PREFIX)) || '';
+  const applied = getAppliedCouponCodes(order).find((code) => code.startsWith(CJ_COUPON_PREFIX));
+  if (applied) return applied;
+  const affiliateCode = String(order.custom?.affiliateCode ?? '').trim();
+  return affiliateCode.startsWith(CJ_COUPON_PREFIX) ? affiliateCode : '';
 }
 
 /**

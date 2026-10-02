@@ -2,6 +2,8 @@
  * Core EBS sync orchestration.
  *
  * Each scheduled invocation:
+ *   0. Retries any pending custom.syncedAt patches left over from earlier runs
+ *      (orders already accepted by EBS). These are never sent to EBS again.
  *   1. Acquires a distributed lock (bails if already held)
  *   2. Loads the persisted `since` cursor from state
  *   3. Reads the global journal and filters to terminal events
@@ -11,7 +13,10 @@
  *        b. Skips cancelled orders (including fraud-declined) — no EBS sync needed
  *        c. For payment_completed: queries complete per-order journal
  *        d. Calls syncOrderToEbs(ctx, params, order, orderJournal), retrying up to MAX_RETRIES
- *        e. On success: patches custom.syncedAt and clears custom.syncError to null
+ *        e. On success: patches custom.syncedAt and clears custom.syncError to null,
+ *           retrying the patch up to CUSTOM_UPDATE_RETRIES times. If it still fails,
+ *           the order is saved in state.pendingCustomUpdates so later runs retry
+ *           only the patch and don't send the order to EBS again.
  *        f. On max-retries exhausted: patches custom.syncError with a short error
  *           code, records the error, halts without advancing cursor
  *   5. Checks a 9.5-minute deadline before each order
@@ -28,6 +33,8 @@ import { errorInfo } from '../../utils.js';
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
 const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
+const CUSTOM_UPDATE_RETRIES = 3;
+const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
 
 /**
  * Run the EBS sync job.
@@ -67,6 +74,7 @@ export async function run(params) {
     processedOrders: [],
     lastProcessedOrderId: state.lastProcessedOrderId,
     lastError: null,
+    pendingCustomUpdates: [],
     halted: false,
     haltReason: null,
     startedAt: new Date().toISOString(),
@@ -74,6 +82,9 @@ export async function run(params) {
   };
 
   try {
+    // ── 0. Retry pending custom updates from previous runs ───────────
+    await flushPendingCustomUpdates(params, state, log);
+
     // ── 1. Fetch journal entries and find the batch boundary ────────────
     const { entries, until: batchUntil } = await getJournalEntries(params, state.since, log, params.untilOverride);
     log.info(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'} until ${batchUntil}`);
@@ -116,6 +127,14 @@ export async function run(params) {
         summary.halted = true;
         summary.haltReason = 'deadline';
         break;
+      }
+
+      // ── Already accepted by EBS, custom patch still pending ─────────
+      if (state.pendingCustomUpdates[orderId]) {
+        log.info(
+          `[ebs-sync] Order ${orderId} already sent to EBS (custom update pending) — skipping.`,
+        );
+        continue;
       }
 
       // ── 3. Fetch the order ──────────────────────────────────────────
@@ -167,29 +186,12 @@ export async function run(params) {
 
       // ── 5. Sync to EBS (with retries) ──────────────────────────────
       let lastErr = null;
-      let synced = false;
+      let ebsResult = null;
 
       for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
         try {
-          const { status, xml } = await syncOrderToEbs(ctx, params, order, orderJournal);
-
-          await logOrderSync(params, { action: 'order-sync', id: orderId, status, xml }).catch((logErr) => {
-            log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}: ${logErr.message}`);
-          });
-
-          const syncedAt = new Date().toISOString();
-          await updateOrderCustom(params, orderId, { syncedAt, syncError: null });
-
-          state.lastProcessedOrderId = orderId;
-          state.processedCount = (state.processedCount || 0) + 1;
-          state.lastError = null;
-
-          summary.processedOrders.push(orderId);
-          summary.lastProcessedOrderId = orderId;
-          summary.lastError = null;
-
-          log.info(`[ebs-sync] Order ${orderId} synced on attempt ${attempt}.`);
-          synced = true;
+          ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal);
+          log.info(`[ebs-sync] Order ${orderId} synced to EBS on attempt ${attempt}.`);
           break;
         } catch (err) {
           lastErr = err;
@@ -224,7 +226,42 @@ export async function run(params) {
         }
       }
 
-      if (!synced) {
+      if (ebsResult) {
+        await logOrderSync(params, {
+          action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
+        }).catch((logErr) => {
+          log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
+        });
+
+        // EBS has the order now. From here on, never send it again. If the
+        // syncedAt patch fails, keep it in state and retry only the patch.
+        const syncedAt = new Date().toISOString();
+        const patchErr = await markOrderSynced(params, orderId, syncedAt, log);
+        if (patchErr) {
+          state.pendingCustomUpdates[orderId] = {
+            syncedAt,
+            failedAt: new Date().toISOString(),
+            error: patchErr.message,
+          };
+          summary.pendingCustomUpdates.push(orderId);
+          log.error(
+            `[ebs-sync] Order ${orderId} sent to EBS but custom update failed after ${CUSTOM_UPDATE_RETRIES} attempts — will retry the update on the next run.`,
+            errorInfo(patchErr),
+          );
+          // Persist now so a crash later in this run can't cause the order to be resent.
+          await saveState({ pendingCustomUpdates: state.pendingCustomUpdates }).catch((saveErr) => {
+            log.error(`[ebs-sync] Failed to persist pending custom update for ${orderId}`, errorInfo(saveErr));
+          });
+        }
+
+        state.lastProcessedOrderId = orderId;
+        state.processedCount = (state.processedCount || 0) + 1;
+        state.lastError = null;
+
+        summary.processedOrders.push(orderId);
+        summary.lastProcessedOrderId = orderId;
+        summary.lastError = null;
+      } else {
         const errStack = lastErr?.stack || String(lastErr);
         state.failedCount = (state.failedCount || 0) + 1;
         state.lastError = errStack;
@@ -269,6 +306,53 @@ export async function run(params) {
 
 function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/**
+ * Patch custom.syncedAt (and clear syncError), retrying up to CUSTOM_UPDATE_RETRIES times.
+ *
+ * @returns {Promise<Error | null>} null on success, or the last error
+ */
+async function markOrderSynced(params, orderId, syncedAt, log) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= CUSTOM_UPDATE_RETRIES; attempt++) {
+    try {
+      await updateOrderCustom(params, orderId, { syncedAt, syncError: null });
+      return null;
+    } catch (err) {
+      lastErr = err;
+      log.warn(
+        `[ebs-sync] Custom update for ${orderId} attempt ${attempt}/${CUSTOM_UPDATE_RETRIES} failed`,
+        errorInfo(err),
+      );
+      if (attempt < CUSTOM_UPDATE_RETRIES) {
+        await sleep(CUSTOM_UPDATE_BASE_DELAY_MS * attempt);
+      }
+    }
+  }
+  return lastErr;
+}
+
+/**
+ * Retry custom.syncedAt patches for orders that EBS accepted on an earlier run.
+ * Mutates state.pendingCustomUpdates: entries are removed once the patch succeeds.
+ */
+async function flushPendingCustomUpdates(params, state, log) {
+  const pending = Object.entries(state.pendingCustomUpdates);
+  if (pending.length === 0) return;
+
+  log.info(`[ebs-sync] Retrying ${pending.length} pending custom update(s): ${pending.map(([id]) => id).join(', ')}`);
+
+  for (const [orderId, entry] of pending) {
+    const patchErr = await markOrderSynced(params, orderId, entry.syncedAt, log);
+    if (patchErr) {
+      state.pendingCustomUpdates[orderId] = { ...entry, error: patchErr.message };
+      log.error(`[ebs-sync] Pending custom update for ${orderId} still failing`, errorInfo(patchErr));
+    } else {
+      delete state.pendingCustomUpdates[orderId];
+      log.info(`[ebs-sync] Pending custom update for ${orderId} succeeded (syncedAt=${entry.syncedAt}).`);
+    }
+  }
 }
 
 /**

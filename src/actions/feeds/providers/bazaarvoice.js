@@ -109,6 +109,10 @@ function productXml(item, productCategory, categories) {
 
 export default {
   contentType: 'application/xml',
+  // Receives the unprepared source feed (parents, -VB rows, source titles):
+  // BV families reviews by parent sku, so the shared product selection/cleanup
+  // in prepare.js is not applied until Vitamix confirms it for Bazaarvoice.
+  raw: true,
   /**
    * @param {{ env: Record<string, string>, log: Console }} ctx
    * @param {{ items: Record<string, unknown>[] }} feed

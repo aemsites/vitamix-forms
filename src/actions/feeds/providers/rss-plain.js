@@ -21,6 +21,10 @@ export const RSS_PLAIN_FIELDS = [
   'image_link',
   'product_type',
   'google_product_category',
+  // variant grouping: simples of the same configurable share item_group_id and
+  // differ by color
+  'item_group_id',
+  'color',
 ];
 
 const AVAILABILITY = {
