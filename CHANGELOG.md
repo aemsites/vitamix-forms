@@ -1,3 +1,16 @@
+# [1.6.0](https://github.com/aemsites/vitamix-forms/compare/v1.5.3...v1.6.0) (2026-10-02)
+
+
+### Bug Fixes
+
+* **ebs-sync:** retry custom update without resending to EBS; surface ops-log errors ([b3aa92e](https://github.com/aemsites/vitamix-forms/commit/b3aa92edbf66408f21b7dc4f9ae100d2f721cde9))
+
+
+### Features
+
+* **ebs-sync:** fall back to custom.affiliateCode for SalesPersonId ([d89c537](https://github.com/aemsites/vitamix-forms/commit/d89c53767246c1c6006e9b198c6f28cab6419d79))
+* **feeds:** align provider feeds with legacy Magento feed rules ([b828e50](https://github.com/aemsites/vitamix-forms/commit/b828e5024c0a9c746e8d6da32ea934a626e08f69))
+
 ## [1.5.3](https://github.com/aemsites/vitamix-forms/compare/v1.5.2...v1.5.3) (2026-09-22)
 
 
