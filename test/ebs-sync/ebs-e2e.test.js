@@ -920,6 +920,35 @@ describe('ebs-sync e2e', () => {
       expect(xml).toContain('<ns2:SalesPersonId>06-LEGACY</ns2:SalesPersonId>');
     });
 
+    test('falls back to custom.affiliateCode when no applied coupon has the CJ prefix', async () => {
+      const xml = await buildXml(orderWith({
+        couponCodes: ['SAVE10'],
+        custom: { affiliateCode: '06-AFF1' },
+      }), journal);
+      expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
+      // the affiliate code is not reported as an applied promotion
+      expect(xml).toContain('<ns2:PromotionCode>SAVE10</ns2:PromotionCode>');
+    });
+
+    test('uses custom.affiliateCode when the order has no coupons', async () => {
+      const xml = await buildXml(orderWith({ custom: { affiliateCode: '06-AFF1' } }), journal);
+      expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
+      expect(xml).not.toContain('<ns2:PromotionCode>');
+    });
+
+    test('prefers an applied CJ-prefixed coupon over custom.affiliateCode', async () => {
+      const xml = await buildXml(orderWith({
+        couponCodes: ['06-APPLIED'],
+        custom: { affiliateCode: '06-OTHER' },
+      }), journal);
+      expect(xml).toContain('<ns2:SalesPersonId>06-APPLIED</ns2:SalesPersonId>');
+    });
+
+    test('ignores custom.affiliateCode without the CJ prefix', async () => {
+      const xml = await buildXml(orderWith({ custom: { affiliateCode: 'SAVE10' } }), journal);
+      expect(xml).not.toContain('<ns2:SalesPersonId>');
+    });
+
     test('XML-escapes coupon codes', async () => {
       const xml = await buildXml(orderWith({ couponCodes: ['A&B'] }), journal);
       expect(xml).toContain('<ns2:PromotionCode>A&amp;B</ns2:PromotionCode>');
