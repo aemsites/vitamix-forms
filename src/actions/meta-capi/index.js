@@ -227,6 +227,7 @@ async function buildMetaRequestPayload(params, orderValue, log) {
     event_time: event.event_time,
     user_data_fields: Object.keys(userData),
   });
+  
   return { data: [event] };
 }
 
