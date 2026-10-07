@@ -221,7 +221,12 @@ async function buildMetaRequestPayload(params, orderValue, log) {
   if (Object.keys(userData).length > 0) {
     event.user_data = userData;
   }
-  log.info('Built Meta request payload:', { payload: event });
+  log.info('Built Meta request payload', {
+    event_name: event.event_name,
+    event_id: event.event_id,
+    event_time: event.event_time,
+    user_data_fields: Object.keys(userData),
+  });
   return { data: [event] };
 }
 
@@ -272,24 +277,20 @@ async function sendToMeta(payload, params, log) {
   const isUat = NAMESPACE?.includes('uat') || WORKSPACE_NAME?.toLowerCase() === 'uat';
 
   let metaPixelId = '';
-  let metaAccessToken = '';
 
   if (isProd) {
     metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID);
-    metaAccessToken = /** @type {string} */ (params.META_ACCESS_TOKEN_PROD);
   } else if (isStage) {
     metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID_STAGE);
-    metaAccessToken = /** @type {string} */ (params.META_ACCESS_TOKEN_STAGE);
   } else if (isUat) {
     metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID_UAT);
-    metaAccessToken = /** @type {string} */ (params.META_ACCESS_TOKEN_UAT);
   } else {
     metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID_UAT); // default to UAT if not prod or stage
-    metaAccessToken = /** @type {string} */ (params.META_ACCESS_TOKEN_UAT);
   }
 
   const pixelId = metaPixelId;
-  const accessToken = metaAccessToken;
+  // Env-specific token: deploy workflows map secrets.META_ACCESS_TOKEN_{STAGE,PROD} -> META_ACCESS_TOKEN.
+  const accessToken = /** @type {string} */ (params.META_ACCESS_TOKEN);
   const metaBaseUrl = /** @type {string} */ (params.META_BASE_URL) || 'https://graph.facebook.com';
   const apiVersion = /** @type {string} */ (params.META_API_VERSION) || 'v22.0';
 
