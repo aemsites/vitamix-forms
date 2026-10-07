@@ -221,7 +221,12 @@ async function buildMetaRequestPayload(params, orderValue, log) {
   if (Object.keys(userData).length > 0) {
     event.user_data = userData;
   }
-  log.info('Built Meta request payload:', { payload: event });
+  log.info('Built Meta request payload', {
+    event_name: event.event_name,
+    event_id: event.event_id,
+    event_time: event.event_time,
+    user_data_fields: Object.keys(userData),
+  });
   return { data: [event] };
 }
 
