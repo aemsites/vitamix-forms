@@ -66,18 +66,18 @@ export async function main(params) {
 
     for (const order of orderIds) {
       const orderValue = order.split('-').pop();
-      const claimed = await claimOrder(orderValue, runId);
+      const claimed = await claimOrder(orderValue, runId, log);
       if (!claimed) continue;
       try {
-        const payload = await buildMetaRequestPayload(params, order);
+        const payload = await buildMetaRequestPayload(params, order, log);
         const response = await sendToMeta(payload, params, log);
         log.info('Successfully fired Meta CAPI event for order', {
           orderIdProcessed: orderValue, metaStatus: response.status, metaResponse: response.body
         });
-        await completeOrder(orderValue);
+        await completeOrder(orderValue, log);
       } catch (error) {
         log.error('Error occurred while processing order', { orderId: orderValue, error: errorInfo(error) });
-        await failOrder(orderValue, error);
+        await failOrder(orderValue, error, log);
         continue;
       }
     }
@@ -99,13 +99,15 @@ export async function main(params) {
  * If the order is successfully claimed for processing, it will return true.
  * @param {*} orderId
  * @param {*} runId
+ * @param {*} log
  * @returns
  */
-async function claimOrder(orderId, runId) {
+async function claimOrder(orderId, runId, log) {
   const c = await client();
   const key = `meta-capi:${orderId}`;
   const existing = await c.get(key);
   if (existing && existing.value?.status === 'PROCESSED') {
+    log.info('Order already processed, skipping', { orderId });
     return false;
   }
 
@@ -114,6 +116,7 @@ async function claimOrder(orderId, runId) {
     existing.value?.status === 'PROCESSING' &&
     new Date(existing.value.lockedUntil) > new Date()
   ) {
+    log.info('Order has been locked, skipping', { orderId });
     return false;
   }
 
@@ -126,14 +129,16 @@ async function claimOrder(orderId, runId) {
     },
     { ttl: 600 }
   );
+  log.info('Order claimed for processing', { orderId });
   return true;
 }
 
 /**
  * Completes the processing of an order and updates its status.
  * @param {*} orderId
+ * @param {*} log
  */
-async function completeOrder(orderId) {
+async function completeOrder(orderId, log) {
   const state = await client();
 
   await state.put(`meta-capi:${orderId}`,
@@ -144,6 +149,7 @@ async function completeOrder(orderId) {
     },
     { ttl: -1 }
   );
+  log.info('Order processed', { orderId });
 }
 
 /**
@@ -152,8 +158,9 @@ async function completeOrder(orderId) {
  * The order will be marked as "FAILED" and the error message will be stored for debugging purposes.
  * @param {*} orderId
  * @param {*} error
+ * @param {*} log
  */
-async function failOrder(orderId, error) {
+async function failOrder(orderId, error, log) {
   const state = await client();
   await state.put(`meta-capi:${orderId}`,
     {
@@ -165,15 +172,17 @@ async function failOrder(orderId, error) {
     },
     { ttl: -1 }
   );
+  log.info('Order failed', { orderId });
 }
 
 /**
  * Builds the request payload for the Meta Conversion API.
  * @param {*} params
  * @param {*} orderValue
+ * @param {*} log
  * @returns
  */
-async function buildMetaRequestPayload(params, orderValue) {
+async function buildMetaRequestPayload(params, orderValue, log) {
   const lastDashIndex = orderValue.lastIndexOf('-');
   const actualTimestamp = orderValue.substring(0, lastDashIndex);
   const orderId = orderValue.substring(lastDashIndex + 1);
@@ -212,7 +221,14 @@ async function buildMetaRequestPayload(params, orderValue) {
   if (Object.keys(userData).length > 0) {
     event.user_data = userData;
   }
-
+  
+  log.info('Built Meta request payload', {
+    event_name: event.event_name,
+    event_id: event.event_id,
+    event_time: event.event_time,
+    user_data_fields: Object.keys(userData),
+  });
+  
   return { data: [event] };
 }
 
@@ -250,6 +266,7 @@ function normalizeCustomData(customData) {
  * Sends the payload to the Meta Conversion API.
  * @param {Record<string, unknown>} payload
  * @param {Record<string, unknown>} params
+ * @param {*} log
  * @param {ReturnType<typeof import('@adobe/aio-sdk').Core.Logger>} log
  * @returns {Promise<{ status: number, body: Record<string, unknown> }>}
  */
@@ -264,24 +281,25 @@ async function sendToMeta(payload, params, log) {
   let metaPixelId = '';
 
   if (isProd) {
-    metaPixelId = /** @type {string} */ (params.META_PIXEL_ID);
+    metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID);
   } else if (isStage) {
-    metaPixelId = /** @type {string} */ (params.META_PIXEL_ID_STAGE);
+    metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID_STAGE);
   } else if (isUat) {
-    metaPixelId = /** @type {string} */ (params.META_PIXEL_ID_UAT);
+    metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID_UAT);
   } else {
-    metaPixelId = /** @type {string} */ (params.META_PIXEL_ID_UAT); // default to UAT if not prod or stage
+    metaPixelId     = /** @type {string} */ (params.META_PIXEL_ID_UAT); // default to UAT if not prod or stage
   }
 
   const pixelId = metaPixelId;
-  const metaBaseUrl = /** @type {string} */ (params.META_BASE_URL) || 'https://graph.facebook.com';
+  // Env-specific token: deploy workflows map secrets.META_ACCESS_TOKEN_{STAGE,PROD} -> META_ACCESS_TOKEN.
   const accessToken = /** @type {string} */ (params.META_ACCESS_TOKEN);
+  const metaBaseUrl = /** @type {string} */ (params.META_BASE_URL) || 'https://graph.facebook.com';
   const apiVersion = /** @type {string} */ (params.META_API_VERSION) || 'v22.0';
 
   log.info(`Meta CAPI consumer: isProd=${isProd}, isStage=${isStage}, pixelId=${pixelId}, apiVersion=${apiVersion}`);
 
   if (!pixelId || !accessToken) {
-    throw new Error('Missing META_PIXEL_ID or META_ACCESS_TOKEN');
+    throw new Error('Missing Pixel id or Access Token for Meta CAPI. Please check your environment variables.');
   }
 
   const url = `${metaBaseUrl}/${apiVersion}/${pixelId}/events`;
