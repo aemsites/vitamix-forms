@@ -10,32 +10,42 @@ const escapeXml = (value) => String(value).replace(/[&<>"']/g, (c) => XML_ESCAPE
 
 /**
  * @param {string} tag
- * @param {unknown} value
+ * @param {unknown} value scalar, or an object of sub-attributes (e.g. shipping)
+ * @param {string} prefix tag namespace prefix, applied to sub-attributes too
+ * @param {string} indent
  * @returns {string}
  */
-const el = (tag, value) => {
+const el = (tag, value, prefix = '', indent = '    ') => {
   if (value === undefined || value === null || value === '') return '';
-  return `    <${tag}>${escapeXml(value)}</${tag}>\n`;
+  if (typeof value === 'object') {
+    const inner = Object.entries(value)
+      .flatMap(([k, v]) => (Array.isArray(v) ? v : [v])
+        .map((x) => el(`${prefix}${k}`, x, prefix, `${indent}  `)))
+      .join('');
+    return inner ? `${indent}<${tag}>\n${inner}${indent}</${tag}>\n` : '';
+  }
+  return `${indent}<${tag}>${escapeXml(value)}</${tag}>\n`;
 };
 
 /**
  * @param {Record<string, unknown>} item
- * @param {string[]} fields
+ * @param {string[] | undefined} fields the fields to emit, in order; when
+ *   omitted, every attribute on the item is emitted (pass-through)
  * @param {string} prefix tag namespace prefix ("g:" or "")
  * @returns {string}
  */
 function itemXml(item, fields, prefix) {
   let body = '';
-  for (const key of fields) {
+  for (const key of fields ?? Object.keys(item)) {
     const tag = `${prefix}${key}`;
     const value = item[key];
     if (Array.isArray(value)) {
-      body += value.map((v) => el(tag, v)).join('');
-    } else if (value && typeof value === 'object') {
-      // structured values (e.g. shipping) are not serialized in the scaffold
+      body += value.map((v) => el(tag, v, prefix)).join('');
+    } else if (value && typeof value === 'object' && fields) {
+      // structured values (e.g. shipping) are only emitted in pass-through mode
       continue;
     } else {
-      body += el(tag, value);
+      body += el(tag, value, prefix);
     }
   }
   return `  <item>\n${body}  </item>`;
@@ -44,10 +54,10 @@ function itemXml(item, fields, prefix) {
 /**
  * Serialize a canonical feed in a provider-specific shape.
  * @param {{ channel?: { title?: string, link?: string, description?: string }, items: Record<string, unknown>[] }} feed
- * @param {{ root: 'rss' | 'feed', namespaced: boolean, fields: string[] }} format
+ * @param {{ root: 'rss' | 'feed', namespaced: boolean, fields?: string[] }} format
  *   - `root`: RSS (`<rss><channel>`) or a bare `<feed>` root (Commission Junction)
  *   - `namespaced`: emit `g:`-prefixed item tags (Google) vs plain tags (the rest)
- *   - `fields`: the item fields to emit, in order
+ *   - `fields`: the item fields to emit, in order (omit to pass every field through)
  * @returns {string}
  */
 export function buildFeed({ channel = {}, items }, { root, namespaced, fields }) {

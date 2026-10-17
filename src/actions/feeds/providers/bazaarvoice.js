@@ -78,7 +78,11 @@ function categoryXml(id, cat, store) {
  */
 function productXml(item, productCategory, categories) {
   const id = String(item.id);
-  const categoryId = productCategory[id];
+  // The category sheet was lifted from the legacy BV feed, which listed
+  // configurable parents. The prepared feed drops those, so a variant missing
+  // from the sheet inherits its parent's (item_group_id) category.
+  const categoryId = productCategory[id]
+    ?? (item.item_group_id ? productCategory[String(item.item_group_id)] : undefined);
   // Only reference a category that actually exists in the feed — BV rejects a
   // CategoryExternalId with no matching <Category> (e.g. the dangling id 223).
   const hasCategory = categoryId && categories[categoryId];
@@ -109,10 +113,6 @@ function productXml(item, productCategory, categories) {
 
 export default {
   contentType: 'application/xml',
-  // Receives the unprepared source feed (parents, -VB rows, source titles):
-  // BV families reviews by parent sku, so the shared product selection/cleanup
-  // in prepare.js is not applied until Vitamix confirms it for Bazaarvoice.
-  raw: true,
   /**
    * @param {{ env: Record<string, string>, log: Console }} ctx
    * @param {{ items: Record<string, unknown>[] }} feed

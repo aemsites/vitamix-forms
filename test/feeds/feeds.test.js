@@ -169,6 +169,72 @@ describe('feeds action', () => {
     expect(res.body).not.toContain('google_product_category');
   });
 
+  test('raw=true skips preparation: parents, -VB rows and source titles kept', async () => {
+    mockFetch(SAMPLE_FEED);
+    const res = await GET({ provider: 'meta', raw: 'true' });
+    const ids = [...res.body.matchAll(/<id>([^<]+)<\/id>/g)].map((m) => m[1]);
+    expect(ids).toEqual(['064584', '7500', '056405-3898', 'VBNDP750', '071395-VB']);
+    expect(res.body).toContain('<title>7500-Black</title>');
+  });
+
+  test('merchant-center: namespaced rss passing every prepared field through', async () => {
+    const withExtras = SAMPLE_FEED.replace(
+      '<g:item_group_id>7500</g:item_group_id>',
+      `<g:item_group_id>7500</g:item_group_id>
+    <g:sale_price>499.95 USD</g:sale_price>
+    <g:sale_price_effective_date>2026-01-01T00:00:00Z/2026-02-01T00:00:00Z</g:sale_price_effective_date>
+    <g:additional_image_link>https://www.vitamix.com/img/black-2.jpg</g:additional_image_link>
+    <g:additional_image_link>https://www.vitamix.com/img/black-3.jpg</g:additional_image_link>
+    <g:shipping><g:country>US</g:country><g:price>0.00 USD</g:price></g:shipping>`,
+    );
+    mockFetch(withExtras);
+    const res = await GET({ provider: 'merchant-center', locale: 'us/en_us' });
+
+    expect(res.statusCode).toBe(200);
+    expect(res.headers['content-type']).toBe('application/xml');
+    expect(res.body).toContain('<rss version="2.0" xmlns:g="http://base.google.com/ns/1.0">');
+    expect(res.body).toContain('<title>Vitamix</title>'); // channel
+    // prepared: same product selection as every other provider
+    const ids = [...res.body.matchAll(/<g:id>([^<]+)<\/g:id>/g)].map((m) => m[1]);
+    expect(ids).toEqual(['064584', '056405-3898', 'VBNDP750']);
+    expect(res.body).toContain('<g:title>Vitamix 7500 - Black</g:title>');
+    // GMC availability form kept; fields not in the rss-plain list pass through
+    expect(res.body).toContain('<g:availability>in_stock</g:availability>');
+    expect(res.body).toContain(
+      '<g:sale_price_effective_date>2026-01-01T00:00:00Z/2026-02-01T00:00:00Z</g:sale_price_effective_date>',
+    );
+    expect(res.body).toContain('<g:additional_image_link>https://www.vitamix.com/img/black-3.jpg</g:additional_image_link>');
+    expect(res.body).toMatch(
+      /<g:shipping>\s*<g:country>US<\/g:country>\s*<g:price>0\.00 USD<\/g:price>\s*<\/g:shipping>/,
+    );
+    // no un-prefixed item tags
+    expect(res.body).not.toMatch(/<item>\s*<(?!g:)/);
+  });
+
+  test('every provider sends the same products', async () => {
+    const SHEET = { categories: { data: [] }, products: { data: [] } };
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => (
+      String(url).includes('bv-categories')
+        ? { ok: true, status: 200, json: async () => SHEET }
+        : { ok: true, status: 200, text: async () => SAMPLE_FEED }
+    ));
+    const idsOf = {
+      meta: (b) => [...b.matchAll(/<id>([^<]+)<\/id>/g)].map((m) => m[1]),
+      pinterest: (b) => [...b.matchAll(/<id>([^<]+)<\/id>/g)].map((m) => m[1]),
+      cj: (b) => [...b.matchAll(/<id>([^<]+)<\/id>/g)].map((m) => m[1]),
+      'merchant-center': (b) => [...b.matchAll(/<g:id>([^<]+)<\/g:id>/g)].map((m) => m[1]),
+      bazaarvoice: (b) => [...b.matchAll(/<Product>\s*<ExternalId>([^<]+)</g)].map((m) => m[1]),
+      openai: (b) => b.split('\n').slice(1).map((row) => row.split(',')[0]),
+    };
+    for (const [provider, ids] of Object.entries(idsOf)) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await GET({ provider, locale: 'us/en_us' });
+      expect(res.statusCode).toBe(200);
+      expect({ provider, ids: ids(res.body) })
+        .toEqual({ provider, ids: ['064584', '056405-3898', 'VBNDP750'] });
+    }
+  });
+
   test('returns 502 when the source feed is unavailable', async () => {
     mockFetch('', { ok: false, status: 404 });
     const res = await GET({ provider: 'meta' });
