@@ -1,3 +1,10 @@
+# [1.7.0](https://github.com/aemsites/vitamix-forms/compare/v1.6.0...v1.7.0) (2026-10-17)
+
+
+### Features
+
+* **feeds:** prepare every provider by default, add raw=true and merchant-center ([184b3b2](https://github.com/aemsites/vitamix-forms/commit/184b3b26bd3eb8f82ca88aa1ef529da1ce7ccc2a))
+
 # [1.6.0](https://github.com/aemsites/vitamix-forms/compare/v1.5.3...v1.6.0) (2026-10-02)
 
 
