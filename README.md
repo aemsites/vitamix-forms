@@ -58,8 +58,11 @@ single endpoint. The source is the (enriched) Google Merchant Center feed
 published per locale; each provider gets it in the format it expects. This is a
 **pull model** — providers fetch the URL on their own schedule.
 
-Before serializing, every provider except Bazaarvoice gets the same catalog
-preparation (`src/actions/feeds/prepare.js`), matching the legacy Magento feeds:
+Before serializing, every provider gets the same catalog preparation
+(`src/actions/feeds/prepare.js`), matching the legacy Magento feeds, so every
+feed carries the same products. Add `raw=true` to a feed URL to skip it and get
+the unprepared source feed in that provider's format (e.g. for side-by-side
+review):
 
 - **Products:** simple and bundle products only. Configurable parent rows (the
   PDP-level record whose variants are simples) are dropped — their simple
@@ -85,17 +88,23 @@ Supported providers:
   `availability` (`in_stock`); replaces the current SFTP drop.
 - **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
   from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
-  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`). Built
-  from the unprepared source feed (pending review of the shared preparation).
+  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`). A
+  variant missing from the category sheet inherits its parent's category (the
+  sheet was lifted from the legacy feed, which listed configurable parents).
+  `raw=true` serves the previous, unprepared Bazaarvoice feed.
 - **`openai`** — OpenAI commerce "ads" feed (**CSV, US-only**, UTF-8 with BOM so
   spreadsheet tools detect the encoding). Columns match the sample
   (`docs/vitamix-openai-ads-feed-SAMPLE.csv`), mapped ~1:1 from GMC with a few
   static launch fields, `preorder`→`pre_order`, variant grouping (`group_id`,
   `listing_has_variations`, `variant_dict`) and the sale window split from
   `sale_price_effective_date`. Pinned to `us/en_us`.
+- **`merchant-center`** — Google Merchant Center. Same `g:`-namespaced `<rss>`
+  shape as the source feed, with every source attribute passed through
+  (including repeated and structured values such as `shipping`), after the
+  shared preparation. Point Merchant Center at this URL instead of the source.
 
-Not served here: **Google Ads** — no separate feed; it serves from the linked
-Merchant Center account (i.e. the source GMC feed itself).
+Not served separately: **Google Ads** — it serves from the linked Merchant
+Center account (i.e. the `merchant-center` feed).
 
 ## APIs
 
@@ -162,7 +171,7 @@ deep links.
 ### Provider Feeds
 
 ```
-GET /feeds/feeds?provider=<meta|pinterest|cj|bazaarvoice|openai>&locale=<cc/ll_cc>
+GET /feeds/feeds?provider=<meta|pinterest|cj|bazaarvoice|openai|merchant-center>&locale=<cc/ll_cc>[&raw=true]
 ```
 
 Returns the catalog in the provider's format (`application/xml`, or `text/csv`
@@ -170,7 +179,8 @@ for `openai`). `locale` defaults to `us/en_us` and must match `cc/ll_cc` (e.g.
 `ca/en_us`); `openai` ignores it and always serves `us/en_us`. When
 `FEEDS_TOKEN` is set, requests must authenticate with `Authorization: Bearer
 <token>` or `?token=<token>` (the query form is for providers that only accept a
-plain URL). Responses are cacheable (`max-age=3600`).
+plain URL). Responses are cacheable (`max-age=3600`). `raw=true` skips the
+shared catalog preparation (see above).
 
 The per-provider feed URLs to hand to each platform (locale `us/en_us` shown;
 swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
@@ -184,6 +194,7 @@ swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
 | Commission Junction | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
 | Bazaarvoice | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
 | OpenAI (CSV, US) | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=openai` |
+| Merchant Center | `https://60038-161ivoryjackal-stage.adobeioruntime.net/api/v1/web/feeds/feeds?provider=merchant-center&locale=us/en_us` |
 
 **Production** (`https://60038-161ivoryjackal.adobeioruntime.net`):
 
@@ -194,9 +205,11 @@ swap `locale` for other markets, e.g. `ca/en_us`, `ca/fr_ca`, `mx/es_mx`).
 | Commission Junction | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=cj&locale=us/en_us` |
 | Bazaarvoice | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=bazaarvoice&locale=us/en_us` |
 | OpenAI (CSV, US) | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=openai` |
+| Merchant Center | `https://60038-161ivoryjackal.adobeioruntime.net/api/v1/web/feeds/feeds?provider=merchant-center&locale=us/en_us` |
 
 Google Ads has no URL here — it serves from the linked Google Merchant Center
-account (the source feed at `{FEED_SITE_BASE}/<locale>/products/merchant-center-feed.xml`).
+account (the `merchant-center` feed above; the unfiltered source is
+`{FEED_SITE_BASE}/<locale>/products/merchant-center-feed.xml`).
 
 ## Deployment
 

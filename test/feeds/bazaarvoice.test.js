@@ -58,12 +58,12 @@ const SHEET = {
     ],
   },
   products: {
-    total: 2,
-    limit: 2,
+    total: 1,
+    limit: 1,
     offset: 0,
+    // the legacy BV feed listed configurable parents; variants inherit
     data: [
       { sku: '7500', categoryExternalId: '91' },
-      { sku: '056405', categoryExternalId: '91' },
     ],
   },
 };
@@ -103,8 +103,9 @@ describe('bazaarvoice provider', () => {
     expect(blenders.Name).toBe('Blenders');
     expect(blenders.CategoryPageUrl).toBe('https://www.vitamix.com/us/en_us/shop/blenders');
 
+    // prepared by default: the configurable parent (7500) is dropped
     const prods = asArray(doc.Feed.Products.Product);
-    expect(prods).toHaveLength(3);
+    expect(prods.map((p) => p.ExternalId)).toEqual(['056405', 'NOCAT']);
   });
 
   test('maps identifiers, category and family per product', async () => {
@@ -112,15 +113,26 @@ describe('bazaarvoice provider', () => {
     const res = await GET({ locale: 'us/en_us' });
     const prods = asArray(parser.parse(res.body).Feed.Products.Product);
 
+    const variant = prods.find((p) => p.ExternalId === '056405');
+    expect(variant.UPCs.UPC).toBe('703113600017'); // from gtin
+    // grouped with its parent via item_group_id (BV_FE_FAMILY)
+    expect(asArray(variant.Attributes.Attribute)[0].Value).toBe('7500');
+    // not in the sheet itself: inherits the parent's category
+    expect(variant.CategoryExternalId).toBe('91');
+  });
+
+  test('raw=true serves the unprepared source feed (parents included)', async () => {
+    mockFetch();
+    const res = await GET({ locale: 'us/en_us', raw: 'true' });
+    const prods = asArray(parser.parse(res.body).Feed.Products.Product);
+    expect(prods.map((p) => p.ExternalId)).toEqual(['7500', '056405', 'NOCAT']);
+
     const parent = prods.find((p) => p.ExternalId === '7500');
     expect(parent.CategoryExternalId).toBe('91');
-    expect(parent.UPCs.UPC).toBe('703113600000'); // from gtin
-    expect(asArray(parent.Attributes.Attribute)[0].Value).toBe('7500'); // BV_FE_FAMILY
-
-    const variant = prods.find((p) => p.ExternalId === '056405');
-    // grouped with its parent via item_group_id
-    expect(asArray(variant.Attributes.Attribute)[0].Value).toBe('7500');
-    expect(variant.CategoryExternalId).toBe('91');
+    expect(parent.UPCs.UPC).toBe('703113600000');
+    expect(asArray(parent.Attributes.Attribute)[0].Value).toBe('7500');
+    // source title untouched
+    expect(prods.find((p) => p.ExternalId === 'NOCAT').Name).toBe('Uncategorized Thing');
   });
 
   test('omits CategoryExternalId when the product is not in the sheet', async () => {

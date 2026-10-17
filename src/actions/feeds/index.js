@@ -5,7 +5,11 @@
  * a single endpoint. The source is the (enriched) Google Merchant Center feed
  * published per locale; each provider gets it in the format it expects.
  *
- *   GET /feeds/feeds?provider=<meta|pinterest|cj>&locale=<cc/ll_cc>
+ *   GET /feeds/feeds?provider=<provider>&locale=<cc/ll_cc>[&raw=true]
+ *
+ * Every provider gets the shared catalog preparation (./prepare.js) by default.
+ * `raw=true` skips it and serves the source feed as-is in the provider's format
+ * (e.g. the pre-preparation Bazaarvoice feed), so both can be reviewed.
  *
  * Providers fetch this URL on their own schedule (pull model). When FEEDS_TOKEN
  * is set, the URL is gated by `Authorization: Bearer <token>` or `?token=<token>`
@@ -33,6 +37,12 @@ function normalizeLocale(value) {
   const locale = String(value).trim().toLowerCase();
   return /^[a-z]{2}\/[a-z]{2}_[a-z]{2}$/.test(locale) ? locale : null;
 }
+
+/**
+ * @param {unknown} value a query param
+ * @returns {boolean} true for "true"/"1"/"yes" (case-insensitive)
+ */
+const isTrue = (value) => /^(true|1|yes)$/i.test(String(value ?? '').trim());
 
 /**
  * @param {number} statusCode
@@ -94,11 +104,14 @@ export async function main(params) {
     log,
   };
 
+  // `raw=true` opts out of the shared catalog preparation for this request.
+  const raw = isTrue(params.raw);
+
   try {
     const source = await fetchGmcFeed(ctx, locale);
-    // Shared catalog cleanup (product selection, titles, descriptions). A `raw`
-    // provider (bazaarvoice, pending review) receives the source feed as-is.
-    const feed = serializer.raw ? source : await prepareFeed(ctx, source, locale);
+    // Shared catalog cleanup (product selection, titles, descriptions), unless
+    // the unprepared source feed was requested.
+    const feed = raw ? source : await prepareFeed(ctx, source, locale);
     // Custom-schema providers (e.g. bazaarvoice) supply their own async builder;
     // the rest use the shared field/format serializer.
     const body = serializer.build
