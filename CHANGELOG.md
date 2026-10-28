@@ -1,3 +1,10 @@
+# [1.8.0](https://github.com/aemsites/vitamix-forms/compare/v1.7.0...v1.8.0) (2026-10-28)
+
+
+### Features
+
+* **feeds:** pinterest product_type from product index, empty google_product_category ([74245c9](https://github.com/aemsites/vitamix-forms/commit/74245c99c69291196607be730bf3d9aed86ab879))
+
 # [1.7.0](https://github.com/aemsites/vitamix-forms/compare/v1.6.0...v1.7.0) (2026-10-17)
 
 
