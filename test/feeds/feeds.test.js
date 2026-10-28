@@ -156,6 +156,63 @@ describe('feeds action', () => {
     expect(res.body).toContain('<product_type>Kitchen Tool</product_type>');
   });
 
+  test('pinterest: product_type from the product index, empty google_product_category', async () => {
+    // source without product_type / google_product_category (like the live feed)
+    const source = SAMPLE_FEED
+      .replace('<g:google_product_category>4653</g:google_product_category>', '')
+      .replace('<g:product_type>Kitchen Tool</g:product_type>', '');
+    const INDEX = {
+      total: 4,
+      data: [
+        { sku: '064584', productType: 'Kitchen Tool', categories: 'Accessories' },
+        // configurable parent carries the type; the variant doesn't
+        { sku: '7500', productType: 'Countertop Blender' },
+        { sku: '056405-3898', parentSku: '7500' },
+        // no productType: falls back to the category rules ("Shop" is ignored)
+        { sku: 'VBNDP750', categories: 'Shop,All Blenders,Full Size Blenders' },
+      ],
+    };
+    const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url) => (
+      String(url).includes('/products/index.json')
+        ? { ok: true, status: 200, json: async () => INDEX }
+        : { ok: true, status: 200, text: async () => source }
+    ));
+    const res = await GET({ provider: 'pinterest', locale: 'ca/en_us' });
+
+    expect(res.statusCode).toBe(200);
+    expect(fetchSpy).toHaveBeenCalledWith(
+      expect.stringMatching(/^https:\/\/www\.vitamix\.com\/ca\/en_us\/products\/index\.json/),
+      expect.anything(),
+    );
+    const typeOf = Object.fromEntries([...res.body.matchAll(/<item>([\s\S]*?)<\/item>/g)]
+      .map(([, x]) => [x.match(/<id>([^<]+)/)[1], x.match(/<product_type>([^<]+)/)?.[1]]));
+    expect(typeOf).toEqual({
+      '064584': 'Kitchen Tool',
+      '056405-3898': 'Countertop Blender',
+      VBNDP750: 'Countertop Blender',
+    });
+    // always present, empty (as in the legacy Magento feed)
+    expect(res.body.match(/<google_product_category><\/google_product_category>/g)).toHaveLength(3);
+  });
+
+  test('pinterest: still served (without product_type) when the index is unavailable', async () => {
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => (
+      String(url).includes('/products/index.json')
+        ? { ok: false, status: 503 }
+        : { ok: true, status: 200, text: async () => SAMPLE_FEED.replace('<g:product_type>Kitchen Tool</g:product_type>', '') }
+    ));
+    const res = await GET({ provider: 'pinterest' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain('<product_type>');
+    expect(res.body).toContain('<google_product_category>4653</google_product_category>');
+  });
+
+  test('meta: no empty google_product_category tag', async () => {
+    mockFetch(SAMPLE_FEED.replace('<g:google_product_category>4653</g:google_product_category>', ''));
+    const res = await GET({ provider: 'meta' });
+    expect(res.body).not.toContain('google_product_category');
+  });
+
   test('cj: <feed> root, non-namespaced, no google_product_category', async () => {
     mockFetch(SAMPLE_FEED);
     const res = await GET({ provider: 'cj' });

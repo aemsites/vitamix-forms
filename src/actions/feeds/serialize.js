@@ -32,9 +32,10 @@ const el = (tag, value, prefix = '', indent = '    ') => {
  * @param {string[] | undefined} fields the fields to emit, in order; when
  *   omitted, every attribute on the item is emitted (pass-through)
  * @param {string} prefix tag namespace prefix ("g:" or "")
+ * @param {Set<string>} emitEmpty fields emitted as an empty tag when unset
  * @returns {string}
  */
-function itemXml(item, fields, prefix) {
+function itemXml(item, fields, prefix, emitEmpty) {
   let body = '';
   for (const key of fields ?? Object.keys(item)) {
     const tag = `${prefix}${key}`;
@@ -44,6 +45,8 @@ function itemXml(item, fields, prefix) {
     } else if (value && typeof value === 'object' && fields) {
       // structured values (e.g. shipping) are only emitted in pass-through mode
       continue;
+    } else if ((value === undefined || value === null || value === '') && emitEmpty.has(key)) {
+      body += `    <${tag}></${tag}>\n`;
     } else {
       body += el(tag, value, prefix);
     }
@@ -54,15 +57,19 @@ function itemXml(item, fields, prefix) {
 /**
  * Serialize a canonical feed in a provider-specific shape.
  * @param {{ channel?: { title?: string, link?: string, description?: string }, items: Record<string, unknown>[] }} feed
- * @param {{ root: 'rss' | 'feed', namespaced: boolean, fields?: string[] }} format
+ * @param {{ root: 'rss' | 'feed', namespaced: boolean, fields?: string[], emitEmpty?: string[] }} format
  *   - `root`: RSS (`<rss><channel>`) or a bare `<feed>` root (Commission Junction)
  *   - `namespaced`: emit `g:`-prefixed item tags (Google) vs plain tags (the rest)
  *   - `fields`: the item fields to emit, in order (omit to pass every field through)
+ *   - `emitEmpty`: fields emitted as an empty tag when unset (normally omitted)
  * @returns {string}
  */
-export function buildFeed({ channel = {}, items }, { root, namespaced, fields }) {
+export function buildFeed({ channel = {}, items }, {
+  root, namespaced, fields, emitEmpty = [],
+}) {
   const prefix = namespaced ? 'g:' : '';
-  const itemsXml = items.map((item) => itemXml(item, fields, prefix)).join('\n');
+  const empty = new Set(emitEmpty);
+  const itemsXml = items.map((item) => itemXml(item, fields, prefix, empty)).join('\n');
 
   if (root === 'feed') {
     return `<?xml version="1.0" encoding="UTF-8"?>
