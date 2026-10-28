@@ -19,7 +19,9 @@ jobs:
 
   deploy:
     name: Deploy to Stage
-    runs-on: ubuntu-latest
+    # Pinned: aio-apps-action runs `sudo --preserve-env`, which the sudo-rs
+    # shipped in ubuntu-latest (26.04) ignores, dropping the env (AIO_* vars).
+    runs-on: ubuntu-24.04
     needs: test
     steps:
       - uses: actions/checkout@v4
