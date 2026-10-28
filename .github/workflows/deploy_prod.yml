@@ -25,8 +25,9 @@ jobs:
 
   release:
     name: Release
-    # Pinned: aio-apps-action runs `sudo --preserve-env`, which the sudo-rs
-    # shipped in ubuntu-latest (26.04) ignores, dropping the env (AIO_* vars).
+    # Pinned to match deploy_stage.yml (see the note there). Not strictly needed
+    # here — the deploy runs via semantic-release without sudo — but keeps both
+    # deploy jobs on the same image.
     runs-on: ubuntu-24.04
     needs: test
     steps:
