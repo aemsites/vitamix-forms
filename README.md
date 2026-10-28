@@ -83,7 +83,10 @@ Supported providers:
 - **`meta`** — Facebook/Instagram (Advantage+/DPA). Non-namespaced `<rss>` feed
   (`availability` in the spaced spec form, `in stock`).
 - **`pinterest`** — Pinterest catalogs. Same non-namespaced `<rss>` feed as Meta;
-  includes `product_type` and `google_product_category` from the source feed.
+  adds `product_type` from the product index (`<locale>/products/index.json`:
+  the item's `productType`, else its parent's, else a category mapping — see
+  `src/actions/feeds/product-type.js`) and always emits `google_product_category`
+  (empty unless the source sets it), matching the legacy Magento feed.
 - **`cj`** — Commission Junction. Bare `<feed>` root, non-namespaced, Google-spec
   `availability` (`in_stock`); replaces the current SFTP drop.
 - **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy

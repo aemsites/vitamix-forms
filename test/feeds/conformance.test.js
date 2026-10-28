@@ -108,8 +108,9 @@ describe.each([
   });
 
   test.failing('carries product_type (Pinterest requires it)', () => {
-    // Empty here only because the google source fixture lacks product_type;
-    // resolved once the indexer populates it (helix-product-indexer#41).
+    // Pinterest reads product_type from the product index (see
+    // providers/pinterest.js); this harness mocks no index, so it stays empty.
+    // Covered in feeds.test.js / product-type.test.js.
     expect(mine.byLink.get(SAMPLE).product_type).toBe(exp.byLink.get(SAMPLE).product_type);
   });
 });
