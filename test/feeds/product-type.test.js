@@ -3,59 +3,73 @@ import {
   categoryToProductType, resolveProductType, unknownCategories,
 } from '../../src/actions/feeds/product-type.js';
 
-describe('categoryToProductType', () => {
+describe('categoryToProductType (category slugs)', () => {
   test.each([
-    ['All Blenders,Full Size Blenders', 'Countertop Blender'],
-    ['Shop,Legacy Series Blenders', 'Countertop Blender'],
-    ['All Blenders,Immersion Blender', 'Immersion Blender'],
-    ['All Blenders,Personal Blending', 'Personal Blender'],
-    // specific accessory types win over the broader groupings
-    ['Accessories,Blender Containers,Personal Blending', 'Blender Container'],
-    ['Accessories,Blender Containers,Smoothie Cups', 'Smoothie Cup'],
-    ['Accessories,Blender Containers,Food Processing', 'Food Processing'],
-    ['Shop,Compact Food Recycling,Kitchen Tools', 'Compact Food Recycling'],
-    ['Juicing', 'Kitchen Tool'],
+    ['all-blenders,full-size-blenders', 'Countertop Blender'],
+    ['shop,legacy-series-blenders', 'Countertop Blender'],
+    ['shop,all-blenders,explorian-series', 'Countertop Blender'],
+    ['all-blenders,immersion-blender', 'Immersion Blender'],
+    ['all-blenders,personal-blending', 'Personal Blender'],
+    ['juicing', 'Kitchen Tool'],
+    // specific types win over the broader groupings
+    ['accessories,blender-containers,personal-blending', 'Blender Container'],
+    ['accessories,blender-containers,smoothie-cups', 'Smoothie Cup'],
+    ['accessories,blender-containers,food-processing', 'Food Processing'],
+    ['shop,compact-food-recycling,kitchen-tools', 'Compact Food Recycling'],
+    ['shop,accessories,tampers', 'Tamper'],
+    ['shop,accessories,cookbooks', 'Cookbook'],
     // whitespace / case tolerant
-    [' full size blenders ', 'Countertop Blender'],
-  ])('%s -> %s', (cats, type) => {
-    expect(categoryToProductType(cats)).toBe(type);
+    [' Full-Size-Blenders ', 'Countertop Blender'],
+  ])('%s -> %s', (slugs, type) => {
+    expect(categoryToProductType(slugs)).toBe(type);
   });
 
-  test('generic / promo categories map to nothing', () => {
-    expect(categoryToProductType('Shop,Accessories')).toBeUndefined();
-    expect(categoryToProductType('All Blenders,Eligible Employee Discount')).toBeUndefined();
+  test('generic / promo / accessory-series categories map to nothing', () => {
+    expect(categoryToProductType('shop,accessories')).toBeUndefined();
+    expect(categoryToProductType('all-blenders,blenders,eligible-employee-discount')).toBeUndefined();
+    // named "Explorian Series" like the blender category, but accessories
+    expect(categoryToProductType('accessories,explorian-series-accessories')).toBeUndefined();
+    expect(categoryToProductType('sale-skus')).toBeUndefined();
     expect(categoryToProductType('')).toBeUndefined();
     expect(categoryToProductType(undefined)).toBeUndefined();
   });
 
-  test('unknownCategories reports only unmapped, non-ignored categories', () => {
-    expect(unknownCategories('Shop,Accessories,Frozen Desserts')).toEqual(['frozen desserts']);
+  test('unknownCategories reports only unmapped, non-ignored slugs', () => {
+    expect(unknownCategories('shop,accessories,sale-skus,frozen-desserts')).toEqual(['frozen-desserts']);
   });
 });
 
 describe('resolveProductType', () => {
   const index = new Map([
-    ['A', { sku: 'A', productType: 'Tamper', categories: 'All Blenders,Full Size Blenders' }],
-    ['P', { sku: 'P', productType: 'Countertop Blender' }],
+    // category wins over the legacy productType
+    ['A', { sku: 'A', productType: 'Tamper', categoriesUrlKey: 'all-blenders,full-size-blenders' }],
+    ['P', { sku: 'P', categoriesUrlKey: 'all-blenders,full-size-blenders' }],
     ['V', { sku: 'V', parentSku: 'P' }],
-    ['Q', { sku: 'Q', categories: 'All Blenders,Full Size Blenders' }],
-    ['W', { sku: 'W', parentSku: 'Q' }],
+    // no type-bearing category -> legacy productType
+    ['L', { sku: 'L', productType: 'Cookbook', categoriesUrlKey: 'accessories' }],
+    ['LP', { sku: 'LP', productType: 'Countertop Blender' }],
+    ['LV', { sku: 'LV', parentSku: 'LP' }],
   ]);
 
   test('source value wins', () => {
-    expect(resolveProductType({ id: 'A', product_type: 'X' }, index)).toBe('X');
+    expect(resolveProductType({ id: 'A', product_type: 'X' }, index))
+      .toEqual({ productType: 'X', source: 'source' });
   });
-  test('index productType wins over categories', () => {
-    expect(resolveProductType({ id: 'A' }, index)).toBe('Tamper');
+  test('categories win over the legacy productType', () => {
+    expect(resolveProductType({ id: 'A' }, index))
+      .toEqual({ productType: 'Countertop Blender', source: 'category' });
   });
-  test('variant inherits the parent productType (item_group_id or parentSku)', () => {
-    expect(resolveProductType({ id: 'V', item_group_id: 'P' }, index)).toBe('Countertop Blender');
-    expect(resolveProductType({ id: 'V' }, index)).toBe('Countertop Blender');
+  test('variant uses the parent categories (item_group_id or parentSku)', () => {
+    const expected = { productType: 'Countertop Blender', source: 'category' };
+    expect(resolveProductType({ id: 'V', item_group_id: 'P' }, index)).toEqual(expected);
+    expect(resolveProductType({ id: 'V' }, index)).toEqual(expected);
   });
-  test('falls back to the parent categories', () => {
-    expect(resolveProductType({ id: 'W', item_group_id: 'Q' }, index)).toBe('Countertop Blender');
+  test('falls back to the legacy productType (own, then parent)', () => {
+    expect(resolveProductType({ id: 'L' }, index)).toEqual({ productType: 'Cookbook', source: 'legacy' });
+    expect(resolveProductType({ id: 'LV', item_group_id: 'LP' }, index))
+      .toEqual({ productType: 'Countertop Blender', source: 'legacy' });
   });
-  test('undefined when nothing is known', () => {
-    expect(resolveProductType({ id: 'nope' }, index)).toBeUndefined();
+  test('none when nothing is known', () => {
+    expect(resolveProductType({ id: 'nope' }, index)).toEqual({ source: 'none' });
   });
 });

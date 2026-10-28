@@ -1,88 +1,99 @@
 /**
- * `product_type` from the Edge product index (<site>/<locale>/products/index.json,
- * `include=all` so parents hidden from the default index — e.g. search-only
- * configurables — are still available for variant fallback).
+ * `product_type` from the store categories in the Edge product index
+ * (<site>/<locale>/products/index.json, `include=all` so search-only parents are
+ * available for variant fallback).
  *
- * The GMC source feed carries no product_type, but the index does:
- *   - `productType` — the legacy Magento product_type vocabulary ("Countertop
- *     Blender", "Blender Container", ...), set on simples/parents but not on
- *     configurable variants
- *   - `categories`  — comma-separated store categories; noisy (merchandising /
- *     promo groupings, generic "Accessories") so only used as a last resort
+ * Categories are authored on each product (`custom.categories`, managed in the
+ * commerce admin) and indexed as `categories` (names) and `categoriesUrlKey`
+ * (slugs, same order). Rules match on the slugs: they are stable across locales
+ * and renames, whereas names collide (e.g. both `explorian-series` and
+ * `explorian-series-accessories` are named "Explorian Series").
  *
- * Resolution order per item (first non-empty wins):
+ * Variant index rows carry no categories, so a variant uses its parent's
+ * (item_group_id). Resolution order per item (first non-empty wins):
  *   1. the source feed's own product_type
- *   2. the item's index `productType`
- *   3. the parent's (item_group_id) index `productType`
- *   4. the item's, then the parent's, `categories` via CATEGORY_RULES
+ *   2. the item's, then the parent's, categories via CATEGORY_RULES
+ *   3. the legacy index `productType` (`custom.catalogProductType`), item then
+ *      parent — transitional, until every product has a type-bearing
+ *      category; items typed this way are logged
  */
 
-// Ordered category -> product_type rules; the first rule matching any of the
-// item's categories wins, so the most specific come first: smoothie cups and
-// food-processing bowls are also in "Blender Containers", personal blender
-// containers in "Personal Blending", Compact Food Recycling items in "Kitchen
-// Tools". Values follow the index `productType` vocabulary. Ordering was checked
-// against the index rows that carry both productType and categories.
+// Ordered slug -> product_type rules; the first rule matching any of the item's
+// category slugs wins, so the most specific come first: smoothie cups and
+// food-processor bowls are also in blender-containers, personal blender
+// containers in personal-blending, FoodCyclers in kitchen-tools.
+// Values keep the legacy Magento product_type vocabulary.
 const CATEGORY_RULES = [
-  [['Smoothie Cups'], 'Smoothie Cup'],
-  [['Tampers'], 'Tamper'],
-  [['Cookbooks'], 'Cookbook'],
-  [['Compact Food Recycling'], 'Compact Food Recycling'],
-  [['Food Processing'], 'Food Processing'],
-  [['Blender Containers'], 'Blender Container'],
-  [['Kitchen Tools', 'Juicing'], 'Kitchen Tool'],
-  [['Immersion Blender'], 'Immersion Blender'],
-  [['Personal Blending'], 'Personal Blender'],
+  [['smoothie-cups'], 'Smoothie Cup'],
+  [['tampers'], 'Tamper'],
+  [['cookbooks'], 'Cookbook'],
+  [['compact-food-recycling'], 'Compact Food Recycling'],
+  [['food-processing'], 'Food Processing'],
+  [['blender-containers'], 'Blender Container'],
+  [['immersion-blender'], 'Immersion Blender'],
+  [['kitchen-tools', 'juicing'], 'Kitchen Tool'],
+  [['personal-blending'], 'Personal Blender'],
   [[
-    'Full Size Blenders',
-    'Legacy Series Blenders',
-    'Certified Reconditioned Series',
-    'Propel Series Blenders',
-    'Explorian Series Blenders',
-    'Explorian Series',
-    'Blenders',
+    'full-size-blenders',
+    'legacy-series-blenders',
+    'certified-reconditioned-series',
+    'propel-series-blenders',
+    'explorian-series-blenders',
+    'explorian-series',
+    'ascent-x-series-blenders',
   ], 'Countertop Blender'],
-].map(([cats, type]) => [new Set(cats.map((c) => c.toLowerCase())), type]);
+].map(([slugs, type]) => [new Set(slugs), type]);
 
-// Categories that say nothing about the product type: navigation roots,
-// generic/series groupings and promo/eligibility flags. Not mapped (an item
-// with only these gets no product_type); listed so unknown categories can be
-// told apart and logged.
+// Slugs that say nothing about the product type: navigation roots, broad or
+// series groupings, membership/promo lists (e.g. the admin's sale-skus sync),
+// and commercial-only categories. Ignored without a warning; any other
+// unmapped slug is logged as a candidate for a new rule.
 const IGNORED_CATEGORIES = new Set([
-  'Shop',
-  'Accessories',
-  'Ascent Series Accessories',
-  'All Blenders',
-  'Eligible Employee Discount',
-  'All Household Products - Promo Category',
-].map((c) => c.toLowerCase()));
+  'shop',
+  'accessories',
+  'all-blenders',
+  'allblenders',
+  'blenders', // named "All Blenders" on some products; includes immersion/personal
+  'bundles',
+  'ascent-series-accessories',
+  'explorian-series-accessories',
+  'eligible-employee-discount',
+  'all-household-products-promo-category',
+  'sale-skus',
+  'commercial',
+  'products',
+  'drink-machine',
+  'food-preparation',
+  'frozen-treat-mixers',
+  'container-rinsers',
+]);
 
 const PAGE_SIZE = 1000;
 const FETCH_TIMEOUT_MS = 10000;
 
-/** @param {unknown} value comma-separated categories */
-const splitCategories = (value) => String(value ?? '')
+/** @param {unknown} value comma-separated category slugs */
+const splitSlugs = (value) => String(value ?? '')
   .split(',')
   .map((c) => c.trim().toLowerCase())
   .filter(Boolean);
 
 /**
- * @param {unknown} categories comma-separated index categories
+ * @param {unknown} slugs comma-separated category slugs (`categoriesUrlKey`)
  * @returns {string | undefined}
  */
-export function categoryToProductType(categories) {
-  const cats = splitCategories(categories);
+export function categoryToProductType(slugs) {
+  const cats = splitSlugs(slugs);
   return CATEGORY_RULES.find(([match]) => cats.some((c) => match.has(c)))?.[1];
 }
 
 /**
- * Categories that are neither mapped nor explicitly ignored — candidates for a
- * new rule.
- * @param {unknown} categories
+ * Category slugs that are neither mapped nor explicitly ignored — candidates
+ * for a new rule.
+ * @param {unknown} slugs
  * @returns {string[]}
  */
-export function unknownCategories(categories) {
-  return splitCategories(categories).filter((c) => !IGNORED_CATEGORIES.has(c)
+export function unknownCategories(slugs) {
+  return splitSlugs(slugs).filter((c) => !IGNORED_CATEGORIES.has(c)
     && !CATEGORY_RULES.some(([match]) => match.has(c)));
 }
 
@@ -122,25 +133,31 @@ export async function loadProductIndex(ctx, locale) {
 }
 
 /**
+ * @typedef {'source' | 'category' | 'legacy' | 'none'} TypeSource
+ */
+
+/**
  * @param {Record<string, unknown>} item a (prepared) GMC item
  * @param {Map<string, Record<string, string>>} index sku -> index row
- * @returns {string | undefined}
+ * @returns {{ productType?: string, source: TypeSource }}
  */
 export function resolveProductType(item, index) {
-  if (item.product_type) return String(item.product_type);
+  if (item.product_type) return { productType: String(item.product_type), source: 'source' };
   const own = index.get(String(item.id));
   const parentSku = item.item_group_id ?? own?.parentSku;
   const parent = parentSku ? index.get(String(parentSku)) : undefined;
-  return own?.productType
-    || parent?.productType
-    || categoryToProductType(own?.categories)
-    || categoryToProductType(parent?.categories)
-    || undefined;
+  const byCategory = categoryToProductType(own?.categoriesUrlKey)
+    || categoryToProductType(parent?.categoriesUrlKey);
+  if (byCategory) return { productType: byCategory, source: 'category' };
+  const legacy = own?.productType || parent?.productType;
+  if (legacy) return { productType: legacy, source: 'legacy' };
+  return { source: 'none' };
 }
 
 /**
- * Set `product_type` on every item from the index, logging items left without
- * one and categories no rule knows about.
+ * Set `product_type` on every item from the index, logging items that still
+ * depend on the legacy productType, items left without a type, and category
+ * slugs no rule knows about.
  * @param {{ env: { FEED_SITE_BASE: string }, log: Console }} ctx
  * @param {Record<string, unknown>[]} items
  * @param {string} locale
@@ -148,23 +165,37 @@ export function resolveProductType(item, index) {
  */
 export async function withProductType(ctx, items, locale) {
   const index = await loadProductIndex(ctx, locale);
-  const missing = [];
+  /** @type {Record<TypeSource, string[]>} */
+  const bySource = {
+    source: [], category: [], legacy: [], none: [],
+  };
   const unknown = new Set();
   const out = items.map((item) => {
-    const productType = resolveProductType(item, index);
-    if (!productType) {
-      missing.push(String(item.id));
+    const { productType, source } = resolveProductType(item, index);
+    bySource[source].push(String(item.id));
+    if (source === 'legacy' || source === 'none') {
       const own = index.get(String(item.id));
       const parent = index.get(String(item.item_group_id ?? own?.parentSku ?? ''));
-      for (const c of [own?.categories, parent?.categories].flatMap(unknownCategories)) {
+      for (const c of [own?.categoriesUrlKey, parent?.categoriesUrlKey].flatMap(unknownCategories)) {
         unknown.add(c);
       }
     }
     return productType ? { ...item, product_type: productType } : item;
   });
-  if (index.size && missing.length) {
-    ctx.log.warn(`no product_type for ${missing.length} items in ${locale}: ${missing.join(', ')}`
-      + (unknown.size ? ` (unmapped categories: ${[...unknown].join(', ')})` : ''));
+  if (index.size) {
+    ctx.log.info(`product_type for ${locale}: ${bySource.category.length} from categories,`
+      + ` ${bySource.source.length} from source, ${bySource.legacy.length} from legacy productType,`
+      + ` ${bySource.none.length} none`);
+    if (bySource.legacy.length) {
+      ctx.log.warn(`no type-bearing category for ${bySource.legacy.length} items in ${locale}`
+        + ` (typed from legacy productType): ${bySource.legacy.join(', ')}`);
+    }
+    if (bySource.none.length) {
+      ctx.log.warn(`no product_type for ${bySource.none.length} items in ${locale}: ${bySource.none.join(', ')}`);
+    }
+    if (unknown.size) {
+      ctx.log.warn(`unmapped categories in ${locale}: ${[...unknown].join(', ')}`);
+    }
   }
   return out;
 }
