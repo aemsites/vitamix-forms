@@ -156,7 +156,7 @@ describe('feeds action', () => {
     expect(res.body).toContain('<product_type>Kitchen Tool</product_type>');
   });
 
-  test('pinterest: product_type from the product index, empty google_product_category', async () => {
+  test('pinterest: product_type from index categories, empty google_product_category', async () => {
     // source without product_type / google_product_category (like the live feed)
     const source = SAMPLE_FEED
       .replace('<g:google_product_category>4653</g:google_product_category>', '')
@@ -164,12 +164,17 @@ describe('feeds action', () => {
     const INDEX = {
       total: 4,
       data: [
-        { sku: '064584', productType: 'Kitchen Tool', categories: 'Accessories' },
-        // configurable parent carries the type; the variant doesn't
-        { sku: '7500', productType: 'Countertop Blender' },
+        // only a generic category: falls back to the legacy productType
+        { sku: '064584', productType: 'Kitchen Tool', categoriesUrlKey: 'accessories' },
+        // configurable parent carries the categories; the variant doesn't
+        { sku: '7500', categoriesUrlKey: 'all-blenders,full-size-blenders' },
         { sku: '056405-3898', parentSku: '7500' },
-        // no productType: falls back to the category rules ("Shop" is ignored)
-        { sku: 'VBNDP750', categories: 'Shop,All Blenders,Full Size Blenders' },
+        // categories win over the legacy productType ("shop" is ignored)
+        {
+          sku: 'VBNDP750',
+          productType: 'Cookbook',
+          categoriesUrlKey: 'shop,all-blenders,full-size-blenders',
+        },
       ],
     };
     const fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async (url) => (
