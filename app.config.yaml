@@ -125,6 +125,9 @@ application:
               EBS_API_KEY: $EBS_API_KEY
               EBS_API_KEY_STAGE: $EBS_API_KEY_STAGE
               PROXY_TOKEN: $PROXY_TOKEN
+              # managed inventory: queue sold units for inventory-sync.
+              # set "true" ONLY in the prod deploy env; unset in stage
+              INVENTORY_SYNC_ENABLED: $INVENTORY_SYNC_ENABLED
 
         triggers:
           ebs-sync-schedule:
@@ -137,6 +140,51 @@ application:
           ebs-sync-rule:
             trigger: ebs-sync-schedule
             action: ebs-sync
+
+      inventory-sync:
+        license: Apache-2.0
+        actions:
+          inventory-sync:
+            # Applies sold units queued by ebs-sync to the managed inventory sheet
+            # (DA source) and flips sold-out managed products to OutOfStock.
+            function: dist/actions/inventory-sync/index.js
+            runtime: nodejs:22
+            web: 'yes'
+            annotations:
+              require-adobe-auth: false
+              final: true
+            limits:
+              timeout: 300000  # 5 min — lock TTL in state.js (6 min) must exceed this
+              memory: 256
+              concurrency: 1
+            inputs:
+              ORG: aemsites
+              SITE: vitamix
+              LOG_LEVEL: $LOG_LEVEL
+              # bearer for the HTTP status (GET) and manual run (POST) endpoints
+              SYNC_STATUS_TOKEN: $SYNC_STATUS_TOKEN
+              EDGE_COMMERCE_API_BASE: $EDGE_COMMERCE_API_BASE
+              # service token with catalog:read + catalog:write
+              EDGE_COMMERCE_API_CATALOG_TOKEN: $EDGE_COMMERCE_API_CATALOG_TOKEN
+              # AIO server-to-server creds — IMS token for the DA source sheet + preview
+              AIO_CLIENTID: $AIO_CLIENTID
+              AIO_CLIENTSECRET: $AIO_CLIENTSECRET
+              AIO_SCOPES: $AIO_SCOPES
+              # prod-only gate — set "true" ONLY in the prod deploy env; unset in stage
+              INVENTORY_SYNC_ENABLED: $INVENTORY_SYNC_ENABLED
+
+        triggers:
+          inventory-sync-schedule:
+            feed: /whisk.system/alarms/alarm
+            inputs:
+              # every 5 min, offset 2 min from ebs-sync (*/5)
+              cron: '2,7,12,17,22,27,32,37,42,47,52,57 * * * *'
+              timezone: UTC
+
+        rules:
+          inventory-sync-rule:
+            trigger: inventory-sync-schedule
+            action: inventory-sync
 
       recipe-notify:
         license: Apache-2.0

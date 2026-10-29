@@ -22,10 +22,18 @@
  *   5. Checks a 9.5-minute deadline before each order
  *   6. On success/deadline: advances cursor to the latest journal entry timestamp
  *   7. Saves updated state and releases the lock
+ *
+ * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): sold units of
+ * every order accepted by EBS are collected and, at the end of the run (including
+ * halted or failed runs), queued as one `inventory:outbox:{seq}` entry before the
+ * lock is released. inventory-sync applies them. No DA/IMS/catalog calls here.
  */
 
 import { Core } from '@adobe/aio-sdk';
-import { loadState, saveState, acquireLock, releaseLock } from './state.js';
+import {
+  loadState, saveState, acquireLock, releaseLock, writeInventoryOutbox,
+} from './state.js';
+import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
 import { syncOrderToEbs, isRetriableError } from './ebs.js';
 import { errorInfo } from '../../utils.js';
@@ -35,6 +43,8 @@ const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
 const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
 const CUSTOM_UPDATE_RETRIES = 3;
 const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
+const OUTBOX_WRITE_RETRIES = 3;
+const OUTBOX_WRITE_BASE_DELAY_MS = 1_000; // 1s, 2s
 
 /**
  * Run the EBS sync job.
@@ -80,6 +90,10 @@ export async function run(params) {
     startedAt: new Date().toISOString(),
     elapsedMs: 0,
   };
+
+  // Managed-inventory sold units for orders accepted by EBS in this run.
+  const inventoryEnabled = isInventorySyncEnabled(params);
+  const inventory = { orderIds: [], deltas: [] };
 
   try {
     // ── 0. Retry pending custom updates from previous runs ───────────
@@ -227,6 +241,19 @@ export async function run(params) {
       }
 
       if (ebsResult) {
+        // EBS accepted the order: count its units against managed inventory.
+        if (inventoryEnabled) {
+          try {
+            const deltas = collectOrderDeltas(order);
+            if (deltas.length) {
+              inventory.orderIds.push(orderId);
+              inventory.deltas.push(...deltas);
+            }
+          } catch (invErr) {
+            log.error(`[ebs-sync] Failed to collect inventory deltas for ${orderId}`, errorInfo(invErr));
+          }
+        }
+
         await logOrderSync(params, {
           action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
         }).catch((logErr) => {
@@ -297,11 +324,44 @@ export async function run(params) {
     state.status = halted ? 'error' : 'idle';
     await saveState(state);
   } finally {
+    // Queue inventory decrements before releasing the lock — also on halted or
+    // failed runs, because orders before the halt were accepted by EBS.
+    if (inventoryEnabled && inventory.deltas.length) {
+      summary.inventoryOutboxSeq = await queueInventoryDeltas(inventory, log);
+    }
     await releaseLock();
     summary.elapsedMs = Date.now() - startTime;
   }
 
   return { body: summary };
+}
+
+/**
+ * Write the run's inventory deltas to the outbox, retrying a few times. Never
+ * throws: the orders are already in EBS and will not be processed again, so on
+ * final failure the full payload is logged for manual recovery.
+ *
+ * @returns {Promise<number | null>} the outbox seq, or null on failure
+ */
+async function queueInventoryDeltas({ orderIds, deltas }, log) {
+  const payload = { activationId: process.env.__OW_ACTIVATION_ID, orderIds, deltas };
+  let lastErr = null;
+  for (let attempt = 1; attempt <= OUTBOX_WRITE_RETRIES; attempt++) {
+    try {
+      const seq = await writeInventoryOutbox(payload);
+      log.info(`[ebs-sync] Queued inventory outbox seq=${seq}: ${deltas.length} deltas for orders ${orderIds.join(', ')}`);
+      return seq;
+    } catch (err) {
+      lastErr = err;
+      log.warn(`[ebs-sync] Inventory outbox write attempt ${attempt}/${OUTBOX_WRITE_RETRIES} failed`, errorInfo(err));
+      if (attempt < OUTBOX_WRITE_RETRIES) await sleep(OUTBOX_WRITE_BASE_DELAY_MS * attempt);
+    }
+  }
+  log.error(
+    `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — decrements not queued, apply manually: ${JSON.stringify(payload)}`,
+    errorInfo(lastErr),
+  );
+  return null;
 }
 
 function sleep(ms) {
