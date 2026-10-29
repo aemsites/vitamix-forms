@@ -16,7 +16,7 @@
 import { Core } from '@adobe/aio-sdk';
 import { buildProviderFeed, resolveFeedEnv } from '../feeds/build.js';
 import {
-  CONFIG, resolveEnvironment, resolveCredentials,
+  CONFIG, MIN_ITEMS, resolveEnvironment, resolveCredentials,
 } from './config.js';
 import { validateFeed } from './validate.js';
 import * as sftp from './sftp.js';
@@ -34,6 +34,7 @@ import { sendFailureAlert } from './alert.js';
  *   bytes?: number,
  *   remotePath?: string,
  *   error?: string,
+ *   warnings?: string[],
  * }} PushResult
  *
  * @typedef {{
@@ -67,6 +68,7 @@ export function listJobs(envConfig, { target: onlyTarget, locale: onlyLocale } =
         locale,
         file: localeConfig.file,
         credentials: localeConfig.credentials || target.credentials,
+        minItems: localeConfig.minItems ?? target.minItems ?? MIN_ITEMS,
       });
     }
   }
@@ -97,6 +99,17 @@ export async function run(params, options = {}) {
   }
 
   const jobs = listJobs(envConfig, options);
+  if (!jobs.length && (options.target || options.locale)) {
+    // A filtered manual run that matches nothing is almost always a typo;
+    // don't let it look like a successful no-op.
+    const known = listJobs(envConfig).map((j) => `${j.targetKey}:${j.locale}`);
+    const error = `no feed matches target=${JSON.stringify(options.target ?? '*')} `
+      + `locale=${JSON.stringify(options.locale ?? '*')}; known: ${known.join(', ') || 'none'}`;
+    log.error(error);
+    return {
+      ok: false, environment, dryRun, error, results: [],
+    };
+  }
   if (!jobs.length) {
     log.info(`no feeds to push in ${environment}`);
     return {
@@ -156,14 +169,18 @@ export async function run(params, options = {}) {
   }
 
   const failed = results.filter((r) => r.status === 'failed');
+  const hasWarnings = warnings.length > 0 || results.some((r) => r.warnings?.length);
   let alert;
-  if (failed.length && !dryRun) {
-    alert = await sendFailureAlert(ctx, environment, results);
+  // Warnings alert too: e.g. an upload that went out without the shrink guard
+  // shouldn't go unnoticed.
+  if ((failed.length || hasWarnings) && !dryRun) {
+    alert = await sendFailureAlert(ctx, environment, results, warnings);
   }
 
   for (const r of results) {
     const line = `${r.target} ${r.locale} → ${r.file}: ${r.status}`
-      + `${r.itemCount !== undefined ? ` (${r.itemCount} items)` : ''}${r.error ? ` — ${r.step}: ${r.error}` : ''}`;
+      + `${r.itemCount !== undefined ? ` (${r.itemCount} items)` : ''}${r.error ? ` — ${r.step}: ${r.error}` : ''}`
+      + `${r.warnings?.length ? ` [warnings: ${r.warnings.join('; ')}]` : ''}`;
     if (r.status === 'failed') log.error(line); else log.info(line);
   }
 
@@ -206,7 +223,10 @@ async function pushOne(ctx, job, {
   result.itemCount = built.itemCount;
 
   const previous = previousCounts[countKey(targetKey, locale)]?.count ?? null;
-  const problems = validateFeed(built, { idPattern: target.idPattern, previousCount: previous, force });
+  const { problems, warnings } = validateFeed(built, {
+    idPattern: target.idPattern, previousCount: previous, force, minItems: job.minItems,
+  });
+  if (warnings.length) result.warnings = warnings;
   if (problems.length) {
     return fail('validate', problems.join('; '));
   }
@@ -223,6 +243,7 @@ async function pushOne(ctx, job, {
       host: target.host,
       port: target.port,
       algorithms: target.algorithms,
+      hostFingerprints: target.hostFingerprints,
       ...creds,
     }, { log: ctx.log, ...sftpDeps }));
   }

@@ -129,11 +129,15 @@ namespace does nothing). Only secrets are env vars (see below).
 
 Per run, for each target × locale: build → validate → upload. A failure in one
 never stops the others. Validation blocks an upload when the feed is empty or
-malformed, has fewer than `MIN_ITEMS` items, has CJ-incompatible ids, or (the
-**shrink guard**) has fewer than 50% of the items of the last successful push for
-that target + locale (counts kept in `aio-lib-state`). The provider then keeps
-its previous file. If anything fails, one alert email goes to
-`ALERT_FEED_FAIL_EMAILS` (log only when unset).
+malformed, has fewer items than the feed's `minItems` floor (CJ US: 100), or
+(the **shrink guard**) has fewer than 50% of the items of the last successful
+push for that target + locale (counts kept in `aio-lib-state`). The provider
+then keeps its previous file. CJ-incompatible ids only **warn** (they affect
+item-level commissioning, not the import). If anything fails or warns (including
+a shrink guard skipped because state was unavailable), one alert email goes to
+`ALERT_FEED_FAIL_EMAILS` (log only when unset). A manual run whose
+`target`/`locale` filter matches nothing returns `ok: false` with the known
+feeds.
 
 CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
 - Upload to the root `/` only; CJ ignores subdirectories.
@@ -141,7 +145,10 @@ CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
   separate registration (country/currency/language are fixed per feed).
 - CJ confirms receipt and processing **by email** to the registration's
   notification addresses.
-- CJ's server only offers the legacy `ssh-dss` host key; the target enables it.
+- CJ's server only offers the legacy `ssh-dss` host key; the target enables it
+  and **pins** its fingerprint (`hostFingerprints` in `config.js`). If CJ rotates
+  the key, uploads fail with a `host key mismatch` alert; verify the new
+  fingerprint with CJ before adding it.
 - All CJ SFTP subscriptions on an account share one password — resetting it in
   CJ breaks every SFTP subscription on that account.
 

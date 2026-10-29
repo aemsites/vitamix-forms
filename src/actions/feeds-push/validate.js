@@ -28,16 +28,18 @@ export function extractIds(body, contentType) {
  *   minItems?: number,
  *   maxShrink?: number,
  * }} [opts]
- * @returns {string[]} problems; empty when the feed may be uploaded
+ * @returns {{ problems: string[], warnings: string[] }} the feed may be
+ *   uploaded when `problems` is empty; `warnings` don't block the upload
  */
 export function validateFeed(built, {
   idPattern, previousCount, force = false, minItems = MIN_ITEMS, maxShrink = MAX_SHRINK,
 } = {}) {
   const problems = [];
+  const warnings = [];
   const { body, contentType, itemCount } = built;
 
   if (!body || !body.trim()) {
-    return ['feed body is empty'];
+    return { problems: ['feed body is empty'], warnings };
   }
 
   if (/xml/.test(contentType)) {
@@ -63,12 +65,14 @@ export function validateFeed(built, {
     );
   }
 
+  // Provider id rules (e.g. CJ item-level commissioning) affect only the
+  // offending items, so they warn rather than hold back the whole catalog.
   if (idPattern) {
     const bad = extractIds(body, contentType).filter((id) => !idPattern.test(id));
     if (bad.length) {
-      problems.push(`${bad.length} ids don't match ${idPattern}: ${bad.slice(0, 5).join(', ')}${bad.length > 5 ? ', …' : ''}`);
+      warnings.push(`${bad.length} ids don't match ${idPattern}: ${bad.slice(0, 5).join(', ')}${bad.length > 5 ? ', …' : ''}`);
     }
   }
 
-  return problems;
+  return { problems, warnings };
 }

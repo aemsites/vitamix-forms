@@ -30,7 +30,7 @@ export async function main(params) {
   return run(params, {
     dryRun: isTrue(params.dryRun),
     force: isTrue(params.force),
-    target: optionalString(params.target),
+    target: optionalString(params.target)?.toLowerCase(),
     locale: optionalString(params.locale)?.toLowerCase(),
   });
 }

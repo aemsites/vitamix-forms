@@ -15,8 +15,18 @@ import { SFTP_READY_TIMEOUT_MS, SFTP_CONNECT_RETRIES } from './config.js';
  *   username: string,
  *   password: string,
  *   algorithms?: Record<string, unknown>,
+ *   hostFingerprints?: string[],
  * }} SftpOptions
  */
+
+/**
+ * OpenSSH-style fingerprint of a host key hash.
+ * @param {string} hashHex sha256 of the host key, hex (as ssh2 passes it)
+ * @returns {string} e.g. "SHA256:gRHI…"
+ */
+export function fingerprint(hashHex) {
+  return `SHA256:${Buffer.from(hashHex, 'hex').toString('base64').replace(/=+$/, '')}`;
+}
 
 /**
  * Open an SFTP connection, retrying connection failures.
@@ -28,6 +38,9 @@ export async function connect(options, { log, createClient = () => new SftpClien
   let lastErr;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
     const client = createClient();
+    /** @type {string | null} host key seen when it didn't match the pin */
+    let rejectedKey = null;
+    const pins = options.hostFingerprints;
     try {
       await client.connect({
         host: options.host,
@@ -36,11 +49,24 @@ export async function connect(options, { log, createClient = () => new SftpClien
         password: options.password,
         algorithms: options.algorithms,
         readyTimeout: SFTP_READY_TIMEOUT_MS,
+        // Pin the server's host key so an impersonating host can't collect the
+        // (account-wide) password.
+        ...(pins?.length ? {
+          hostHash: 'sha256',
+          hostVerifier: (/** @type {string} */ hash) => {
+            const seen = fingerprint(hash);
+            if (pins.includes(seen)) return true;
+            rejectedKey = seen;
+            return false;
+          },
+        } : {}),
       });
       return client;
     } catch (err) {
-      lastErr = err;
-      log.warn(`sftp connect to ${options.host}:${options.port} failed (attempt ${attempt + 1}/${retries + 1}): ${err.message}`);
+      lastErr = rejectedKey
+        ? new Error(`host key mismatch for ${options.host}: got ${rejectedKey}, expected one of ${pins.join(', ')}`)
+        : err;
+      log.warn(`sftp connect to ${options.host}:${options.port} failed (attempt ${attempt + 1}/${retries + 1}): ${lastErr.message}`);
       try { await client.end(); } catch { /* not connected */ }
     }
   }

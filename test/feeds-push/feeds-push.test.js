@@ -16,6 +16,7 @@ const {
   CONFIG, NAMESPACES, resolveEnvironment, resolveCredentials,
 } = await import('../../src/actions/feeds-push/config.js');
 const { validateFeed } = await import('../../src/actions/feeds-push/validate.js');
+const sftpModule = await import('../../src/actions/feeds-push/sftp.js');
 const { parseRecipients, buildAlert } = await import('../../src/actions/feeds-push/alert.js');
 const { PROVIDERS } = await import('../../src/actions/feeds/providers/index.js');
 
@@ -81,6 +82,23 @@ const SECRETS = {
   EMAIL_TOKEN: 'email-token',
 };
 
+/**
+ * The real stage config with small item floors, so tests can use tiny feeds.
+ * (The real US floor is covered by its own test.)
+ */
+const smallConfig = () => ({
+  ...CONFIG,
+  stage: {
+    enabled: true,
+    targets: {
+      cj: {
+        ...CONFIG.stage.targets.cj,
+        locales: { 'us/en_us': { ...CONFIG.stage.targets.cj.locales['us/en_us'], minItems: 1 } },
+      },
+    },
+  },
+});
+
 /** A config with CJ US + CA on stage, for multi-locale tests. */
 const twoLocaleConfig = () => ({
   ...CONFIG,
@@ -90,8 +108,8 @@ const twoLocaleConfig = () => ({
       cj: {
         ...CONFIG.stage.targets.cj,
         locales: {
-          'us/en_us': { file: 'vitamix_us_edge.xml' },
-          'ca/en_us': { file: 'vitamix_ca_edge.xml' },
+          'us/en_us': { file: 'vitamix_us_edge.xml', minItems: 1 },
+          'ca/en_us': { file: 'vitamix_ca_edge.xml', minItems: 1 },
         },
       },
     },
@@ -187,7 +205,8 @@ describe('run — gating', () => {
   test('a disabled environment with a dryRun builds and validates without SFTP', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp();
-    const config = { ...CONFIG, stage: { ...CONFIG.stage, enabled: false } };
+    const config = smallConfig();
+    config.stage.enabled = false;
     const res = await run({ LOG_LEVEL: 'error' }, {
       namespace: STAGE_NS, dryRun: true, config, sftpDeps: { createClient: sftp.createClient },
     });
@@ -203,7 +222,7 @@ describe('run — stage push', () => {
   test('uploads the CJ US feed to /vitamix_us_edge.xml with the built body', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(4) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
 
     expect(res.ok).toBe(true);
     expect(res.environment).toBe('stage');
@@ -229,7 +248,7 @@ describe('run — stage push', () => {
     const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp();
     const res = await run({ ...SECRETS, CJ_SFTP_PASSWORD: '' }, {
-      namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient },
+      namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient },
     });
     expect(res.ok).toBe(false);
     expect(res.results[0]).toMatchObject({ status: 'failed', step: 'config' });
@@ -241,7 +260,7 @@ describe('run — stage push', () => {
   test('source fetch failure fails the build step and sends one alert', async () => {
     const { emails } = mockFetch({ feeds: {} }); // 404
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(res.results[0]).toMatchObject({ status: 'failed', step: 'build' });
     expect(res.alert).toBe('sent');
     expect(emails).toHaveLength(1);
@@ -255,7 +274,7 @@ describe('run — stage push', () => {
     const sftp = mockSftp();
     const noAlerts = { ...SECRETS };
     delete noAlerts.ALERT_FEED_FAIL_EMAILS;
-    const res = await run(noAlerts, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(noAlerts, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(res.ok).toBe(false);
     expect(res.alert).toBe('no-recipients');
     expect(emails).toHaveLength(0);
@@ -264,7 +283,7 @@ describe('run — stage push', () => {
   test('alert send failure does not throw', async () => {
     mockFetch({ feeds: {}, emailOk: false });
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(res.alert).toBe('send-failed');
     expect(res.results[0].status).toBe('failed');
   });
@@ -273,7 +292,7 @@ describe('run — stage push', () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp({ connectError: new Error('auth failed') });
     const res = await run(SECRETS, {
-      namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient, retries: 1 },
+      namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient, retries: 1 },
     });
     expect(sftp.connects).toHaveLength(2);
     expect(res.results[0]).toMatchObject({ status: 'failed', step: 'connect', error: 'auth failed' });
@@ -282,7 +301,7 @@ describe('run — stage push', () => {
   test('upload failure is reported and not retried', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp({ putError: new Error('permission denied') });
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(res.results[0]).toMatchObject({ status: 'failed', step: 'upload', error: 'permission denied' });
     expect(store.has('feeds-push.counts')).toBe(false);
   });
@@ -323,11 +342,39 @@ describe('run — stage push', () => {
     expect(sftp.connects.map((c) => c.username)).toEqual(['cj-user', 'ca-user']);
   });
 
+  test('bad CJ ids upload anyway and send a warnings alert', async () => {
+    const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') } });
+    const sftp = mockSftp();
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
+    expect(res.ok).toBe(true);
+    expect(res.results[0].status).toBe('uploaded');
+    expect(res.results[0].warnings[0]).toMatch(/2 ids don't match/);
+    expect(sftp.uploads).toHaveLength(1);
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toBe('[stage] Feed push warnings: cj us/en_us');
+  });
+
+  test('a filter that matches nothing is an error, not a silent no-op', async () => {
+    const { spy } = mockFetch();
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), target: 'cjj' });
+    expect(res.ok).toBe(false);
+    expect(res.error).toBe('no feed matches target="cjj" locale="*"; known: cj:us/en_us');
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('passes the pinned host key to the SFTP connection', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp();
+    await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
+    expect(sftp.connects[0].hostHash).toBe('sha256');
+    expect(typeof sftp.connects[0].hostVerifier).toBe('function');
+  });
+
   test('dryRun never connects and never alerts', async () => {
     const { emails } = mockFetch({ feeds: {} });
     const sftp = mockSftp();
     const res = await run({ LOG_LEVEL: 'error', ALERT_FEED_FAIL_EMAILS: 'a@example.com' }, {
-      namespace: STAGE_NS, dryRun: true, sftpDeps: { createClient: sftp.createClient },
+      namespace: STAGE_NS, config: smallConfig(), dryRun: true, sftpDeps: { createClient: sftp.createClient },
     });
     expect(res.results[0].status).toBe('failed');
     expect(sftp.connects).toHaveLength(0);
@@ -341,12 +388,12 @@ describe('run — shrink guard', () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(4) } });
     const sftp = mockSftp();
 
-    const blocked = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const blocked = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(blocked.results[0]).toMatchObject({ status: 'failed', step: 'validate' });
     expect(blocked.results[0].error).toMatch(/dropped from 10 to 4/);
     expect(sftp.uploads).toHaveLength(0);
 
-    const forced = await run(SECRETS, { namespace: STAGE_NS, force: true, sftpDeps: { createClient: sftp.createClient } });
+    const forced = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), force: true, sftpDeps: { createClient: sftp.createClient } });
     expect(forced.results[0].status).toBe('uploaded');
     // the forced count becomes the new baseline
     expect(JSON.parse(store.get('feeds-push.counts'))['cj|us/en_us'].count).toBe(4);
@@ -356,7 +403,7 @@ describe('run — shrink guard', () => {
     store.set('feeds-push.counts', JSON.stringify({ 'cj|us/en_us': { count: 8 } }));
     mockFetch({ feeds: { 'us/en_us': sourceFeed(4) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(res.results[0].status).toBe('uploaded');
   });
 
@@ -364,9 +411,29 @@ describe('run — shrink guard', () => {
     stateMock.get.mockRejectedValueOnce(new Error('state down'));
     mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
     expect(res.results[0].status).toBe('uploaded');
     expect(res.warnings[0]).toMatch(/shrink guard skipped: state down/);
+  });
+
+  test('a state outage still alerts, so an unguarded upload is noticed', async () => {
+    stateMock.get.mockRejectedValueOnce(new Error('state down'));
+    const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp();
+    const res = await run(SECRETS, { namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
+    expect(res.ok).toBe(true);
+    expect(res.alert).toBe('sent');
+    expect(emails).toHaveLength(1);
+    expect(emails[0].subject).toBe('[stage] Feed push warnings: cj us/en_us');
+    expect(emails[0].html).toContain('shrink guard skipped: state down');
+  });
+
+  test('the real US floor (minItems 100) blocks a small feed even without a baseline', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+    const sftp = mockSftp();
+    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    expect(res.results[0]).toMatchObject({ status: 'failed', step: 'validate', error: 'only 3 items (minimum 100)' });
+    expect(sftp.connects).toHaveLength(0);
   });
 });
 
@@ -374,22 +441,31 @@ describe('validateFeed', () => {
   const xml = (ids) => `<?xml version="1.0"?><feed>${ids.map((id) => `<item><id>${id}</id></item>`).join('')}</feed>`;
   const built = (ids) => ({ body: xml(ids), contentType: 'application/xml', itemCount: ids.length });
 
+  const ID = /^[A-Za-z0-9_-]+$/;
+
   test('passes a good feed', () => {
-    expect(validateFeed(built(['a-1', 'B_2']), { idPattern: /^[A-Za-z0-9_-]+$/ })).toEqual([]);
+    expect(validateFeed(built(['a-1', 'B_2']), { idPattern: ID })).toEqual({ problems: [], warnings: [] });
   });
 
-  test('rejects empty body, invalid XML, too few items, and bad CJ ids', () => {
-    expect(validateFeed({ body: '  ', contentType: 'application/xml', itemCount: 0 })).toEqual(['feed body is empty']);
-    expect(validateFeed({ body: '<feed><item></feed>', contentType: 'application/xml', itemCount: 1 })[0])
+  test('rejects empty body, invalid XML and too few items', () => {
+    expect(validateFeed({ body: '  ', contentType: 'application/xml', itemCount: 0 }).problems)
+      .toEqual(['feed body is empty']);
+    expect(validateFeed({ body: '<feed><item></feed>', contentType: 'application/xml', itemCount: 1 }).problems[0])
       .toMatch(/invalid XML/);
-    expect(validateFeed(built([]))).toEqual(['only 0 items (minimum 1)']);
-    expect(validateFeed(built(['ok', 'bad id', 'bad.id']), { idPattern: /^[A-Za-z0-9_-]+$/ })[0])
-      .toMatch(/2 ids don't match .*: bad id, bad\.id/);
+    expect(validateFeed(built([])).problems).toEqual(['only 0 items (minimum 1)']);
+    expect(validateFeed(built(['a', 'b']), { minItems: 3 }).problems).toEqual(['only 2 items (minimum 3)']);
+  });
+
+  test('bad CJ ids warn but do not block', () => {
+    const { problems, warnings } = validateFeed(built(['ok', 'bad id', 'bad.id']), { idPattern: ID });
+    expect(problems).toEqual([]);
+    expect(warnings[0]).toMatch(/2 ids don't match .*: bad id, bad\.id/);
   });
 
   test('checks CSV feeds for a header row', () => {
-    expect(validateFeed({ body: '\uFEFFid,title\n1,x\n', contentType: 'text/csv', itemCount: 1 })).toEqual([]);
-    expect(validateFeed({ body: 'nothing', contentType: 'text/csv', itemCount: 1 })).toEqual(['CSV has no header row']);
+    expect(validateFeed({ body: '\uFEFFid,title\n1,x\n', contentType: 'text/csv', itemCount: 1 }).problems).toEqual([]);
+    expect(validateFeed({ body: 'nothing', contentType: 'text/csv', itemCount: 1 }).problems)
+      .toEqual(['CSV has no header row']);
   });
 });
 
@@ -413,16 +489,61 @@ describe('alert', () => {
 });
 
 describe('main', () => {
-  test('parses manual-run params', async () => {
-    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+  test('parses manual-run params (real stage config)', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(120) } });
     const prev = process.env.__OW_NAMESPACE;
     process.env.__OW_NAMESPACE = STAGE_NS;
     try {
-      const res = await main({ LOG_LEVEL: 'error', dryRun: 'true', locale: 'US/EN_US' });
+      const res = await main({
+        LOG_LEVEL: 'error', dryRun: 'true', target: 'CJ', locale: 'US/EN_US',
+      });
       expect(res.dryRun).toBe(true);
       expect(res.results.map((r) => [r.locale, r.status])).toEqual([['us/en_us', 'validated']]);
     } finally {
       if (prev === undefined) delete process.env.__OW_NAMESPACE; else process.env.__OW_NAMESPACE = prev;
     }
+  });
+});
+
+describe('sftp host key pinning', () => {
+  const CJ_FP = CONFIG.stage.targets.cj.hostFingerprints[0];
+  // sha256 hex whose base64 is the pinned CJ fingerprint
+  const cjHashHex = Buffer.from(CJ_FP.replace(/^SHA256:/, ''), 'base64').toString('hex');
+  const log = { warn() {} };
+
+  /** client whose connect() runs the hostVerifier with the given key hash */
+  const clientSeeing = (hashHex) => () => ({
+    connect: async (opts) => {
+      if (opts.hostVerifier && !opts.hostVerifier(hashHex)) {
+        throw new Error('Host denied (verification failed)');
+      }
+    },
+    end: async () => {},
+  });
+
+  test('fingerprint() formats like OpenSSH', () => {
+    expect(sftpModule.fingerprint(cjHashHex)).toBe(CJ_FP);
+  });
+
+  test('accepts the pinned key', async () => {
+    await expect(sftpModule.connect(
+      { host: 'h', port: 22, hostFingerprints: [CJ_FP] },
+      { log, createClient: clientSeeing(cjHashHex), retries: 0 },
+    )).resolves.toBeDefined();
+  });
+
+  test('rejects any other key with a clear error', async () => {
+    const other = 'ab'.repeat(32);
+    await expect(sftpModule.connect(
+      { host: 'datatransfer.cj.com', port: 22, hostFingerprints: [CJ_FP] },
+      { log, createClient: clientSeeing(other), retries: 0 },
+    )).rejects.toThrow(`host key mismatch for datatransfer.cj.com: got ${sftpModule.fingerprint(other)}, expected one of ${CJ_FP}`);
+  });
+
+  test('does not verify when no fingerprints are configured', async () => {
+    await expect(sftpModule.connect(
+      { host: 'h', port: 22 },
+      { log, createClient: clientSeeing('00'), retries: 0 },
+    )).resolves.toBeDefined();
   });
 });

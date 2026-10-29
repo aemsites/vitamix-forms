@@ -14,7 +14,11 @@ export const NAMESPACES = {
   '60038-161ivoryjackal': 'prod',
 };
 
-/** Minimum items a feed must contain to be uploaded. */
+/**
+ * Default minimum items a feed must contain to be uploaded. Targets/locales
+ * should set a realistic `minItems` floor: the shrink guard has no baseline on
+ * a first run, after the state TTL, or when state can't be read.
+ */
 export const MIN_ITEMS = 1;
 
 /**
@@ -34,6 +38,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   file: string,
  *   enabled?: boolean,
  *   credentials?: string,
+ *   minItems?: number,
  * }} LocaleConfig
  *
  * @typedef {{
@@ -44,7 +49,9 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   remoteDir: string,
  *   credentials: string,
  *   algorithms?: Record<string, unknown>,
+ *   hostFingerprints?: string[],
  *   idPattern?: RegExp,
+ *   minItems?: number,
  *   locales: Record<string, LocaleConfig>,
  * }} TargetConfig
  *
@@ -56,8 +63,11 @@ export const SFTP_CONNECT_RETRIES = 1;
  * - Files must go in the root directory; CJ ignores subdirectories.
  * - The file name must exactly match the CJ feed registration.
  * - CJ's server (Apache SSHD) only offers the legacy `ssh-dss` host key, which
- *   ssh2 doesn't enable by default.
+ *   ssh2 doesn't enable by default. The key is pinned: all three A records for
+ *   datatransfer.cj.com served this fingerprint (2026-10-28). If CJ rotates it,
+ *   connections fail and alert; add the new fingerprint after verifying it.
  * - CJ item-level commissioning needs ids of letters, digits, `-` and `_` only.
+ *   Other ids don't fail the import, so they warn instead of blocking.
  */
 const CJ_SFTP = {
   provider: 'cj',
@@ -65,6 +75,7 @@ const CJ_SFTP = {
   port: 22,
   remoteDir: '/',
   algorithms: { serverHostKey: { append: ['ssh-dss'] } },
+  hostFingerprints: ['SHA256:gRHIccwhOI+eXWmHZS/AacDj24Pc6zizcue39ILRsVE'],
   idPattern: /^[A-Za-z0-9_-]+$/,
 };
 
@@ -78,7 +89,8 @@ export const CONFIG = {
         credentials: 'CJ', // CJ_SFTP_USERNAME / CJ_SFTP_PASSWORD
         locales: {
           // CJ test feed "Vitamix_US_Edge_Test" (feed 323567, ad 17374154), test mode
-          'us/en_us': { file: 'vitamix_us_edge.xml' },
+          // ~160 items as of 2026-10; the floor holds even without a baseline
+          'us/en_us': { file: 'vitamix_us_edge.xml', minItems: 100 },
           // Once a CA test feed is registered (add credentials: 'CJ_CA' if it's
           // a separate CJ account):
           // 'ca/en_us': { file: '<registered file name>.xml' },
