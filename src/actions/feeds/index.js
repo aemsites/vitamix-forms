@@ -17,16 +17,11 @@
  */
 
 import { Core } from '@adobe/aio-sdk';
-import { fetchGmcFeed } from './source.js';
-import { prepareFeed } from './prepare.js';
-import { buildFeed } from './serialize.js';
+import { buildProviderFeed, resolveFeedEnv } from './build.js';
 import { PROVIDERS } from './providers/index.js';
 import { errorInfo } from '../../utils.js';
 
 const DEFAULT_LOCALE = 'us/en_us';
-// Production public domain — serves the merchant feed and is reachable from the
-// runtime (a direct fetch of the aem.network host fails at runtime: "fetch failed").
-const DEFAULT_FEED_SITE_BASE = 'https://www.vitamix.com';
 
 /**
  * @param {string | undefined} value
@@ -90,36 +85,13 @@ export async function main(params) {
     return errorResponse(400, 'invalid locale; expected form "cc/ll_cc" e.g. "us/en_us"');
   }
 
-  // Use an env value only when it's a real http(s) URL — this tolerates the var
-  // being unset (empty) or left as an unsubstituted "$VAR" literal by the
-  // deploy, falling back to the in-code default in both cases.
-  const httpUrl = (value) => (/^https?:\/\//.test(value || '') ? value : undefined);
-  const ctx = {
-    env: {
-      FEED_SITE_BASE: httpUrl(params.FEED_SITE_BASE) || DEFAULT_FEED_SITE_BASE,
-      // authored PDP content, for descriptions missing from the source feed
-      FEED_CONTENT_BASE: httpUrl(params.FEED_CONTENT_BASE),
-      BV_CATEGORY_SHEET_URL: httpUrl(params.BV_CATEGORY_SHEET_URL),
-    },
-    log,
-  };
+  const ctx = { env: resolveFeedEnv(params), log };
 
   // `raw=true` opts out of the shared catalog preparation for this request.
   const raw = isTrue(params.raw);
 
   try {
-    const source = await fetchGmcFeed(ctx, locale);
-    // Shared catalog cleanup (product selection, titles, descriptions), unless
-    // the unprepared source feed was requested.
-    const feed = raw ? source : await prepareFeed(ctx, source, locale);
-    // Custom-schema providers (e.g. bazaarvoice) supply their own async builder;
-    // the rest use the shared field/format serializer.
-    const body = serializer.build
-      ? await serializer.build(ctx, feed, locale)
-      : buildFeed(
-        { channel: feed.channel, items: feed.items.map(serializer.transformItem) },
-        serializer,
-      );
+    const { body } = await buildProviderFeed(ctx, provider, locale, { raw });
 
     // Only ungated feeds may be shared-cached. When FEEDS_TOKEN gates access, the
     // response is Bearer-authenticated, so keep it out of shared/CDN caches.

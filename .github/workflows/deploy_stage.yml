@@ -92,6 +92,10 @@ jobs:
           # recipe-notify — RECIPE_NOTIFY_ENABLED intentionally NOT set on stage,
           # so the scheduled digest no-ops here (no duplicate emails).
           RECIPE_NOTIFY_TOKEN: ${{ secrets.RECIPE_NOTIFY_TOKEN_STAGE }}
+          # feeds-push — CJ test feed SFTP credentials; targets/files live in code
+          CJ_SFTP_USERNAME: ${{ secrets.CJ_SFTP_USERNAME_STAGE }}
+          CJ_SFTP_PASSWORD: ${{ secrets.CJ_SFTP_PASSWORD_STAGE }}
+          ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}
 
         uses: adobe/aio-apps-action@3.3.0
         with:

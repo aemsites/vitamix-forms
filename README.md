@@ -109,6 +109,67 @@ Supported providers:
 Not served separately: **Google Ads** — it serves from the linked Merchant
 Center account (i.e. the `merchant-center` feed).
 
+### `feeds/feeds-push` (scheduled, non-web)
+
+Pushes feeds to providers that take an SFTP upload, nightly at **1:00 AM
+America/New_York** (`feeds-push-schedule` alarm). It builds each feed in-process
+with the same pipeline as `feeds/feeds` (`src/actions/feeds/build.js`), so the
+uploaded file is exactly what the feed URL serves.
+
+**Configuration is in code** (`src/actions/feeds-push/config.js`), per
+environment: the on/off switch, targets (host, port, remote directory), and the
+locale → file name map. The environment comes from the runtime namespace
+(`60038-161ivoryjackal-stage` → stage, `60038-161ivoryjackal` → prod; any other
+namespace does nothing). Only secrets are env vars (see below).
+
+| Environment | Status | Targets |
+|---|---|---|
+| stage | enabled | CJ **test** feed `Vitamix_US_Edge_Test` (323567): `us/en_us` → `/vitamix_us_edge.xml` |
+| prod | **disabled** | — |
+
+Per run, for each target × locale: build → validate → upload. A failure in one
+never stops the others. Validation blocks an upload when the feed is empty or
+malformed, has fewer items than the feed's `minItems` floor (CJ US: 100), or
+(the **shrink guard**) has fewer than 50% of the items of the last successful
+push for that target + locale (counts kept in `aio-lib-state`). The provider
+then keeps its previous file. CJ-incompatible ids only **warn** (they affect
+item-level commissioning, not the import). If anything fails or warns (including
+a shrink guard skipped because state was unavailable), one alert email goes to
+`ALERT_FEED_FAIL_EMAILS` (log only when unset). Failures alert on every run; a
+feed's warnings alert only when they change, so a persistent data issue emails
+once rather than nightly. A manual run whose
+`target`/`locale` filter matches nothing returns `ok: false` with the known
+feeds.
+
+CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
+- Upload to the root `/` only; CJ ignores subdirectories.
+- The file name must exactly match the CJ feed registration. Each locale is a
+  separate registration (country/currency/language are fixed per feed).
+- CJ confirms receipt and processing **by email** to the registration's
+  notification addresses.
+- CJ's server only offers the legacy `ssh-dss` host key; the target enables it
+  and **pins** its fingerprint (`hostFingerprints` in `config.js`). If CJ rotates
+  the key, uploads fail with a `host key mismatch` alert; verify the new
+  fingerprint with CJ before adding it.
+- All CJ SFTP subscriptions on an account share one password — resetting it in
+  CJ breaks every SFTP subscription on that account.
+
+Manual runs (namespace credentials; there is no web URL):
+
+```sh
+aio rt action invoke feeds/feeds-push --result                 # full run
+aio rt action invoke feeds/feeds-push -p dryRun true --result  # build + validate only, no SFTP
+aio rt action invoke feeds/feeds-push -p target cj -p locale us/en_us --result
+aio rt action invoke feeds/feeds-push -p force true --result   # bypass the shrink guard
+```
+
+Emergency stop without a deploy: `aio rt rule disable feeds-push-rule` (the next
+deploy re-enables it). To disable permanently, set `enabled: false` in
+`config.js`.
+
+Bundling note: ssh2 optionally loads native add-ons that webpack can't bundle;
+`webpack-config.cjs` ignores them so ssh2 uses its pure-JS crypto.
+
 ## APIs
 
 ### Form Submission
@@ -294,6 +355,17 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 | `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://www.vitamix.com` |
 | `FEED_CONTENT_BASE` | Host serving authored PDP content (`.plain.html`), used for missing descriptions | `https://main--vitamix--aemsites.aem.live` |
 | `FEEDS_TOKEN` | Optional bearer/token gate for the feed URLs. When unset, feeds are public. | unset (public) |
+
+### feeds package — `feeds-push` action
+
+Non-secret settings live in `src/actions/feeds-push/config.js`. Env vars are
+secrets only:
+
+| Variable | Description | Default |
+|---|---|---|
+| `CJ_SFTP_USERNAME` / `CJ_SFTP_PASSWORD` | CJ SFTP credentials for this environment (GitHub secrets `CJ_SFTP_*_STAGE` / `_PROD`) | unset — CJ uploads fail and alert |
+| `ALERT_FEED_FAIL_EMAILS` | Comma-separated alert recipients for any failed feed push | unset (log only) |
+| `EMAIL_TOKEN` | Productbus token used to send the alert | — |
 
 ## Setup (first-time per environment)
 
