@@ -103,6 +103,11 @@ jobs:
           # recipe-notify — PROD is the only environment that sends the digest
           RECIPE_NOTIFY_ENABLED: "true"
           RECIPE_NOTIFY_TOKEN: ${{ secrets.RECIPE_NOTIFY_TOKEN_PROD }}
+          # managed inventory (ebs-sync outbox + inventory-sync). Enabled only when
+          # the INVENTORY_SYNC_ENABLED_PROD secret is "true"; unset = disabled, so
+          # rollout is a secret toggle + redeploy rather than a code change.
+          INVENTORY_SYNC_ENABLED: ${{ secrets.INVENTORY_SYNC_ENABLED_PROD }}
+          EDGE_COMMERCE_API_CATALOG_TOKEN: ${{ secrets.EDGE_COMMERCE_API_CATALOG_TOKEN_PROD }}
           # feeds-push — off in prod (src/actions/feeds-push/config.js). Add
           # CJ_SFTP_USERNAME/PASSWORD from *_PROD secrets when prod is enabled.
           ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}

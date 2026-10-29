@@ -12,6 +12,9 @@
  */
 
 import { init } from '@adobe/aio-lib-state';
+import {
+  OUTBOX_HEAD_KEY, OUTBOX_TTL_SEC, outboxKey, parseSeq,
+} from '../../inventory.js';
 
 const STATE_KEY = 'ebs-sync:state';
 const LOCK_KEY = 'ebs-sync:lock';
@@ -120,4 +123,41 @@ export async function acquireLock() {
 export async function releaseLock() {
   const c = await client();
   await c.delete(LOCK_KEY);
+}
+
+/**
+ * Upper bound on free-slot probing past `head`. Slots past head only exist when
+ * an earlier entry write succeeded but its head write failed.
+ */
+const MAX_OUTBOX_PROBE = 50;
+
+/**
+ * Append a managed-inventory outbox entry: write `inventory:outbox:{seq}` first,
+ * then `inventory:outbox:head = seq`. ebs-sync is the only writer of both keys.
+ *
+ * If `head + 1` is already occupied (an earlier head write failed after its
+ * entry write), skip to the next free seq so that entry is not overwritten;
+ * inventory-sync reads `cursor+1..head`, so it is picked up once head moves past it.
+ *
+ * @param {{ activationId?: string, orderIds: string[], deltas: object[] }} payload
+ * @returns {Promise<number>} the seq written
+ */
+export async function writeInventoryOutbox({ activationId, orderIds, deltas }) {
+  const c = await client();
+  const head = parseSeq(await c.get(OUTBOX_HEAD_KEY));
+  let seq = head + 1;
+  for (let i = 0; i < MAX_OUTBOX_PROBE && await c.get(outboxKey(seq)); i++) {
+    console.log(`[ebs-sync] inventory outbox seq ${seq} already exists past head ${head} — skipping`);
+    seq += 1;
+  }
+  const entry = {
+    seq,
+    activationId: activationId ?? null,
+    createdAt: new Date().toISOString(),
+    orderIds,
+    deltas,
+  };
+  await c.put(outboxKey(seq), JSON.stringify(entry), { ttl: OUTBOX_TTL_SEC });
+  await c.put(OUTBOX_HEAD_KEY, String(seq), { ttl: OUTBOX_TTL_SEC });
+  return seq;
 }
