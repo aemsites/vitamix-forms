@@ -1,10 +1,11 @@
 /**
  * Trigger an AEM preview of a DA document so aem.page reflects the source.
  *
- * NOTE (to verify in prod): this sends the AIO IMS server-to-server token as a
- * Bearer token to admin.hlx.page. Whether the admin API accepts that token for
- * aemsites/vitamix is not yet confirmed. A failure is logged and never fatal:
- * the DA source (which inventory-sync reads) is already updated.
+ * Best effort only. inventory-sync and authors both work from the DA source;
+ * authors review the sheet in DA and preview it themselves before the next
+ * product-admin ingest. This uses the AIO IMS server-to-server token as a
+ * Bearer token; if admin.hlx.page rejects it, the failure is logged as a
+ * warning and the run continues.
  */
 
 import { errorInfo } from '../../utils.js';

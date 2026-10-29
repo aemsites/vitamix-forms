@@ -93,10 +93,11 @@ jobs:
           # so the scheduled digest no-ops here (no duplicate emails).
           RECIPE_NOTIFY_TOKEN: ${{ secrets.RECIPE_NOTIFY_TOKEN_STAGE }}
           # managed inventory — INVENTORY_SYNC_ENABLED intentionally NOT set on
-          # stage: there is one DA sheet and one catalog, so stage writes nothing
-          # (ebs-sync queues nothing, inventory-sync's schedule no-ops). The catalog
-          # token is only used by manual { dryRun: true } runs, which only read.
-          EDGE_COMMERCE_API_CATALOG_TOKEN: ${{ secrets.EDGE_COMMERCE_API_CATALOG_TOKEN_STAGE }}
+          # stage: there is one DA sheet and one (prod) catalog, so stage writes
+          # nothing (ebs-sync queues nothing, inventory-sync's schedule no-ops).
+          # EDGE_COMMERCE_API_CATALOG_TOKEN is also intentionally NOT passed: the
+          # catalog only exists in prod, so a stage catalog write would hit prod.
+          # Catalog GETs are public, so stage { dryRun: true } runs still work.
           # feeds-push — CJ test feed SFTP credentials; targets/files live in code
           CJ_SFTP_USERNAME: ${{ secrets.CJ_SFTP_USERNAME_STAGE }}
           CJ_SFTP_PASSWORD: ${{ secrets.CJ_SFTP_PASSWORD_STAGE }}
