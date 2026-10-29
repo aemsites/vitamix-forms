@@ -1,3 +1,18 @@
+# [1.9.0](https://github.com/aemsites/vitamix-forms/compare/v1.8.0...v1.9.0) (2026-10-29)
+
+
+### Bug Fixes
+
+* **feeds:** address feeds-push review ([8d4631a](https://github.com/aemsites/vitamix-forms/commit/8d4631a3baaf536d381fe8e3d66df58ef731c5d1))
+* **feeds:** alert on feed warnings only when they change ([c4757e2](https://github.com/aemsites/vitamix-forms/commit/c4757e243358d0c7a310acd1502d932aec2122ef))
+* **feeds:** run feeds-push at 1 AM America/New_York year-round ([015d3a2](https://github.com/aemsites/vitamix-forms/commit/015d3a2ea96d8d3466c901ab6d10bcddefa11e3b))
+
+
+### Features
+
+* **feeds:** push the CJ CA test feed; stage pushes on demand only ([08f07ef](https://github.com/aemsites/vitamix-forms/commit/08f07ef0582d64c681b5572380385c698ee6e7b3))
+* **feeds:** scheduled SFTP push of provider feeds (CJ test feed on stage) ([d2cc7d0](https://github.com/aemsites/vitamix-forms/commit/d2cc7d08445d3cc60465ac418dc26b36e1c95628))
+
 # [1.8.0](https://github.com/aemsites/vitamix-forms/compare/v1.7.0...v1.8.0) (2026-10-28)
 
 
