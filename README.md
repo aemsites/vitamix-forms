@@ -112,7 +112,11 @@ Center account (i.e. the `merchant-center` feed).
 ### `feeds/feeds-push` (scheduled, non-web)
 
 Pushes feeds to providers that take an SFTP upload, nightly at **1:00 AM
-America/New_York** (`feeds-push-schedule` alarm). It builds each feed in-process
+America/New_York**. Runtime's alarm feed ignores `timezone` and runs cron in
+UTC, so `feeds-push-schedule` fires at 05:00 and 06:00 UTC, and only the run
+that is the first 1 AM on the New York clock pushes. The other run returns
+`{ skipped: true, reason: 'outside-schedule' }`. This holds across DST,
+including the fall-back night, when both fires read 1 AM. It builds each feed in-process
 with the same pipeline as `feeds/feeds` (`src/actions/feeds/build.js`), so the
 uploaded file is exactly what the feed URL serves.
 
@@ -156,8 +160,11 @@ CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
 
 Manual runs (namespace credentials; there is no web URL):
 
+Any of `now`, `dryRun`, `force`, `target` or `locale` marks a manual run and skips
+the 1 AM check. A bare invoke is treated like the schedule.
+
 ```sh
-aio rt action invoke feeds/feeds-push --result                 # full run
+aio rt action invoke feeds/feeds-push -p now true --result     # full run, now
 aio rt action invoke feeds/feeds-push -p dryRun true --result  # build + validate only, no SFTP
 aio rt action invoke feeds/feeds-push -p target cj -p locale us/en_us --result
 aio rt action invoke feeds/feeds-push -p force true --result   # bypass the shrink guard

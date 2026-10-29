@@ -10,7 +10,9 @@ const stateMock = {
 };
 jest.unstable_mockModule('@adobe/aio-lib-state', () => ({ init: async () => stateMock }));
 
-const { run, listJobs } = await import('../../src/actions/feeds-push/run.js');
+const {
+  run, listJobs, isScheduledHour, localHour,
+} = await import('../../src/actions/feeds-push/run.js');
 const { main } = await import('../../src/actions/feeds-push/index.js');
 const {
   CONFIG, NAMESPACES, resolveEnvironment, resolveCredentials,
@@ -621,5 +623,93 @@ describe('sftp host key pinning', () => {
       { host: 'h', port: 22 },
       { log, createClient: clientSeeing('00'), retries: 0 },
     )).resolves.toBeDefined();
+  });
+});
+
+describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', () => {
+  const at = (iso) => new Date(iso);
+
+  test('localHour uses the wall clock', () => {
+    expect(localHour(at('2026-07-01T05:00:03Z'), 'America/New_York')).toBe(1); // EDT
+    expect(localHour(at('2026-12-01T05:00:03Z'), 'America/New_York')).toBe(0); // EST
+  });
+
+  test.each([
+    // summer (EDT, UTC-4): 05:00Z is 1 AM
+    ['2026-07-01T05:00:03Z', true],
+    ['2026-07-01T06:00:03Z', false],
+    // winter (EST, UTC-5): 06:00Z is 1 AM
+    ['2026-12-01T05:00:03Z', false],
+    ['2026-12-01T06:00:03Z', true],
+    // DST ends Sun 2026-11-01: both fires read 1 AM; only the first runs
+    ['2026-11-01T05:00:03Z', true],
+    ['2026-11-01T06:00:03Z', false],
+    // DST starts Sun 2027-03-14 at 2 AM EST (07:00Z): 06:00Z is 1 AM EST
+    ['2027-03-14T05:00:03Z', false],
+    ['2027-03-14T06:00:03Z', true],
+    // the alarm that fired at 9 PM ET on 2026-10-28 (01:00Z, old cron)
+    ['2026-10-29T01:00:03Z', false],
+  ])('%s → push=%s', (iso, expected) => {
+    expect(isScheduledHour(at(iso))).toBe(expected);
+  });
+
+  test('exactly one push per local day across a year of 05:00/06:00Z fires', () => {
+    const perDay = new Map();
+    const start = Date.UTC(2026, 0, 1);
+    for (let d = 0; d < 366 * 2; d += 1) {
+      for (const h of [5, 6]) {
+        const date = new Date(start + d * 86400000 + h * 3600000);
+        if (isScheduledHour(date)) {
+          const day = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(date);
+          perDay.set(day, (perDay.get(day) || 0) + 1);
+        }
+      }
+    }
+    expect(perDay.size).toBeGreaterThanOrEqual(730);
+    expect([...perDay.values()].every((n) => n === 1)).toBe(true);
+  });
+
+  test('a scheduled run outside 1 AM ET skips without building', async () => {
+    const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const res = await run(SECRETS, {
+      namespace: STAGE_NS, config: smallConfig(), scheduled: true, now: at('2026-07-01T06:00:03Z'),
+    });
+    expect(res).toMatchObject({ skipped: true, reason: 'outside-schedule', environment: 'stage' });
+    expect(res.localTime).toMatch(/2:00 AM America\/New_York/);
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  test('a scheduled run at 1 AM ET pushes', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp();
+    const res = await run(SECRETS, {
+      namespace: STAGE_NS,
+      config: smallConfig(),
+      scheduled: true,
+      now: at('2026-07-01T05:00:03Z'),
+      sftpDeps: { createClient: sftp.createClient },
+    });
+    expect(res.ok).toBe(true);
+    expect(sftp.uploads).toHaveLength(1);
+  });
+
+  test('main: a bare invoke is treated as scheduled; manual params bypass the check', async () => {
+    const prev = process.env.__OW_NAMESPACE;
+    process.env.__OW_NAMESPACE = STAGE_NS;
+    jest.useFakeTimers({ now: at('2026-07-01T15:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
+    try {
+      mockFetch({ feeds: { 'us/en_us': sourceFeed(120) } });
+      expect(await main({ LOG_LEVEL: 'error' })).toMatchObject({ skipped: true, reason: 'outside-schedule' });
+      // trigger-provided params don't count as manual
+      expect(await main({ LOG_LEVEL: 'error', cron: '0 5,6 * * *', timezone: 'UTC' }))
+        .toMatchObject({ reason: 'outside-schedule' });
+      const dry = await main({ LOG_LEVEL: 'error', now: 'true', dryRun: 'true' });
+      expect(dry.results[0].status).toBe('validated');
+      const dryOnly = await main({ LOG_LEVEL: 'error', dryRun: 'true' });
+      expect(dryOnly.results[0].status).toBe('validated');
+    } finally {
+      jest.useRealTimers();
+      if (prev === undefined) delete process.env.__OW_NAMESPACE; else process.env.__OW_NAMESPACE = prev;
+    }
   });
 });
