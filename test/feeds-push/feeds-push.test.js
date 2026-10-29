@@ -437,6 +437,82 @@ describe('run — shrink guard', () => {
   });
 });
 
+describe('run — warning alert dedup', () => {
+  const opts = (sftp) => ({ namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient } });
+
+  test('a persistent warning alerts once, then is suppressed', async () => {
+    const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') } });
+    const sftp = mockSftp();
+    const first = await run(SECRETS, opts(sftp));
+    const second = await run(SECRETS, opts(sftp));
+    expect(first.alert).toBe('sent');
+    expect(second.alert).toBe('suppressed-repeat');
+    expect(second.results[0].status).toBe('uploaded');
+    expect(emails).toHaveLength(1);
+  });
+
+  test('changed warnings alert again', async () => {
+    const sftp = mockSftp();
+    const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') } });
+    await run(SECRETS, opts(sftp));
+    jest.restoreAllMocks();
+    const second = mockFetch({ feeds: { 'us/en_us': sourceFeed(3, 'BAD.') } }); // 3 bad ids now
+    const res = await run(SECRETS, opts(sftp));
+    expect(emails).toHaveLength(1);
+    expect(res.alert).toBe('sent');
+    expect(second.emails).toHaveLength(1);
+  });
+
+  test('a warning that clears and comes back alerts again', async () => {
+    const sftp = mockSftp();
+    let m = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') } });
+    await run(SECRETS, opts(sftp));
+    expect(m.emails).toHaveLength(1);
+    jest.restoreAllMocks();
+    m = mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } }); // clean
+    const clean = await run(SECRETS, opts(sftp));
+    expect(clean.alert).toBeUndefined();
+    jest.restoreAllMocks();
+    m = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') } }); // back
+    const back = await run(SECRETS, opts(sftp));
+    expect(back.alert).toBe('sent');
+    expect(m.emails).toHaveLength(1);
+  });
+
+  test('failures alert every run', async () => {
+    const { emails } = mockFetch({ feeds: {} });
+    const sftp = mockSftp();
+    await run(SECRETS, opts(sftp));
+    await run(SECRETS, opts(sftp));
+    expect(emails).toHaveLength(2);
+  });
+
+  test('a failed send is retried on the next run', async () => {
+    const sftp = mockSftp();
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') }, emailOk: false });
+    const first = await run(SECRETS, opts(sftp));
+    expect(first.alert).toBe('send-failed');
+    jest.restoreAllMocks();
+    const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.') } });
+    const second = await run(SECRETS, opts(sftp));
+    expect(second.alert).toBe('sent');
+    expect(emails).toHaveLength(1);
+  });
+
+  test('a filtered run does not reset other feeds\' alerted warnings', async () => {
+    const sftp = mockSftp();
+    const twoOpts = { namespace: STAGE_NS, config: twoLocaleConfig(), sftpDeps: { createClient: sftp.createClient } };
+    let m = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.'), 'ca/en_us': sourceFeed(2) } });
+    await run(SECRETS, twoOpts);
+    expect(m.emails).toHaveLength(1);
+    jest.restoreAllMocks();
+    m = mockFetch({ feeds: { 'us/en_us': sourceFeed(2, 'BAD.'), 'ca/en_us': sourceFeed(2) } });
+    await run(SECRETS, { ...twoOpts, locale: 'ca/en_us' });
+    await run(SECRETS, twoOpts); // US warning unchanged → still suppressed
+    expect(m.emails).toHaveLength(0);
+  });
+});
+
 describe('validateFeed', () => {
   const xml = (ids) => `<?xml version="1.0"?><feed>${ids.map((id) => `<item><id>${id}</id></item>`).join('')}</feed>`;
   const built = (ids) => ({ body: xml(ids), contentType: 'application/xml', itemCount: ids.length });

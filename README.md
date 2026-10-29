@@ -135,7 +135,9 @@ push for that target + locale (counts kept in `aio-lib-state`). The provider
 then keeps its previous file. CJ-incompatible ids only **warn** (they affect
 item-level commissioning, not the import). If anything fails or warns (including
 a shrink guard skipped because state was unavailable), one alert email goes to
-`ALERT_FEED_FAIL_EMAILS` (log only when unset). A manual run whose
+`ALERT_FEED_FAIL_EMAILS` (log only when unset). Failures alert on every run; a
+feed's warnings alert only when they change, so a persistent data issue emails
+once rather than nightly. A manual run whose
 `target`/`locale` filter matches nothing returns `ok: false` with the known
 feeds.
 

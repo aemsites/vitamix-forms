@@ -20,7 +20,9 @@ import {
 } from './config.js';
 import { validateFeed } from './validate.js';
 import * as sftp from './sftp.js';
-import { loadCounts, saveCounts, countKey } from './state.js';
+import {
+  loadCounts, saveCounts, countKey, loadAlertedWarnings, saveAlertedWarnings,
+} from './state.js';
 import { sendFailureAlert } from './alert.js';
 
 /**
@@ -169,12 +171,9 @@ export async function run(params, options = {}) {
   }
 
   const failed = results.filter((r) => r.status === 'failed');
-  const hasWarnings = warnings.length > 0 || results.some((r) => r.warnings?.length);
   let alert;
-  // Warnings alert too: e.g. an upload that went out without the shrink guard
-  // shouldn't go unnoticed.
-  if ((failed.length || hasWarnings) && !dryRun) {
-    alert = await sendFailureAlert(ctx, environment, results, warnings);
+  if (!dryRun) {
+    alert = await alertIfNeeded(ctx, environment, results, warnings);
   }
 
   for (const r of results) {
@@ -193,6 +192,55 @@ export async function run(params, options = {}) {
     ...(warnings.length ? { warnings } : {}),
     ...(alert ? { alert } : {}),
   };
+}
+
+/** @param {PushResult} r */
+const warningSignature = (r) => [...(r.warnings || [])].sort().join('\n');
+
+/**
+ * Decide whether to alert, and send it.
+ * - Any failure → alert, every run.
+ * - Run-level warnings (e.g. shrink guard skipped on a state outage) → alert,
+ *   every run. They're transient, and with state down we can't dedupe anyway.
+ * - Per-feed warnings (e.g. ids CJ can't commission) → alert only when a feed's
+ *   warnings differ from the ones last alerted on, so a persistent data issue
+ *   emails once instead of nightly. Cleared warnings reset, so a recurrence
+ *   alerts again.
+ * @returns {Promise<string | undefined>} alert outcome, or undefined if none was due
+ */
+async function alertIfNeeded(ctx, environment, results, runWarnings) {
+  const hasFailures = results.some((r) => r.status === 'failed');
+  const signatures = Object.fromEntries(results.map((r) => [countKey(r.target, r.locale), warningSignature(r)]));
+
+  /** @type {Record<string, string> | null} null when state can't be read */
+  let alerted = null;
+  try {
+    alerted = await loadAlertedWarnings();
+  } catch (err) {
+    ctx.log.warn(`could not load alerted warnings, not deduplicating: ${err.message}`);
+  }
+  const newWarnings = Object.entries(signatures)
+    .some(([key, sig]) => sig && (!alerted || alerted[key] !== sig));
+
+  let outcome;
+  if (hasFailures || runWarnings.length || newWarnings) {
+    outcome = await sendFailureAlert(ctx, environment, results, runWarnings);
+  } else if (Object.values(signatures).some(Boolean)) {
+    outcome = 'suppressed-repeat';
+    ctx.log.info('feed warnings unchanged since the last alert; not alerting again');
+  }
+
+  // Record what this run's feeds look like now: alerted warnings, or '' for
+  // feeds whose warnings cleared. Only when the alert actually went out (or
+  // there was nothing new), so a failed send is retried next run.
+  if (outcome !== 'send-failed' && outcome !== 'no-recipients') {
+    try {
+      await saveAlertedWarnings(signatures);
+    } catch (err) {
+      ctx.log.warn(`could not save alerted warnings: ${err.message}`);
+    }
+  }
+  return outcome;
 }
 
 /**
