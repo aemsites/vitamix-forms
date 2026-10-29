@@ -15,6 +15,17 @@ export const NAMESPACES = {
 };
 
 /**
+ * Schedule: push at 1:00 AM America/New_York, all year.
+ *
+ * I/O Runtime's alarm feed ignores `timezone` and evaluates cron in UTC, so the
+ * trigger fires at both 05:00 and 06:00 UTC (1 AM EDT / 1 AM EST), and a
+ * scheduled run only proceeds when it's the first hour that reads
+ * SCHEDULE_HOUR on the local clock (see isScheduledHour in ./run.js).
+ */
+export const SCHEDULE_TIMEZONE = 'America/New_York';
+export const SCHEDULE_HOUR = 1;
+
+/**
  * Default minimum items a feed must contain to be uploaded. Targets/locales
  * should set a realistic `minItems` floor: the shrink guard has no baseline on
  * a first run, after the state TTL, or when state can't be read.

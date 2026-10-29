@@ -16,7 +16,7 @@
 import { Core } from '@adobe/aio-sdk';
 import { buildProviderFeed, resolveFeedEnv } from '../feeds/build.js';
 import {
-  CONFIG, MIN_ITEMS, resolveEnvironment, resolveCredentials,
+  CONFIG, MIN_ITEMS, SCHEDULE_TIMEZONE, SCHEDULE_HOUR, resolveEnvironment, resolveCredentials,
 } from './config.js';
 import { validateFeed } from './validate.js';
 import * as sftp from './sftp.js';
@@ -42,6 +42,8 @@ import { sendFailureAlert } from './alert.js';
  * @typedef {{
  *   dryRun?: boolean,
  *   force?: boolean,
+ *   scheduled?: boolean,
+ *   now?: Date,
  *   target?: string,
  *   locale?: string,
  *   namespace?: string,
@@ -51,6 +53,31 @@ import { sendFailureAlert } from './alert.js';
  */
 
 const DEFAULTS = { ORG: 'aemsites', SITE: 'vitamix', LOG_LEVEL: 'info' };
+
+/**
+ * Hour (0–23) on the wall clock of `timeZone` at `date`.
+ * @param {Date} date
+ * @param {string} timeZone
+ * @returns {number}
+ */
+export function localHour(date, timeZone) {
+  return Number(new Intl.DateTimeFormat('en-US', { timeZone, hour: 'numeric', hourCycle: 'h23' }).format(date));
+}
+
+/**
+ * True when `date` is in the first hour the local clock reads `hour`.
+ * The alarm fires at both 05:00 and 06:00 UTC; exactly one of them is 1 AM in
+ * New York on a normal day. On the night DST ends both are 1 AM, and only the
+ * first counts (an hour earlier wasn't already 1 AM).
+ * @param {Date} date
+ * @param {string} [timeZone]
+ * @param {number} [hour]
+ * @returns {boolean}
+ */
+export function isScheduledHour(date, timeZone = SCHEDULE_TIMEZONE, hour = SCHEDULE_HOUR) {
+  const hourEarlier = new Date(date.getTime() - 3600 * 1000);
+  return localHour(date, timeZone) === hour && localHour(hourEarlier, timeZone) !== hour;
+}
 
 /**
  * @param {import('./config.js').EnvConfig} envConfig
@@ -98,6 +125,23 @@ export async function run(params, options = {}) {
   if (!envConfig.enabled && !dryRun) {
     log.info(`skipping: feed push is disabled for ${environment}`);
     return { skipped: true, reason: 'disabled', environment };
+  }
+
+  if (options.scheduled) {
+    const now = options.now || new Date();
+    if (!isScheduledHour(now)) {
+      const local = new Intl.DateTimeFormat('en-US', {
+        timeZone: SCHEDULE_TIMEZONE, dateStyle: 'short', timeStyle: 'short',
+      }).format(now);
+      log.info(`skipping: not the scheduled ${SCHEDULE_HOUR}:00 ${SCHEDULE_TIMEZONE} run (now ${local})`);
+      return {
+        skipped: true,
+        reason: 'outside-schedule',
+        environment,
+        localTime: `${local} ${SCHEDULE_TIMEZONE}`,
+        hint: 'for a manual run, pass -p now true (or dryRun/target/locale/force)',
+      };
+    }
   }
 
   const jobs = listJobs(envConfig, options);

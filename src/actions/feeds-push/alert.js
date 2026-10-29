@@ -56,7 +56,7 @@ ${runWarningList}
 <tr><th>Target</th><th>Locale</th><th>File</th><th>Status</th><th>Items</th><th>Error</th><th>Warnings</th></tr>
 ${rows}
 </table>
-<p>Re-run manually: <code>aio rt action invoke feeds/feeds-push --result</code>
+<p>Re-run manually: <code>aio rt action invoke feeds/feeds-push -p now true --result</code>
 (add <code>-p force true</code> to bypass the shrink guard).</p>`;
 
   return { subject, html };
