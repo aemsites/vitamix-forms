@@ -212,3 +212,42 @@ application:
               BV_CATEGORY_SHEET_URL: $BV_CATEGORY_SHEET_URL
               # optional bearer/token gate for the feed URLs handed to providers
               FEEDS_TOKEN: $FEEDS_TOKEN
+          feeds-push:
+            # Builds provider feeds and uploads them over SFTP (CJ, later OpenAI).
+            # Targets, file names and the per-environment on/off switch live in
+            # src/actions/feeds-push/config.js; only secrets are inputs here.
+            function: dist/actions/feeds-push/index.js
+            runtime: nodejs:22
+            web: false
+            annotations:
+              final: true
+            limits:
+              timeout: 300000  # 5 min — build + upload per target/locale
+              memory: 512
+              concurrency: 1
+            inputs:
+              ORG: aemsites
+              SITE: vitamix
+              LOG_LEVEL: $LOG_LEVEL
+              # for the failure alert email
+              EMAIL_TOKEN: $EMAIL_TOKEN
+              # comma-separated failure alert recipients; unset = log only
+              ALERT_FEED_FAIL_EMAILS: $ALERT_FEED_FAIL_EMAILS
+              # CJ SFTP ("POST to CJ SFTP") credentials, per environment
+              CJ_SFTP_USERNAME: $CJ_SFTP_USERNAME
+              CJ_SFTP_PASSWORD: $CJ_SFTP_PASSWORD
+
+        triggers:
+          feeds-push-schedule:
+            feed: /whisk.system/alarms/alarm
+            inputs:
+              # Runtime's alarm feed ignores `timezone` and runs cron in UTC.
+              # Fire at 05:00 and 06:00 UTC (1 AM EDT / 1 AM EST); the action
+              # only pushes on the run that is 1 AM in America/New_York.
+              cron: '0 5,6 * * *'
+              timezone: UTC
+
+        rules:
+          feeds-push-rule:
+            trigger: feeds-push-schedule
+            action: feeds-push
