@@ -66,7 +66,14 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   locales: Record<string, LocaleConfig>,
  * }} TargetConfig
  *
- * @typedef {{ enabled: boolean, targets: Record<string, TargetConfig> }} EnvConfig
+ * @typedef {{
+ *   enabled: boolean,
+ *   scheduled: boolean,
+ *   targets: Record<string, TargetConfig>,
+ * }} EnvConfig
+ *
+ * `enabled` gates every real push in the environment. `scheduled` controls
+ * whether the nightly alarm pushes; when false, only manual runs push.
  */
 
 /**
@@ -94,17 +101,21 @@ const CJ_SFTP = {
 export const CONFIG = {
   stage: {
     enabled: true,
+    // Stage pushes on demand only (aio rt action invoke … -p now true). The
+    // alarm still fires here (app.config.yaml is shared) but the run no-ops.
+    scheduled: false,
     targets: {
       cj: {
         ...CJ_SFTP,
         credentials: 'CJ', // CJ_SFTP_USERNAME / CJ_SFTP_PASSWORD
         locales: {
           // CJ test feed "Vitamix_US_Edge_Test" (feed 323567, ad 17374154), test mode
-          // ~160 items as of 2026-10; the floor holds even without a baseline
+          // Floors are ~60% of the current item count (2026-10: US 160, CA 141),
+          // so a partial catalog is blocked even without a shrink-guard baseline.
           'us/en_us': { file: 'vitamix_us_edge.xml', minItems: 100 },
-          // Once a CA test feed is registered (add credentials: 'CJ_CA' if it's
-          // a separate CJ account):
-          // 'ca/en_us': { file: '<registered file name>.xml' },
+          // CJ test feed "Vitamix_CA_Edge_Test" (feed 323619, ad 17374929), test
+          // mode. Same CJ account and SFTP credentials as US.
+          'ca/en_us': { file: 'vitamix_ca_edge.xml', minItems: 85 },
         },
       },
     },
@@ -112,6 +123,7 @@ export const CONFIG = {
   prod: {
     // Off until the live CJ registrations + credentials exist.
     enabled: false,
+    scheduled: true, // nightly at 1 AM America/New_York once enabled
     targets: {},
   },
 };
