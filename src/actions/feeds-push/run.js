@@ -127,6 +127,15 @@ export async function run(params, options = {}) {
     return { skipped: true, reason: 'disabled', environment };
   }
 
+  if (options.scheduled && envConfig.scheduled === false) {
+    log.info(`skipping: ${environment} pushes on demand only (scheduled: false)`);
+    return {
+      skipped: true,
+      reason: 'schedule-disabled',
+      environment,
+      hint: 'for a manual run, pass -p now true (or dryRun/target/locale/force)',
+    };
+  }
   if (options.scheduled) {
     const now = options.now || new Date();
     if (!isScheduledHour(now)) {

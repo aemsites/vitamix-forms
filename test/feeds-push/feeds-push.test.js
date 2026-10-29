@@ -142,11 +142,18 @@ describe('config', () => {
     }
   });
 
-  test('stage pushes the CJ US test feed; prod is off', () => {
+  test('stage pushes the CJ US and CA test feeds on demand only; prod is off', () => {
     expect(CONFIG.stage.enabled).toBe(true);
-    expect(CONFIG.stage.targets.cj.locales['us/en_us'].file).toBe('vitamix_us_edge.xml');
+    expect(CONFIG.stage.scheduled).toBe(false);
+    const { locales } = CONFIG.stage.targets.cj;
+    expect(Object.keys(locales)).toEqual(['us/en_us', 'ca/en_us']);
+    expect(locales['us/en_us']).toMatchObject({ file: 'vitamix_us_edge.xml', minItems: 100 });
+    expect(locales['ca/en_us']).toMatchObject({ file: 'vitamix_ca_edge.xml', minItems: 85 });
+    // same CJ account → shared credentials, no per-locale override
+    expect(locales['ca/en_us'].credentials).toBeUndefined();
     expect(CONFIG.stage.targets.cj.remoteDir).toBe('/');
     expect(CONFIG.prod.enabled).toBe(false);
+    expect(CONFIG.prod.scheduled).toBe(true);
   });
 
   test('resolveCredentials treats empty and unsubstituted vars as missing', () => {
@@ -693,16 +700,32 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
     expect(sftp.uploads).toHaveLength(1);
   });
 
+  test('stage (scheduled: false): the alarm no-ops even at 1 AM ET; manual runs still push', async () => {
+    const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(120), 'ca/en_us': sourceFeed(100) } });
+    const sftp = mockSftp();
+    const scheduled = await run(SECRETS, {
+      namespace: STAGE_NS, scheduled: true, now: at('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
+    });
+    expect(scheduled).toMatchObject({ skipped: true, reason: 'schedule-disabled', environment: 'stage' });
+    expect(spy).not.toHaveBeenCalled();
+
+    const manual = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    expect(manual.ok).toBe(true);
+    expect(sftp.uploads.map((u) => u.path)).toEqual(['/vitamix_us_edge.xml', '/vitamix_ca_edge.xml']);
+    expect(sftp.connects).toHaveLength(1); // one shared CJ connection
+  });
+
   test('main: a bare invoke is treated as scheduled; manual params bypass the check', async () => {
     const prev = process.env.__OW_NAMESPACE;
     process.env.__OW_NAMESPACE = STAGE_NS;
     jest.useFakeTimers({ now: at('2026-07-01T15:00:00Z'), doNotFake: ['nextTick', 'setImmediate', 'queueMicrotask'] });
     try {
       mockFetch({ feeds: { 'us/en_us': sourceFeed(120) } });
-      expect(await main({ LOG_LEVEL: 'error' })).toMatchObject({ skipped: true, reason: 'outside-schedule' });
+      // real stage config: scheduled runs are off
+      expect(await main({ LOG_LEVEL: 'error' })).toMatchObject({ skipped: true, reason: 'schedule-disabled' });
       // trigger-provided params don't count as manual
       expect(await main({ LOG_LEVEL: 'error', cron: '0 5,6 * * *', timezone: 'UTC' }))
-        .toMatchObject({ reason: 'outside-schedule' });
+        .toMatchObject({ reason: 'schedule-disabled' });
       const dry = await main({ LOG_LEVEL: 'error', now: 'true', dryRun: 'true' });
       expect(dry.results[0].status).toBe('validated');
       const dryOnly = await main({ LOG_LEVEL: 'error', dryRun: 'true' });

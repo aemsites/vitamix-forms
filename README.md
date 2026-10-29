@@ -126,10 +126,15 @@ locale → file name map. The environment comes from the runtime namespace
 (`60038-161ivoryjackal-stage` → stage, `60038-161ivoryjackal` → prod; any other
 namespace does nothing). Only secrets are env vars (see below).
 
-| Environment | Status | Targets |
-|---|---|---|
-| stage | enabled | CJ **test** feed `Vitamix_US_Edge_Test` (323567): `us/en_us` → `/vitamix_us_edge.xml` |
-| prod | **disabled** | — |
+| Environment | Status | Schedule | Targets |
+|---|---|---|---|
+| stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml` |
+| prod | **disabled** | nightly 1 AM ET (once enabled) | — |
+
+The alarm is defined once in `app.config.yaml`, so it fires in every
+environment. When an environment has `scheduled: false`, a scheduled run
+returns `{ skipped: true, reason: 'schedule-disabled' }` and only manual runs
+push.
 
 Per run, for each target × locale: build → validate → upload. A failure in one
 never stops the others. Validation blocks an upload when the feed is empty or
