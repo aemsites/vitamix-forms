@@ -55,24 +55,66 @@ function mockFetch({ feeds = {}, emailOk = true } = {}) {
   return { spy, emails };
 }
 
-/** Fake SFTP client factory recording uploads. */
-function mockSftp({ connectError, putError } = {}) {
+/**
+ * Fake SFTP client backed by an in-memory filesystem (shared across clients).
+ * `uploads` lists files as they land under their final (non-.part) name, in
+ * order; `ops` records every call; `files` is the final remote state.
+ */
+function mockSftp({
+  connectError, putError, renameError, posixRename = true, shortWrite = false, files = new Map(),
+} = {}) {
   const uploads = [];
   const connects = [];
+  const ops = [];
   let ended = 0;
+  const land = (path, body) => {
+    files.set(path, body);
+    if (!path.endsWith('.part')) uploads.push({ path, body });
+  };
   const createClient = () => ({
     connect: jest.fn(async (opts) => {
       connects.push(opts);
       if (connectError) throw connectError;
     }),
     put: jest.fn(async (buf, path) => {
-      if (putError) throw putError;
-      uploads.push({ path, body: buf.toString('utf-8') });
+      ops.push(['put', path]);
+      if (putError) {
+        files.set(path, '<partial');
+        throw putError;
+      }
+      land(path, buf.toString('utf-8'));
+    }),
+    stat: jest.fn(async (path) => {
+      ops.push(['stat', path]);
+      const body = files.get(path);
+      if (body === undefined) throw new Error(`No such file: ${path}`);
+      return { size: Buffer.byteLength(body, 'utf-8') - (shortWrite ? 1 : 0) };
+    }),
+    posixRename: jest.fn(async (from, to) => {
+      ops.push(['posixRename', from, to]);
+      if (!posixRename) throw new Error('Server does not support this extended request');
+      if (renameError) throw renameError;
+      const body = files.get(from);
+      files.delete(from);
+      land(to, body);
+    }),
+    rename: jest.fn(async (from, to) => {
+      ops.push(['rename', from, to]);
+      if (renameError) throw renameError;
+      if (files.has(to)) throw new Error('Failure: file exists');
+      const body = files.get(from);
+      files.delete(from);
+      land(to, body);
+    }),
+    delete: jest.fn(async (path, notFoundOK) => {
+      ops.push(['delete', path]);
+      if (!files.has(path) && !notFoundOK) throw new Error(`No such file: ${path}`);
+      files.delete(path);
     }),
     end: jest.fn(async () => { ended += 1; }),
   });
   return {
-    createClient, uploads, connects, ended: () => ended,
+    createClient, uploads, connects, ops, files, ended: () => ended,
   };
 }
 
@@ -734,5 +776,97 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
       jest.useRealTimers();
       if (prev === undefined) delete process.env.__OW_NAMESPACE; else process.env.__OW_NAMESPACE = prev;
     }
+  });
+});
+
+describe('atomic upload (temp name, verify size, rename into place)', () => {
+  const OLD = '<old catalog/>';
+  const pushUS = (sftp, extra = {}) => run(SECRETS, {
+    namespace: STAGE_NS, config: smallConfig(), sftpDeps: { createClient: sftp.createClient }, ...extra,
+  });
+
+  test('CJ uploads to <file>.part, checks the size, then posix-renames over the live file', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp({ files: new Map([['/vitamix_us_edge.xml', OLD]]) });
+    const res = await pushUS(sftp);
+
+    expect(res.results[0]).toMatchObject({ status: 'uploaded', rename: 'posix-rename' });
+    expect(sftp.ops).toEqual([
+      ['put', '/vitamix_us_edge.xml.part'],
+      ['stat', '/vitamix_us_edge.xml.part'],
+      ['posixRename', '/vitamix_us_edge.xml.part', '/vitamix_us_edge.xml'],
+    ]);
+    expect([...sftp.files.keys()]).toEqual(['/vitamix_us_edge.xml']);
+    expect(sftp.files.get('/vitamix_us_edge.xml')).toMatch(/<id>SKU0<\/id>/);
+  });
+
+  test('without posix-rename, deletes the live file then renames', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp({ posixRename: false, files: new Map([['/vitamix_us_edge.xml', OLD]]) });
+    const res = await pushUS(sftp);
+
+    expect(res.results[0]).toMatchObject({ status: 'uploaded', rename: 'delete+rename' });
+    expect(sftp.ops.slice(2)).toEqual([
+      ['posixRename', '/vitamix_us_edge.xml.part', '/vitamix_us_edge.xml'],
+      ['delete', '/vitamix_us_edge.xml'],
+      ['rename', '/vitamix_us_edge.xml.part', '/vitamix_us_edge.xml'],
+    ]);
+    expect([...sftp.files.keys()]).toEqual(['/vitamix_us_edge.xml']);
+    expect(sftp.files.get('/vitamix_us_edge.xml')).not.toBe(OLD);
+  });
+
+  test('first push (no live file yet) works with the delete+rename fallback', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp({ posixRename: false });
+    const res = await pushUS(sftp);
+    expect(res.results[0]).toMatchObject({ status: 'uploaded', rename: 'delete+rename' });
+    expect([...sftp.files.keys()]).toEqual(['/vitamix_us_edge.xml']);
+  });
+
+  test('a short write is never renamed into place; the live file and no temp remain', async () => {
+    const { emails } = mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp({ shortWrite: true, files: new Map([['/vitamix_us_edge.xml', OLD]]) });
+    const res = await pushUS(sftp);
+
+    expect(res.results[0]).toMatchObject({ status: 'failed', step: 'upload' });
+    expect(res.results[0].error).toMatch(/size mismatch after upload/);
+    expect(sftp.ops.map((o) => o[0])).not.toContain('posixRename');
+    expect([...sftp.files.entries()]).toEqual([['/vitamix_us_edge.xml', OLD]]);
+    expect(emails).toHaveLength(1);
+  });
+
+  test('an interrupted put leaves the live file untouched and cleans up the temp file', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp({ putError: new Error('connection reset'), files: new Map([['/vitamix_us_edge.xml', OLD]]) });
+    const res = await pushUS(sftp);
+
+    expect(res.results[0]).toMatchObject({ status: 'failed', step: 'upload', error: 'connection reset' });
+    expect([...sftp.files.entries()]).toEqual([['/vitamix_us_edge.xml', OLD]]);
+    expect(store.has('feeds-push.counts')).toBe(false);
+  });
+
+  test('a rename failure keeps the live file and removes the temp file', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp({ renameError: new Error('permission denied'), files: new Map([['/vitamix_us_edge.xml', OLD]]) });
+    const res = await pushUS(sftp);
+
+    expect(res.results[0]).toMatchObject({ status: 'failed', step: 'upload', error: 'permission denied' });
+    expect([...sftp.files.entries()]).toEqual([['/vitamix_us_edge.xml', OLD]]);
+  });
+
+  test('targets without atomicUpload write directly to the final name', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
+    const sftp = mockSftp();
+    const config = smallConfig();
+    config.stage.targets.cj.atomicUpload = false;
+    const res = await run(SECRETS, { namespace: STAGE_NS, config, sftpDeps: { createClient: sftp.createClient } });
+
+    expect(res.results[0].status).toBe('uploaded');
+    expect(res.results[0].rename).toBeUndefined();
+    expect(sftp.ops).toEqual([['put', '/vitamix_us_edge.xml']]);
+  });
+
+  test('CJ is configured for atomic uploads', () => {
+    expect(CONFIG.stage.targets.cj.atomicUpload).toBe(true);
   });
 });

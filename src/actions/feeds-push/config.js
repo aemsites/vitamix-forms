@@ -61,6 +61,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   credentials: string,
  *   algorithms?: Record<string, unknown>,
  *   hostFingerprints?: string[],
+ *   atomicUpload?: boolean,
  *   idPattern?: RegExp,
  *   minItems?: number,
  *   locales: Record<string, LocaleConfig>,
@@ -86,6 +87,9 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   connections fail and alert; add the new fingerprint after verifying it.
  * - CJ item-level commissioning needs ids of letters, digits, `-` and `_` only.
  *   Other ids don't fail the import, so they warn instead of blocking.
+ * - Upload to a temp name, then rename to the registered name once complete,
+ *   so CJ never ingests a partial file. CJ confirmed (2026-10) that renaming
+ *   on its SFTP is supported; only the final name must match the registration.
  */
 const CJ_SFTP = {
   provider: 'cj',
@@ -94,6 +98,7 @@ const CJ_SFTP = {
   remoteDir: '/',
   algorithms: { serverHostKey: { append: ['ssh-dss'] } },
   hostFingerprints: ['SHA256:gRHIccwhOI+eXWmHZS/AacDj24Pc6zizcue39ILRsVE'],
+  atomicUpload: true,
   idPattern: /^[A-Za-z0-9_-]+$/,
 };
 
