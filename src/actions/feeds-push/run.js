@@ -35,6 +35,7 @@ import { sendFailureAlert } from './alert.js';
  *   itemCount?: number,
  *   bytes?: number,
  *   remotePath?: string,
+ *   rename?: 'posix-rename' | 'delete+rename',
  *   error?: string,
  *   warnings?: string[],
  * }} PushResult
@@ -231,7 +232,8 @@ export async function run(params, options = {}) {
 
   for (const r of results) {
     const line = `${r.target} ${r.locale} → ${r.file}: ${r.status}`
-      + `${r.itemCount !== undefined ? ` (${r.itemCount} items)` : ''}${r.error ? ` — ${r.step}: ${r.error}` : ''}`
+      + `${r.itemCount !== undefined ? ` (${r.itemCount} items)` : ''}${r.rename ? ` via ${r.rename}` : ''}`
+      + `${r.error ? ` — ${r.step}: ${r.error}` : ''}`
       + `${r.warnings?.length ? ` [warnings: ${r.warnings.join('; ')}]` : ''}`;
     if (r.status === 'failed') log.error(line); else log.info(line);
   }
@@ -356,8 +358,10 @@ async function pushOne(ctx, job, {
   }
 
   try {
-    const bytes = await sftp.upload(client, built.body, path);
-    return { ...result, status: 'uploaded', bytes };
+    const { bytes, rename } = await sftp.upload(client, built.body, path, { atomic: target.atomicUpload });
+    return {
+      ...result, status: 'uploaded', bytes, ...(rename ? { rename } : {}),
+    };
   } catch (err) {
     return fail('upload', err);
   }
