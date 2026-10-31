@@ -1,3 +1,19 @@
+# [1.10.0](https://github.com/aemsites/vitamix-forms/compare/v1.9.0...v1.10.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ebs-sync:** make inventory outbox retries idempotent ([c608a25](https://github.com/aemsites/vitamix-forms/commit/c608a25c516d28609df999b49888057037814628))
+* **ebs-sync:** queue inventory deltas after syncedAt is persisted ([08f30bf](https://github.com/aemsites/vitamix-forms/commit/08f30bf6862e3a91cc0e98f4446295f1f83d6479))
+* **ebs-sync:** throw when the outbox probe limit is exhausted ([8504fec](https://github.com/aemsites/vitamix-forms/commit/8504fec3eec9a2a9bcc5455df2ba7a3f338b5fdd))
+* **inventory:** conditional sheet writes, per-order outbox, safer failure handling ([80f97da](https://github.com/aemsites/vitamix-forms/commit/80f97da6df8b2eb658e5db4dcc38efdd92923e15))
+
+
+### Features
+
+* **feeds:** upload feeds to a temp name and rename into place ([4f07604](https://github.com/aemsites/vitamix-forms/commit/4f076043ac93eb63f002589b64621af159192a7b))
+* **inventory:** queue sold units in ebs-sync and apply them with inventory-sync ([209feaa](https://github.com/aemsites/vitamix-forms/commit/209feaaf6dc9784327e3fb0edf2a133fe5c0ee05)), closes [helix-commerce-api#585](https://github.com/helix-commerce-api/issues/585)
+
 # [1.9.0](https://github.com/aemsites/vitamix-forms/compare/v1.8.0...v1.9.0) (2026-10-29)
 
 
