@@ -31,7 +31,8 @@
 
 import { Core } from '@adobe/aio-sdk';
 import {
-  loadState, saveState, acquireLock, releaseLock, writeInventoryOutbox,
+  loadState, saveState, acquireLock, releaseLock,
+  allocateInventoryOutboxSeq, putInventoryOutboxEntry, publishInventoryOutboxHead,
 } from './state.js';
 import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
@@ -337,28 +338,46 @@ export async function run(params) {
 }
 
 /**
- * Write the run's inventory deltas to the outbox, retrying a few times. Never
- * throws: the orders are already in EBS and will not be processed again, so on
- * final failure the full payload is logged for manual recovery.
+ * Write the run's inventory deltas to the outbox: entry first, then head.
+ *
+ * Retries are idempotent: the seq is allocated once and reused, and the entry
+ * write is not repeated once it succeeded. So a failure between the entry and
+ * head writes (or an ambiguous failure of either) never publishes a second
+ * copy of the same run's deltas, which would double-decrement the sheet.
+ *
+ * Never throws: the orders are already in EBS and will not be processed again,
+ * so on final failure the full payload is logged for manual recovery.
  *
  * @returns {Promise<number | null>} the outbox seq, or null on failure
  */
-async function queueInventoryDeltas({ orderIds, deltas }, log) {
-  const payload = { activationId: process.env.__OW_ACTIVATION_ID, orderIds, deltas };
+export async function queueInventoryDeltas({ orderIds, deltas }, log) {
+  const entry = {
+    activationId: process.env.__OW_ACTIVATION_ID,
+    createdAt: new Date().toISOString(),
+    orderIds,
+    deltas,
+  };
+  let seq = null;
+  let entryWritten = false;
   let lastErr = null;
   for (let attempt = 1; attempt <= OUTBOX_WRITE_RETRIES; attempt++) {
     try {
-      const seq = await writeInventoryOutbox(payload);
+      if (seq === null) seq = await allocateInventoryOutboxSeq();
+      if (!entryWritten) {
+        await putInventoryOutboxEntry(seq, entry);
+        entryWritten = true;
+      }
+      await publishInventoryOutboxHead(seq);
       log.info(`[ebs-sync] Queued inventory outbox seq=${seq}: ${deltas.length} deltas for orders ${orderIds.join(', ')}`);
       return seq;
     } catch (err) {
       lastErr = err;
-      log.warn(`[ebs-sync] Inventory outbox write attempt ${attempt}/${OUTBOX_WRITE_RETRIES} failed`, errorInfo(err));
+      log.warn(`[ebs-sync] Inventory outbox write attempt ${attempt}/${OUTBOX_WRITE_RETRIES} failed (seq=${seq ?? 'unallocated'}, entryWritten=${entryWritten})`, errorInfo(err));
       if (attempt < OUTBOX_WRITE_RETRIES) await sleep(OUTBOX_WRITE_BASE_DELAY_MS * attempt);
     }
   }
   log.error(
-    `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — decrements not queued, apply manually: ${JSON.stringify(payload)}`,
+    `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — decrements not queued, apply manually: ${JSON.stringify({ seq, entryWritten, ...entry })}`,
     errorInfo(lastErr),
   );
   return null;

@@ -132,17 +132,20 @@ export async function releaseLock() {
 const MAX_OUTBOX_PROBE = 50;
 
 /**
- * Append a managed-inventory outbox entry: write `inventory:outbox:{seq}` first,
- * then `inventory:outbox:head = seq`. ebs-sync is the only writer of both keys.
+ * Allocate the next managed-inventory outbox seq (`head + 1`).
  *
- * If `head + 1` is already occupied (an earlier head write failed after its
- * entry write), skip to the next free seq so that entry is not overwritten;
- * inventory-sync reads `cursor+1..head`, so it is picked up once head moves past it.
+ * If that slot is already occupied (an entry from an earlier run whose head
+ * write failed), skip to the next free seq so that entry is not overwritten;
+ * inventory-sync reads `cursor+1..head`, so it is picked up once head moves
+ * past it.
  *
- * @param {{ activationId?: string, orderIds: string[], deltas: object[] }} payload
- * @returns {Promise<number>} the seq written
+ * Callers must allocate ONCE per payload and reuse the seq on retries (see
+ * ebs-sync `queueInventoryDeltas`); re-allocating after a partial write would
+ * skip our own entry and publish a duplicate.
+ *
+ * @returns {Promise<number>}
  */
-export async function writeInventoryOutbox({ activationId, orderIds, deltas }) {
+export async function allocateInventoryOutboxSeq() {
   const c = await client();
   const head = parseSeq(await c.get(OUTBOX_HEAD_KEY));
   let seq = head + 1;
@@ -150,14 +153,32 @@ export async function writeInventoryOutbox({ activationId, orderIds, deltas }) {
     console.log(`[ebs-sync] inventory outbox seq ${seq} already exists past head ${head} — skipping`);
     seq += 1;
   }
-  const entry = {
-    seq,
-    activationId: activationId ?? null,
-    createdAt: new Date().toISOString(),
-    orderIds,
-    deltas,
-  };
-  await c.put(outboxKey(seq), JSON.stringify(entry), { ttl: OUTBOX_TTL_SEC });
-  await c.put(OUTBOX_HEAD_KEY, String(seq), { ttl: OUTBOX_TTL_SEC });
   return seq;
+}
+
+/**
+ * Write `inventory:outbox:{seq}`. Idempotent for a given seq + entry, so it is
+ * safe to repeat after an ambiguous failure.
+ *
+ * @param {number} seq
+ * @param {{ activationId?: string, createdAt: string, orderIds: string[], deltas: object[] }} entry
+ */
+export async function putInventoryOutboxEntry(seq, {
+  activationId, createdAt, orderIds, deltas,
+}) {
+  const c = await client();
+  const value = {
+    seq, activationId: activationId ?? null, createdAt, orderIds, deltas,
+  };
+  await c.put(outboxKey(seq), JSON.stringify(value), { ttl: OUTBOX_TTL_SEC });
+}
+
+/**
+ * Publish `inventory:outbox:head = seq` (after the entry is written).
+ * Idempotent for a given seq. ebs-sync is the only writer.
+ * @param {number} seq
+ */
+export async function publishInventoryOutboxHead(seq) {
+  const c = await client();
+  await c.put(OUTBOX_HEAD_KEY, String(seq), { ttl: OUTBOX_TTL_SEC });
 }

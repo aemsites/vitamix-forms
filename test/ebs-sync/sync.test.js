@@ -13,7 +13,9 @@ const ORDER_ID = 'order-1';
 let storedState;
 const callOrder = [];
 const releaseLock = jest.fn(async () => { callOrder.push('releaseLock'); });
-const writeInventoryOutbox = jest.fn(async () => { callOrder.push('writeInventoryOutbox'); return 7; });
+const allocateInventoryOutboxSeq = jest.fn(async () => 7);
+const putInventoryOutboxEntry = jest.fn(async () => { callOrder.push('putEntry'); });
+const publishInventoryOutboxHead = jest.fn(async () => { callOrder.push('publishHead'); });
 const saveState = jest.fn(async (updates) => {
   storedState = { ...storedState, ...updates };
   return storedState;
@@ -27,7 +29,9 @@ jest.unstable_mockModule('../../src/actions/ebs-sync/state.js', () => ({
   saveState,
   acquireLock: jest.fn(async () => true),
   releaseLock,
-  writeInventoryOutbox,
+  allocateInventoryOutboxSeq,
+  putInventoryOutboxEntry,
+  publishInventoryOutboxHead,
 }));
 
 const getJournalEntries = jest.fn();
@@ -150,15 +154,15 @@ describe('ebs-sync managed inventory outbox', () => {
     const { body } = await runSync(ENABLED);
 
     expect(body.inventoryOutboxSeq).toBe(7);
-    expect(writeInventoryOutbox).toHaveBeenCalledTimes(1);
-    const payload = writeInventoryOutbox.mock.calls[0][0];
+    expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
+    const payload = putInventoryOutboxEntry.mock.calls[0][1];
     expect(payload.orderIds).toEqual([ORDER_ID]);
     expect(payload.deltas).toEqual([
       { sku: '001811', market: 'us', units: 2, orderId: ORDER_ID },
       { sku: '073511', market: 'us', units: 1, orderId: ORDER_ID },
       { sku: '061724-04', market: 'us', units: 1, orderId: ORDER_ID },
     ]);
-    expect(callOrder).toEqual(['writeInventoryOutbox', 'releaseLock']);
+    expect(callOrder).toEqual(['putEntry', 'publishHead', 'releaseLock']);
   });
 
   test('only accepted orders are queued (rejected / cancelled / already-synced are not)', async () => {
@@ -180,7 +184,7 @@ describe('ebs-sync managed inventory outbox', () => {
 
     await runSync(ENABLED);
 
-    const payload = writeInventoryOutbox.mock.calls[0][0];
+    const payload = putInventoryOutboxEntry.mock.calls[0][1];
     expect(payload.orderIds).toEqual(['ok-1', 'ok-2']);
     expect(new Set(payload.deltas.map((d) => d.orderId))).toEqual(new Set(['ok-1', 'ok-2']));
   });
@@ -204,8 +208,8 @@ describe('ebs-sync managed inventory outbox', () => {
     const { body } = await runSync(ENABLED);
 
     expect(body.halted).toBe(true);
-    expect(writeInventoryOutbox).toHaveBeenCalledTimes(1);
-    expect(writeInventoryOutbox.mock.calls[0][0].orderIds).toEqual(['ok-1']);
+    expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
+    expect(putInventoryOutboxEntry.mock.calls[0][1].orderIds).toEqual(['ok-1']);
     syncOrderToEbs.mockImplementation(async () => ({ status: 200, xml: '<xml/>' }));
   });
 
@@ -219,8 +223,8 @@ describe('ebs-sync managed inventory outbox', () => {
     const err = await p;
     expect(err).toBeInstanceOf(Error);
     expect(err.message).toBe('state down');
-    expect(writeInventoryOutbox).toHaveBeenCalledTimes(1);
-    expect(callOrder).toEqual(['writeInventoryOutbox', 'releaseLock']);
+    expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
+    expect(callOrder).toEqual(['putEntry', 'publishHead', 'releaseLock']);
   });
 
   test('does not write the outbox when disabled', async () => {
@@ -230,27 +234,55 @@ describe('ebs-sync managed inventory outbox', () => {
     const { body } = await runSync({ INVENTORY_SYNC_ENABLED: '' });
 
     expect(body.processedOrders).toEqual([ORDER_ID]);
-    expect(writeInventoryOutbox).not.toHaveBeenCalled();
+    expect(putInventoryOutboxEntry).not.toHaveBeenCalled();
     expect(body.inventoryOutboxSeq).toBeUndefined();
   });
 
   test('does not write the outbox when no orders were accepted', async () => {
     getJournalEntries.mockResolvedValue({ entries: [], until: '2026-01-01T00:00:00.000Z' });
     await runSync(ENABLED);
-    expect(writeInventoryOutbox).not.toHaveBeenCalled();
+    expect(putInventoryOutboxEntry).not.toHaveBeenCalled();
   });
 
   test('outbox write failure is retried, then logged without failing the run', async () => {
     updateOrderCustom.mockResolvedValue({});
     getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
-    writeInventoryOutbox.mockRejectedValue(new Error('state down'));
+    putInventoryOutboxEntry.mockRejectedValue(new Error('state down'));
 
     const { body } = await runSync(ENABLED);
 
-    expect(writeInventoryOutbox).toHaveBeenCalledTimes(3);
+    expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(3);
+    expect(allocateInventoryOutboxSeq).toHaveBeenCalledTimes(1);
+    expect(publishInventoryOutboxHead).not.toHaveBeenCalled();
     expect(body.inventoryOutboxSeq).toBeNull();
     expect(body.processedOrders).toEqual([ORDER_ID]);
     expect(releaseLock).toHaveBeenCalled();
-    writeInventoryOutbox.mockImplementation(async () => { callOrder.push('writeInventoryOutbox'); return 7; });
+    putInventoryOutboxEntry.mockImplementation(async () => { callOrder.push('putEntry'); });
+  });
+
+  test('head write failure: retry reuses the seq and does not rewrite the entry', async () => {
+    updateOrderCustom.mockResolvedValue({});
+    getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
+    publishInventoryOutboxHead.mockRejectedValueOnce(new Error('head put failed'));
+
+    const { body } = await runSync(ENABLED);
+
+    expect(body.inventoryOutboxSeq).toBe(7);
+    expect(allocateInventoryOutboxSeq).toHaveBeenCalledTimes(1);
+    expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
+    expect(publishInventoryOutboxHead.mock.calls).toEqual([[7], [7]]);
+  });
+
+  test('entry write failure: retry rewrites the same seq', async () => {
+    updateOrderCustom.mockResolvedValue({});
+    getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
+    putInventoryOutboxEntry.mockRejectedValueOnce(new Error('ambiguous'));
+
+    await runSync(ENABLED);
+
+    expect(allocateInventoryOutboxSeq).toHaveBeenCalledTimes(1);
+    expect(putInventoryOutboxEntry.mock.calls.map((c) => c[0])).toEqual([7, 7]);
+    expect(putInventoryOutboxEntry.mock.calls[0][1]).toBe(putInventoryOutboxEntry.mock.calls[1][1]);
+    expect(publishInventoryOutboxHead.mock.calls).toEqual([[7]]);
   });
 });

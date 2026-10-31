@@ -4,21 +4,31 @@
  */
 
 import {
-  describe, test, expect, jest, beforeEach,
+  describe, test, expect, jest, beforeEach, afterEach,
 } from '@jest/globals';
 
 const store = new Map();
 const ops = [];
+/** Keys whose next put() should write the value and then throw (ambiguous failure). */
+const failAfterPut = new Set();
 jest.unstable_mockModule('@adobe/aio-lib-state', () => ({
   init: async () => ({
     get: async (key) => (store.has(key) ? { value: store.get(key) } : null),
-    put: async (key, value) => { ops.push(['put', key]); store.set(key, value); },
+    put: async (key, value) => {
+      ops.push(['put', key]);
+      store.set(key, value);
+      if (failAfterPut.delete(key)) throw new Error(`put ${key} failed`);
+    },
     delete: async (key) => { ops.push(['delete', key]); store.delete(key); },
   }),
 }));
 
 const { collectOrderDeltas, isInventorySyncEnabled } = await import('../../src/actions/ebs-sync/inventory.js');
-const { writeInventoryOutbox } = await import('../../src/actions/ebs-sync/state.js');
+const {
+  allocateInventoryOutboxSeq, putInventoryOutboxEntry, publishInventoryOutboxHead,
+} = await import('../../src/actions/ebs-sync/state.js');
+const { queueInventoryDeltas } = await import('../../src/actions/ebs-sync/sync.js');
+const { mergeDeltas, applyDeltas } = await import('../../src/actions/inventory-sync/sheet.js');
 
 describe('collectOrderDeltas', () => {
   test('simple items, bundle components (-VB stripped), warranty lines skipped', () => {
@@ -72,35 +82,101 @@ describe('collectOrderDeltas', () => {
   });
 });
 
-describe('writeInventoryOutbox', () => {
+describe('inventory outbox state', () => {
   beforeEach(() => {
     store.clear();
     ops.length = 0;
+    failAfterPut.clear();
   });
 
-  const payload = { activationId: 'act-1', orderIds: ['o1'], deltas: [{ sku: 'A', market: 'us', units: 1, orderId: 'o1' }] };
+  const entry = {
+    activationId: 'act-1', createdAt: 't', orderIds: ['o1'], deltas: [{ sku: 'A', market: 'us', units: 1, orderId: 'o1' }],
+  };
 
-  test('first entry: writes inventory:outbox:1 then head', async () => {
-    const seq = await writeInventoryOutbox(payload);
+  test('first entry: allocates 1, writes the entry, then head', async () => {
+    const seq = await allocateInventoryOutboxSeq();
     expect(seq).toBe(1);
+    await putInventoryOutboxEntry(seq, entry);
+    await publishInventoryOutboxHead(seq);
     expect(ops).toEqual([['put', 'inventory:outbox:1'], ['put', 'inventory:outbox:head']]);
-    const entry = JSON.parse(store.get('inventory:outbox:1'));
-    expect(entry).toMatchObject({ seq: 1, activationId: 'act-1', orderIds: ['o1'], deltas: payload.deltas });
-    expect(entry.createdAt).toBeTruthy();
+    expect(JSON.parse(store.get('inventory:outbox:1'))).toEqual({ seq: 1, ...entry });
     expect(store.get('inventory:outbox:head')).toBe('1');
   });
 
-  test('appends after the current head', async () => {
+  test('allocates after the current head', async () => {
     store.set('inventory:outbox:head', '41');
-    expect(await writeInventoryOutbox(payload)).toBe(42);
-    expect(store.get('inventory:outbox:head')).toBe('42');
+    expect(await allocateInventoryOutboxSeq()).toBe(42);
   });
 
-  test('never overwrites an orphaned entry past head (earlier head write failed)', async () => {
+  test('never reuses an orphaned entry from an earlier run past head', async () => {
     store.set('inventory:outbox:head', '5');
     store.set('inventory:outbox:6', JSON.stringify({ seq: 6, orphan: true }));
-    expect(await writeInventoryOutbox(payload)).toBe(7);
+    expect(await allocateInventoryOutboxSeq()).toBe(7);
     expect(JSON.parse(store.get('inventory:outbox:6')).orphan).toBe(true);
-    expect(store.get('inventory:outbox:head')).toBe('7');
+  });
+});
+
+describe('queueInventoryDeltas retries are idempotent', () => {
+  const log = { info: () => {}, warn: () => {}, error: () => {} };
+  const order = { orderIds: ['o1'], deltas: [{ sku: 'A', market: 'us', units: 1, orderId: 'o1' }] };
+
+  beforeEach(() => {
+    jest.useFakeTimers();
+    store.clear();
+    ops.length = 0;
+    failAfterPut.clear();
+  });
+  afterEach(() => jest.useRealTimers());
+
+  async function queue() {
+    const p = queueInventoryDeltas(order, log);
+    await jest.runAllTimersAsync();
+    return p;
+  }
+
+  function consume(qty) {
+    const head = Number(store.get('inventory:outbox:head'));
+    const entries = [];
+    for (let seq = 1; seq <= head; seq++) {
+      if (store.has(`inventory:outbox:${seq}`)) entries.push(JSON.parse(store.get(`inventory:outbox:${seq}`)));
+    }
+    const sheet = {
+      data: [{
+        SKU: 'A', Availability: 'InStock', 'Managed Stock': 'Yes', Qty: String(qty), Market: '',
+      }],
+    };
+    applyDeltas(sheet, mergeDeltas(entries));
+    return sheet.data[0];
+  }
+
+  test('entry written, head write fails, retry succeeds → one entry, single decrement', async () => {
+    failAfterPut.add('inventory:outbox:head');
+    expect(await queue()).toBe(1);
+    expect([...store.keys()].filter((k) => /^inventory:outbox:\d+$/.test(k))).toEqual(['inventory:outbox:1']);
+    expect(store.get('inventory:outbox:head')).toBe('1');
+    expect(consume(2)).toMatchObject({ Qty: '1', Availability: 'InStock' });
+  });
+
+  test('head write that persisted but threw → retry does not publish a second entry', async () => {
+    failAfterPut.add('inventory:outbox:head'); // value is stored, then the put throws
+    await queue();
+    expect(ops.filter(([, k]) => k === 'inventory:outbox:1')).toHaveLength(1);
+    expect(store.has('inventory:outbox:2')).toBe(false);
+  });
+
+  test('entry write that persisted but threw → rewritten in place at the same seq', async () => {
+    failAfterPut.add('inventory:outbox:1');
+    expect(await queue()).toBe(1);
+    expect(store.has('inventory:outbox:2')).toBe(false);
+    expect(store.get('inventory:outbox:head')).toBe('1');
+    expect(consume(2).Qty).toBe('1');
+  });
+
+  test('an orphan from an earlier run is still preserved and published', async () => {
+    store.set('inventory:outbox:head', '3');
+    store.set('inventory:outbox:4', JSON.stringify({ seq: 4, orderIds: ['old'], deltas: [{ sku: 'A', market: 'us', units: 1, orderId: 'old' }] }));
+    expect(await queue()).toBe(5);
+    expect(JSON.parse(store.get('inventory:outbox:4')).orderIds).toEqual(['old']);
+    expect(store.get('inventory:outbox:head')).toBe('5');
   });
 });
