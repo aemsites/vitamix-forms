@@ -11,6 +11,8 @@
 
 import { errorInfo } from '../../utils.js';
 
+export const OPS_LOG_TIMEOUT_MS = 10_000;
+
 /**
  * @param {{ env: object, log: object }} ctx
  * @param {{ action: string } & Record<string, unknown>} event
@@ -24,6 +26,7 @@ export async function sendOpsEvent(ctx, event) {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(event),
+      signal: AbortSignal.timeout(OPS_LOG_TIMEOUT_MS),
     });
     if (resp.ok) return 'sent';
     if (resp.status === 404) {

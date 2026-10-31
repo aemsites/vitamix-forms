@@ -32,6 +32,7 @@ jest.unstable_mockModule('../../src/actions/ebs-sync/state.js', () => ({
   allocateInventoryOutboxSeq,
   putInventoryOutboxEntry,
   publishInventoryOutboxHead,
+  inventoryOutboxEntryExists: jest.fn(async () => false),
 }));
 
 const getJournalEntries = jest.fn();
@@ -51,6 +52,17 @@ jest.unstable_mockModule('../../src/actions/ebs-sync/ebs.js', () => ({
   stripBundleSuffix: (sku) => String(sku || '').replace(/-VB$/, ''),
 }));
 
+/** Captured log lines (Core.Logger is mocked so tests can assert on logs). */
+const logLines = [];
+const capture = (level) => (...args) => logLines.push(`${level}: ${args.map((a) => (typeof a === 'string' ? a : JSON.stringify(a))).join(' ')}`);
+jest.unstable_mockModule('@adobe/aio-sdk', () => ({
+  Core: {
+    Logger: () => ({
+      debug: capture('debug'), info: capture('info'), warn: capture('warn'), error: capture('error'),
+    }),
+  },
+}));
+
 const { run } = await import('../../src/actions/ebs-sync/sync.js');
 
 async function runSync(extra = {}) {
@@ -63,6 +75,7 @@ beforeEach(() => {
   jest.useFakeTimers();
   jest.clearAllMocks();
   callOrder.length = 0;
+  logLines.length = 0;
   storedState = { since: null, pendingCustomUpdates: {} };
   getJournalEntries.mockResolvedValue({
     entries: [{ orderId: ORDER_ID, event: 'payment_completed' }],
@@ -147,13 +160,17 @@ describe('ebs-sync managed inventory outbox', () => {
     };
   }
 
-  test('queues deltas for accepted orders, before releasing the lock', async () => {
+  test('queues deltas right after EBS accepts the order (before syncedAt is patched)', async () => {
     updateOrderCustom.mockResolvedValue({});
     getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
 
     const { body } = await runSync(ENABLED);
 
-    expect(body.inventoryOutboxSeq).toBe(7);
+    expect(body.inventoryOutboxSeqs).toEqual([7]);
+    expect(syncOrderToEbs.mock.invocationCallOrder[0])
+      .toBeLessThan(putInventoryOutboxEntry.mock.invocationCallOrder[0]);
+    expect(putInventoryOutboxEntry.mock.invocationCallOrder[0])
+      .toBeLessThan(updateOrderCustom.mock.invocationCallOrder[0]);
     expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
     const payload = putInventoryOutboxEntry.mock.calls[0][1];
     expect(payload.orderIds).toEqual([ORDER_ID]);
@@ -184,9 +201,36 @@ describe('ebs-sync managed inventory outbox', () => {
 
     await runSync(ENABLED);
 
-    const payload = putInventoryOutboxEntry.mock.calls[0][1];
-    expect(payload.orderIds).toEqual(['ok-1', 'ok-2']);
-    expect(new Set(payload.deltas.map((d) => d.orderId))).toEqual(new Set(['ok-1', 'ok-2']));
+    // one entry per accepted order
+    expect(putInventoryOutboxEntry.mock.calls.map((c) => c[1].orderIds)).toEqual([['ok-1'], ['ok-2']]);
+    putInventoryOutboxEntry.mock.calls.forEach(([, entry]) => {
+      expect(new Set(entry.deltas.map((d) => d.orderId))).toEqual(new Set(entry.orderIds));
+    });
+  });
+
+  test('a run killed mid-order (no finally) has already queued earlier orders, and logged them', async () => {
+    updateOrderCustom.mockResolvedValue({});
+    getJournalEntries.mockResolvedValue({
+      entries: [
+        { orderId: 'ok-1', event: 'payment_completed' },
+        { orderId: 'hangs', event: 'payment_completed' },
+      ],
+      until: '2026-01-01T00:00:00.000Z',
+    });
+    getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
+    syncOrderToEbs.mockImplementation(async (_ctx, _p, order) => {
+      if (order.id === 'hangs') return new Promise(() => {}); // Runtime kills the action here
+      return { status: 200, xml: '<xml/>' };
+    });
+
+    run({ LOG_LEVEL: 'info', ...ENABLED }); // never settles
+    await jest.runAllTimersAsync();
+
+    expect(putInventoryOutboxEntry.mock.calls.map((c) => c[1].orderIds)).toEqual([['ok-1']]);
+    expect(publishInventoryOutboxHead).toHaveBeenCalledTimes(1);
+    expect(releaseLock).not.toHaveBeenCalled(); // finally never ran
+    expect(logLines.some((l) => l.startsWith('info:') && l.includes('Inventory deltas for ok-1') && l.includes('"sku":"001811"'))).toBe(true);
+    syncOrderToEbs.mockImplementation(async () => ({ status: 200, xml: '<xml/>' }));
   });
 
   test('writes the outbox on a halted run for orders accepted before the halt', async () => {
@@ -235,7 +279,7 @@ describe('ebs-sync managed inventory outbox', () => {
 
     expect(body.processedOrders).toEqual([ORDER_ID]);
     expect(putInventoryOutboxEntry).not.toHaveBeenCalled();
-    expect(body.inventoryOutboxSeq).toBeUndefined();
+    expect(body.inventoryOutboxSeqs).toBeUndefined();
   });
 
   test('does not write the outbox when no orders were accepted', async () => {
@@ -254,7 +298,9 @@ describe('ebs-sync managed inventory outbox', () => {
     expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(3);
     expect(allocateInventoryOutboxSeq).toHaveBeenCalledTimes(1);
     expect(publishInventoryOutboxHead).not.toHaveBeenCalled();
-    expect(body.inventoryOutboxSeq).toBeNull();
+    expect(body.inventoryOutboxSeqs).toEqual([null]);
+    // nothing was stored → only then tell ops to apply manually
+    expect(logLines.filter((l) => l.startsWith('error:') && l.includes('entry not stored, apply manually'))).toHaveLength(1);
     expect(body.processedOrders).toEqual([ORDER_ID]);
     expect(releaseLock).toHaveBeenCalled();
     putInventoryOutboxEntry.mockImplementation(async () => { callOrder.push('putEntry'); });
@@ -267,7 +313,7 @@ describe('ebs-sync managed inventory outbox', () => {
 
     const { body } = await runSync(ENABLED);
 
-    expect(body.inventoryOutboxSeq).toBe(7);
+    expect(body.inventoryOutboxSeqs).toEqual([7]);
     expect(allocateInventoryOutboxSeq).toHaveBeenCalledTimes(1);
     expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
     expect(publishInventoryOutboxHead.mock.calls).toEqual([[7], [7]]);

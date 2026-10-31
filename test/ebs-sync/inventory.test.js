@@ -11,13 +11,25 @@ const store = new Map();
 const ops = [];
 /** Keys whose next put() should write the value and then throw (ambiguous failure). */
 const failAfterPut = new Set();
+/** Keys whose put() always throws without storing. */
+const alwaysFailPut = new Set();
+/** Keys whose put() always stores the value and then throws (ambiguous every time). */
+const alwaysFailAfterPut = new Set();
+/** Optional get() failure hook: (key, callCount) => boolean. */
+let failGet = null;
+let getCalls = 0;
 jest.unstable_mockModule('@adobe/aio-lib-state', () => ({
   init: async () => ({
-    get: async (key) => (store.has(key) ? { value: store.get(key) } : null),
+    get: async (key) => {
+      getCalls += 1;
+      if (failGet?.(key, getCalls)) throw new Error(`get ${key} failed`);
+      return store.has(key) ? { value: store.get(key) } : null;
+    },
     put: async (key, value) => {
       ops.push(['put', key]);
+      if (alwaysFailPut.has(key)) throw new Error(`put ${key} failed`);
       store.set(key, value);
-      if (failAfterPut.delete(key)) throw new Error(`put ${key} failed`);
+      if (failAfterPut.delete(key) || alwaysFailAfterPut.has(key)) throw new Error(`put ${key} failed`);
     },
     delete: async (key) => { ops.push(['delete', key]); store.delete(key); },
   }),
@@ -139,6 +151,10 @@ describe('queueInventoryDeltas retries are idempotent', () => {
     store.clear();
     ops.length = 0;
     failAfterPut.clear();
+    alwaysFailPut.clear();
+    alwaysFailAfterPut.clear();
+    failGet = null;
+    getCalls = 0;
   });
   afterEach(() => jest.useRealTimers());
 
@@ -200,6 +216,51 @@ describe('queueInventoryDeltas retries are idempotent', () => {
     expect(errors).toHaveLength(1);
     expect(errors[0]).toContain('INVENTORY OUTBOX WRITE FAILED');
     expect(errors[0]).toContain('"orderIds":["o1"]');
+  });
+
+  describe('final-failure message never risks a manual double decrement', () => {
+    async function queueWithErrors() {
+      const errors = [];
+      const p = queueInventoryDeltas(order, { ...log, error: (msg) => errors.push(msg) });
+      await jest.runAllTimersAsync();
+      expect(await p).toBeNull();
+      expect(errors).toHaveLength(1);
+      return errors[0];
+    }
+
+    test('entry stored, head never published → automatic, do NOT apply manually', async () => {
+      alwaysFailPut.add('inventory:outbox:head');
+      const msg = await queueWithErrors();
+      expect(store.has('inventory:outbox:1')).toBe(true);
+      expect(msg).toContain('HEAD NOT PUBLISHED');
+      expect(msg).toContain('inventory:outbox:1 is stored and will be applied automatically');
+      expect(msg).toContain('Do NOT apply manually');
+      expect(msg).not.toMatch(/(?<!NOT )apply manually: /);
+    });
+
+    test('ambiguous entry write (stored, then threw, every attempt) → existence check says stored', async () => {
+      alwaysFailAfterPut.add('inventory:outbox:1');
+      const msg = await queueWithErrors();
+      expect(ops.filter(([op, k]) => op === 'put' && k === 'inventory:outbox:head')).toHaveLength(0);
+      expect(msg).toContain('HEAD NOT PUBLISHED');
+      expect(msg).toContain('Do NOT apply manually');
+    });
+
+    test('entry never stored → apply manually', async () => {
+      alwaysFailPut.add('inventory:outbox:1');
+      const msg = await queueWithErrors();
+      expect(store.has('inventory:outbox:1')).toBe(false);
+      expect(msg).toContain('INVENTORY OUTBOX WRITE FAILED \u2014 entry not stored, apply manually');
+      expect(msg).toContain('"orderIds":["o1"]');
+    });
+
+    test('state unreachable for the existence check → tells ops to check first', async () => {
+      alwaysFailPut.add('inventory:outbox:1');
+      // allocation reads (head, slot 1) succeed; later reads (the existence check) fail
+      failGet = (_key, n) => n > 2;
+      const msg = await queueWithErrors();
+      expect(msg).toContain('check whether inventory:outbox:1 exists');
+    });
   });
 
   test('an orphan from an earlier run is still preserved and published', async () => {

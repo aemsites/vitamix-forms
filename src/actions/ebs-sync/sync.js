@@ -23,16 +23,19 @@
  *   6. On success/deadline: advances cursor to the latest journal entry timestamp
  *   7. Saves updated state and releases the lock
  *
- * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): sold units of
- * every order accepted by EBS are collected and, at the end of the run (including
- * halted or failed runs), queued as one `inventory:outbox:{seq}` entry before the
- * lock is released. inventory-sync applies them. No DA/IMS/catalog calls here.
+ * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): the sold units
+ * of each order accepted by EBS are logged and queued as an
+ * `inventory:outbox:{seq}` entry immediately after acceptance, so a run that
+ * halts, throws or is killed at the action timeout (where `finally` does not
+ * run) never loses decrements for orders it already accepted. inventory-sync
+ * applies all queued entries once per run. No DA/IMS/catalog calls here.
  */
 
 import { Core } from '@adobe/aio-sdk';
 import {
   loadState, saveState, acquireLock, releaseLock,
   allocateInventoryOutboxSeq, putInventoryOutboxEntry, publishInventoryOutboxHead,
+  inventoryOutboxEntryExists,
 } from './state.js';
 import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
@@ -92,9 +95,9 @@ export async function run(params) {
     elapsedMs: 0,
   };
 
-  // Managed-inventory sold units for orders accepted by EBS in this run.
+  // Managed-inventory: queue sold units per order accepted by EBS.
   const inventoryEnabled = isInventorySyncEnabled(params);
-  const inventory = { orderIds: [], deltas: [] };
+  if (inventoryEnabled) summary.inventoryOutboxSeqs = [];
 
   try {
     // ── 0. Retry pending custom updates from previous runs ───────────
@@ -242,16 +245,19 @@ export async function run(params) {
       }
 
       if (ebsResult) {
-        // EBS accepted the order: count its units against managed inventory.
+        // EBS accepted the order: queue its units against managed inventory now,
+        // not at the end of the run, so a killed run cannot lose them.
         if (inventoryEnabled) {
+          let deltas = [];
           try {
-            const deltas = collectOrderDeltas(order);
-            if (deltas.length) {
-              inventory.orderIds.push(orderId);
-              inventory.deltas.push(...deltas);
-            }
+            deltas = collectOrderDeltas(order);
           } catch (invErr) {
             log.error(`[ebs-sync] Failed to collect inventory deltas for ${orderId}`, errorInfo(invErr));
+          }
+          if (deltas.length) {
+            // Logged before the write so a killed run can be recovered from logs.
+            log.info(`[ebs-sync] Inventory deltas for ${orderId}: ${JSON.stringify(deltas)}`);
+            summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas }, log));
           }
         }
 
@@ -325,11 +331,6 @@ export async function run(params) {
     state.status = halted ? 'error' : 'idle';
     await saveState(state);
   } finally {
-    // Queue inventory decrements before releasing the lock — also on halted or
-    // failed runs, because orders before the halt were accepted by EBS.
-    if (inventoryEnabled && inventory.deltas.length) {
-      summary.inventoryOutboxSeq = await queueInventoryDeltas(inventory, log);
-    }
     await releaseLock();
     summary.elapsedMs = Date.now() - startTime;
   }
@@ -338,7 +339,7 @@ export async function run(params) {
 }
 
 /**
- * Write the run's inventory deltas to the outbox: entry first, then head.
+ * Write one accepted order's inventory deltas to the outbox: entry first, then head.
  *
  * Retries are idempotent: the seq is allocated once and reused, and the entry
  * write is not repeated once it succeeded. So a failure between the entry and
@@ -376,11 +377,28 @@ export async function queueInventoryDeltas({ orderIds, deltas }, log) {
       if (attempt < OUTBOX_WRITE_RETRIES) await sleep(OUTBOX_WRITE_BASE_DELAY_MS * attempt);
     }
   }
-  log.error(
-    `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — decrements not queued, apply manually: ${JSON.stringify({ seq, entryWritten, ...entry })}`,
-    errorInfo(lastErr),
-  );
+  log.error(await describeOutboxFailure(seq, entryWritten, entry), errorInfo(lastErr));
   return null;
+}
+
+/**
+ * Final-failure message for an outbox write. Telling ops to "apply manually"
+ * when the entry was in fact stored would double-decrement: a stored entry past
+ * head is applied automatically once a later write moves head past it.
+ */
+async function describeOutboxFailure(seq, entryWritten, entry) {
+  const payload = JSON.stringify({ seq, ...entry });
+  let stored = entryWritten;
+  if (!stored && seq !== null) {
+    stored = await inventoryOutboxEntryExists(seq).catch(() => null); // null = unknown
+  }
+  if (stored === true) {
+    return `[ebs-sync] INVENTORY OUTBOX HEAD NOT PUBLISHED — entry inventory:outbox:${seq} is stored and will be applied automatically once a later write moves head past it. Do NOT apply manually: ${payload}`;
+  }
+  if (stored === null) {
+    return `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — check whether inventory:outbox:${seq} exists: if it does, it will be applied automatically (do NOT apply manually); if it does not, apply manually: ${payload}`;
+  }
+  return `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — entry not stored, apply manually: ${payload}`;
 }
 
 function sleep(ms) {

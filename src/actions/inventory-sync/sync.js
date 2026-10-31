@@ -6,10 +6,12 @@
  *   2. Acquire the lock. Load cursor and head.
  *   3. Read outbox entries cursor+1..head and merge deltas by (sku, market).
  *      Missing entries are logged and skipped.
- *   4. Read the inventory sheet from the DA source (IMS token). If there are
- *      deltas: apply them to Qty/Availability, PUT the source, trigger preview
- *      (non-fatal).
+ *   4. Read the inventory sheet from the DA source (IMS token) with its ETag.
+ *      If there are deltas: apply them to Qty/Availability and PUT the source
+ *      with If-Match; on 412 re-read and re-apply (an author edited it).
  *   5. Advance the cursor to the last read seq, then delete applied entries.
+ *      Preview is triggered only after this (best effort), so a slow or hung
+ *      preview never sits inside the sheet-PUT → cursor crash window.
  *   6. Product check (every run): for managed rows with Qty <= 0 and
  *      OutOfStock, flip matching managed products to OutOfStock via
  *      index lookup + GET/If-Match PUT.
@@ -19,7 +21,6 @@
 
 import { Core } from '@adobe/aio-sdk';
 import { getAccessToken } from '../../auth.js';
-import { fetchSheet, updateSheet } from '../../da.js';
 import { errorInfo } from '../../utils.js';
 import {
   loadState, saveState, acquireLock, releaseLock,
@@ -31,9 +32,13 @@ import {
 import { fetchIndex, findCandidates, updateProductAvailability } from './catalog.js';
 import { sendOpsEvent } from './opslog.js';
 import { triggerPreview } from './preview.js';
+import { fetchSourceSheet, putSourceSheet } from './source.js';
 
 /** Cap on outbox entries applied per run; the rest is picked up next run. */
 export const MAX_ENTRIES_PER_RUN = 200;
+
+/** Sheet read-apply-write attempts when the conditional PUT gets 412. */
+export const MAX_SHEET_ATTEMPTS = 4;
 
 const DEFAULTS = {
   ORG: 'aemsites',
@@ -95,6 +100,7 @@ export async function run(params, { dryRun = false } = {}) {
     sheetChanges: [],
     sheetSkipped: [],
     sheetWritten: false,
+    sheetAttempts: 0,
     previewed: false,
     products: [],
     events: [],
@@ -129,31 +135,13 @@ export async function run(params, { dryRun = false } = {}) {
 
     // ── 4. Sheet (DA source, never aem.page) ────────────────────────
     ctx.events.token = await getAccessToken(env.AIO_CLIENTID, env.AIO_CLIENTSECRET, env.AIO_SCOPES);
-    const sheet = await fetchSheet(ctx, SHEET_PATH);
-
-    let oversold = [];
-    let outOfStock = [];
-    if (deltas.length) {
-      const result = applyDeltas(sheet, deltas);
-      summary.sheetChanges = result.changes;
-      summary.sheetSkipped = result.skipped;
-      ({ oversold, outOfStock } = result);
-
-      for (const c of result.changes) {
-        log.info(`[inventory-sync] ${dryRun ? '[dryRun] ' : ''}sheet ${c.sku} market=${c.market || '(blank)'}: Qty ${c.before} \u2192 ${c.after} (sold ${c.sold})${c.availabilityChanged ? ', Availability \u2192 OutOfStock' : ''}; seqs=${c.seqs.join(',')} orders=${c.orderIds.join(',')}`);
-      }
-      for (const s of result.skipped) {
-        log.info(`[inventory-sync] sheet skip ${s.sku} market=${s.market || '(blank)'} units=${s.units}: ${s.reason}`);
-      }
-
-      if (result.changes.length && !dryRun) {
-        await updateSheet(ctx, SHEET_PATH, sheet);
-        summary.sheetWritten = true;
-        summary.previewed = await triggerPreview(ctx, SHEET_PATH);
-      }
-    }
+    const sheet = await readApplyWrite(ctx, deltas, summary, { dryRun });
+    const { oversold, outOfStock } = summary.sheetResult;
+    delete summary.sheetResult;
 
     // ── 5. Advance cursor, delete applied entries ───────────────────
+    // Done immediately after the sheet PUT to keep the accepted crash window
+    // (PUT done, cursor not advanced → re-apply) as short as possible.
     if (lastSeq > cursor && !dryRun) {
       await setCursor(lastSeq);
       for (const entry of entries) {
@@ -163,6 +151,9 @@ export async function run(params, { dryRun = false } = {}) {
       }
     }
     summary.appliedSeqs = entries.map((e) => e.seq);
+
+    // Best effort, after the cursor: authors work from the DA source anyway.
+    if (summary.sheetWritten) summary.previewed = await triggerPreview(ctx, SHEET_PATH);
 
     // ── 6. Product check (every run) ────────────────────────────────
     summary.products = await productCheck(ctx, sheet, { dryRun });
@@ -221,6 +212,48 @@ export async function run(params, { dryRun = false } = {}) {
   }
 
   return { body: summary };
+}
+
+/**
+ * Read the sheet (with ETag), apply deltas, and write it back with If-Match.
+ * On 412 (an author changed the sheet since our read) re-read and re-apply,
+ * so their edit is kept and our decrement is applied on top of it.
+ * Sets `summary.sheetChanges/sheetSkipped/sheetWritten/sheetAttempts` and
+ * `summary.sheetResult` (events). Returns the sheet as written (or as planned
+ * in dryRun), which drives the product check.
+ */
+async function readApplyWrite(ctx, deltas, summary, { dryRun }) {
+  const { log } = ctx;
+  for (let attempt = 1; attempt <= MAX_SHEET_ATTEMPTS; attempt++) {
+    summary.sheetAttempts = attempt;
+    const { sheet, etag } = await fetchSourceSheet(ctx, SHEET_PATH);
+    if (!deltas.length) {
+      summary.sheetResult = { oversold: [], outOfStock: [] };
+      return sheet;
+    }
+
+    const result = applyDeltas(sheet, deltas);
+    summary.sheetChanges = result.changes;
+    summary.sheetSkipped = result.skipped;
+    summary.sheetResult = { oversold: result.oversold, outOfStock: result.outOfStock };
+
+    for (const c of result.changes) {
+      log.info(`[inventory-sync] ${dryRun ? '[dryRun] ' : ''}sheet ${c.sku} market=${c.market || '(blank)'}: Qty ${c.before} \u2192 ${c.after} (sold ${c.sold})${c.availabilityChanged ? ', Availability \u2192 OutOfStock' : ''}; seqs=${c.seqs.join(',')} orders=${c.orderIds.join(',')}`);
+    }
+    for (const sk of result.skipped) {
+      log.info(`[inventory-sync] sheet skip ${sk.sku} market=${sk.market || '(blank)'} units=${sk.units}: ${sk.reason}`);
+    }
+
+    if (!result.changes.length || dryRun) return sheet;
+    if (!etag) throw new Error('DA source GET returned no ETag; refusing unconditional sheet write');
+
+    if (await putSourceSheet(ctx, SHEET_PATH, sheet, etag) === 'ok') {
+      summary.sheetWritten = true;
+      return sheet;
+    }
+    log.info(`[inventory-sync] Sheet changed since read (412, attempt ${attempt}/${MAX_SHEET_ATTEMPTS}); re-reading`);
+  }
+  throw new Error(`inventory sheet kept changing (412 x${MAX_SHEET_ATTEMPTS}); will retry next run`);
 }
 
 /**

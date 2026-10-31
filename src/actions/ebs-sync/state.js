@@ -190,3 +190,13 @@ export async function publishInventoryOutboxHead(seq) {
   const c = await client();
   await c.put(OUTBOX_HEAD_KEY, String(seq), { ttl: OUTBOX_TTL_SEC });
 }
+
+/**
+ * Whether `inventory:outbox:{seq}` exists (used to word failure logs).
+ * @param {number} seq
+ * @returns {Promise<boolean>}
+ */
+export async function inventoryOutboxEntryExists(seq) {
+  const c = await client();
+  return Boolean(await c.get(outboxKey(seq)));
+}

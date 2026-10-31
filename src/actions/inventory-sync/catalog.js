@@ -18,6 +18,10 @@ import { OUT_OF_STOCK } from './sheet.js';
 /** Re-GET + re-PUT attempts after a 412 (If-Match precondition failed). */
 export const MAX_412_RETRIES = 3;
 
+/** Per-request timeouts: one stuck request must not consume the whole run. */
+export const INDEX_TIMEOUT_MS = 20_000;
+export const CATALOG_TIMEOUT_MS = 15_000;
+
 /** @param {unknown} v */
 const cell = (v) => String(v ?? '').trim();
 
@@ -35,7 +39,10 @@ export function isBundleComponentSku(sku) {
 export async function fetchIndex(ctx, locale) {
   const { ORG, SITE } = ctx.env;
   const url = `https://main--${SITE}--${ORG}.aem.network/${locale}/products/index.json?include=all&_=${Date.now()}`;
-  const resp = await fetch(url, { headers: { 'Cache-Control': 'no-cache' } });
+  const resp = await fetch(url, {
+    headers: { 'Cache-Control': 'no-cache' },
+    signal: AbortSignal.timeout(INDEX_TIMEOUT_MS),
+  });
   if (!resp.ok) {
     throw new Error(`product index ${locale} returned ${resp.status}`);
   }
@@ -154,7 +161,10 @@ export async function updateProductAvailability(ctx, path, skus, { dryRun = fals
   const auth = token ? { Authorization: `Bearer ${token}` } : {};
 
   for (let attempt = 1; attempt <= MAX_412_RETRIES + 1; attempt++) {
-    const getResp = await fetch(url, { headers: { ...auth, 'Cache-Control': 'no-cache' } });
+    const getResp = await fetch(url, {
+      headers: { ...auth, 'Cache-Control': 'no-cache' },
+      signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
+    });
     if (getResp.status === 404) return { path, status: 'not-found', results: [], attempts: attempt };
     if (!getResp.ok) throw new Error(`catalog GET ${path} returned ${getResp.status}`);
     const etag = getResp.headers.get('etag');
@@ -171,6 +181,7 @@ export async function updateProductAvailability(ctx, path, skus, { dryRun = fals
       method: 'PUT',
       headers: { ...auth, 'Content-Type': 'application/json', 'If-Match': etag },
       body: JSON.stringify(product),
+      signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
     });
     if (putResp.status === 412) {
       ctx.log.info(`[inventory-sync] 412 on ${path} (attempt ${attempt}); re-reading`);

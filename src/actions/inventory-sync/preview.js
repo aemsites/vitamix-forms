@@ -10,6 +10,8 @@
 
 import { errorInfo } from '../../utils.js';
 
+export const PREVIEW_TIMEOUT_MS = 15_000;
+
 /**
  * @param {{ env: object, log: object, events: { token?: string } }} ctx
  * @param {string} path - e.g. `/us/en_us/products/config/inventory.json`
@@ -22,6 +24,7 @@ export async function triggerPreview(ctx, path) {
     const resp = await fetch(url, {
       method: 'POST',
       headers: { Authorization: `Bearer ${ctx.events.token}` },
+      signal: AbortSignal.timeout(PREVIEW_TIMEOUT_MS),
     });
     if (resp.ok) {
       ctx.log.info(`[inventory-sync] preview ${resp.status}: ${url}`);

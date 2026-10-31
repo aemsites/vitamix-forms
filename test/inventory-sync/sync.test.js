@@ -17,7 +17,7 @@ jest.unstable_mockModule('@adobe/aio-lib-state', () => ({
   }),
 }));
 
-const { run } = await import('../../src/actions/inventory-sync/sync.js');
+const { run, MAX_SHEET_ATTEMPTS } = await import('../../src/actions/inventory-sync/sync.js');
 const { main } = await import('../../src/actions/inventory-sync/index.js');
 
 const PARAMS = {
@@ -46,6 +46,11 @@ let products;
 let indexes;
 let calls;
 let responses;
+/** DA source version (ETag) and edits an "author" saves just before our PUT lands. */
+let daVersion;
+let daEditsBeforePut;
+/** Cursor value observed when preview was triggered. */
+let cursorAtPreview;
 
 function json(body, init = {}) {
   return new Response(JSON.stringify(body), { status: 200, ...init });
@@ -54,7 +59,12 @@ function json(body, init = {}) {
 beforeEach(() => {
   store.clear();
   stateOps.length = 0;
-  responses = { daPut: 200, preview: 200, ops: 404 };
+  responses = {
+    daPut: 200, preview: 200, ops: 404, daEtag: true,
+  };
+  daVersion = 1;
+  daEditsBeforePut = [];
+  cursorAtPreview = undefined;
   sheet = {
     total: 3,
     ':type': 'sheet',
@@ -97,12 +107,27 @@ beforeEach(() => {
     calls.push(call);
     const u = String(url);
     if (u.startsWith('https://ims-na1.adobelogin.com')) return json({ access_token: 'ims-token', expires_in: 86400 });
-    if (u === DA_URL && method === 'GET') return json(sheet);
+    // DA source: GET returns an ETag; PUT honours If-Match like da-admin (412 on mismatch).
+    if (u === DA_URL && method === 'GET') {
+      return json(sheet, { headers: responses.daEtag ? { ETag: `"v${daVersion}"` } : {} });
+    }
     if (u === DA_URL && method === 'PUT') {
       call.sheet = JSON.parse(await init.body.get('data').text());
-      return new Response('', { status: responses.daPut });
+      const edit = daEditsBeforePut.shift();
+      if (edit) { // an author saved between our GET and PUT
+        edit(sheet);
+        daVersion += 1;
+      }
+      if (responses.daPut !== 200) return new Response('', { status: responses.daPut });
+      if (init.headers['If-Match'] !== `"v${daVersion}"`) return new Response('', { status: 412 });
+      sheet = call.sheet;
+      daVersion += 1;
+      return new Response('', { status: 200 });
     }
-    if (u === PREVIEW_URL) return new Response('', { status: responses.preview });
+    if (u === PREVIEW_URL) {
+      cursorAtPreview = store.get('inventory:cursor');
+      return new Response('', { status: responses.preview });
+    }
     if (u === OPS_URL) {
       call.event = JSON.parse(init.body);
       return new Response('', { status: responses.ops });
@@ -149,6 +174,7 @@ describe('prod gate', () => {
 
 describe('run', () => {
   test('applies the backlog, writes the sheet, advances the cursor and flips products', async () => {
+    const original = JSON.parse(JSON.stringify(sheet));
     store.set('inventory:cursor', '4');
     store.set('inventory:outbox:head', '7');
     queue(5, [{ sku: '001811', market: 'us', units: 1, orderId: 'o1' }]);
@@ -164,12 +190,18 @@ describe('run', () => {
     // sheet: 001811 2 → 0 + OutOfStock; 074592 already 0 → oversold; everything else preserved
     const put = calls.find((c) => c.url === DA_URL && c.method === 'PUT');
     expect(put.init.headers.Authorization).toBe('Bearer ims-token');
-    const expectedSheet = JSON.parse(JSON.stringify(sheet));
+    expect(put.init.headers['If-Match']).toBe('"v1"');
+    const expectedSheet = JSON.parse(JSON.stringify(original));
     expectedSheet.data[0].Qty = '0';
     expectedSheet.data[0].Availability = 'OutOfStock';
     expect(put.sheet).toEqual(expectedSheet);
     expect(calls.some((c) => c.url === PREVIEW_URL && c.method === 'POST')).toBe(true);
     expect(body.previewed).toBe(true);
+    // preview runs only after the cursor advanced (outside the crash window)
+    expect(cursorAtPreview).toBe('7');
+    // every network call except the IMS token carries a timeout signal
+    calls.filter((c) => !c.url.startsWith('https://ims-na1'))
+      .forEach((c) => expect(c.init.signal).toBeInstanceOf(AbortSignal));
 
     // cursor advanced to head, applied entries deleted
     expect(store.get('inventory:cursor')).toBe('7');
@@ -240,11 +272,74 @@ describe('run', () => {
     store.set('inventory:outbox:head', '1');
     queue(1, [{ sku: '001811', market: 'us', units: 1, orderId: 'o1' }]);
     const { body } = await run(PARAMS);
-    expect(body.error).toBe('failed to write sheet');
+    expect(body.error).toMatch(/DA source PUT .* returned 500/);
     expect(store.has('inventory:cursor')).toBe(false);
     expect(store.has('inventory:outbox:1')).toBe(true);
     expect(JSON.parse(store.get('inventory-sync:state')).status).toBe('error');
     expect(store.has('inventory-sync:lock')).toBe(false);
+  });
+
+  test('concurrent author edit (412): re-reads, keeps their edit and applies the decrement on top', async () => {
+    store.set('inventory:outbox:head', '1');
+    queue(1, [{ sku: '001811', market: 'us', units: 1, orderId: 'o1' }]);
+    // author restocks 001811 to 10 and edits a title after our first GET
+    daEditsBeforePut.push((s) => {
+      s.data[0].Qty = '10';
+      s.data[2].Title = 'edited by author';
+    });
+
+    const { body } = await run(PARAMS);
+
+    expect(body.error).toBeUndefined();
+    expect(body.sheetAttempts).toBe(2);
+    const puts = calls.filter((c) => c.url === DA_URL && c.method === 'PUT');
+    expect(puts.map((c) => c.init.headers['If-Match'])).toEqual(['"v1"', '"v2"']);
+    expect(sheet.data[0].Qty).toBe('9');
+    expect(sheet.data[2].Title).toBe('edited by author');
+    expect(store.get('inventory:cursor')).toBe('1');
+  });
+
+  test('sheet keeps changing (412 every time): error, cursor not advanced', async () => {
+    store.set('inventory:outbox:head', '1');
+    queue(1, [{ sku: '001811', market: 'us', units: 1, orderId: 'o1' }]);
+    daEditsBeforePut.push(...Array(10).fill((s) => { s.data[2].Title += '!'; }));
+
+    const { body } = await run(PARAMS);
+
+    expect(body.error).toMatch(/kept changing/);
+    expect(calls.filter((c) => c.url === DA_URL && c.method === 'PUT')).toHaveLength(MAX_SHEET_ATTEMPTS);
+    expect(sheet.data[0].Qty).toBe('2');
+    expect(store.has('inventory:cursor')).toBe(false);
+    expect(store.has('inventory:outbox:1')).toBe(true);
+    expect(calls.some((c) => c.url === PREVIEW_URL)).toBe(false);
+  });
+
+  test('missing source ETag: refuses an unconditional sheet write', async () => {
+    responses.daEtag = false;
+    store.set('inventory:outbox:head', '1');
+    queue(1, [{ sku: '001811', market: 'us', units: 1, orderId: 'o1' }]);
+    const { body } = await run(PARAMS);
+    expect(body.error).toMatch(/no ETag/);
+    expect(calls.some((c) => c.url === DA_URL && c.method === 'PUT')).toBe(false);
+    expect(store.has('inventory:cursor')).toBe(false);
+  });
+
+  test('a timed-out preview (AbortSignal) is not fatal and runs after the cursor', async () => {
+    const impl = global.fetch.getMockImplementation();
+    global.fetch.mockImplementation(async (url, init = {}) => {
+      if (String(url) === PREVIEW_URL) {
+        cursorAtPreview = store.get('inventory:cursor');
+        throw new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+      }
+      return impl(url, init);
+    });
+    store.set('inventory:outbox:head', '1');
+    queue(1, [{ sku: '001811', market: 'us', units: 1, orderId: 'o1' }]);
+    const { body } = await run(PARAMS);
+    expect(body.error).toBeUndefined();
+    expect(body.previewed).toBe(false);
+    expect(cursorAtPreview).toBe('1');
+    expect(store.has('inventory:outbox:1')).toBe(false);
   });
 
   test('preview failure is not fatal', async () => {
