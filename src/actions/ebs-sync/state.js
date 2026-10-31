@@ -12,6 +12,9 @@
  */
 
 import { init } from '@adobe/aio-lib-state';
+import {
+  OUTBOX_HEAD_KEY, OUTBOX_TTL_SEC, outboxKey, parseSeq,
+} from '../../inventory.js';
 
 const STATE_KEY = 'ebs-sync:state';
 const LOCK_KEY = 'ebs-sync:lock';
@@ -120,4 +123,80 @@ export async function acquireLock() {
 export async function releaseLock() {
   const c = await client();
   await c.delete(LOCK_KEY);
+}
+
+/**
+ * Upper bound on free-slot probing past `head`. Slots past head only exist when
+ * an earlier entry write succeeded but its head write failed.
+ */
+export const MAX_OUTBOX_PROBE = 50;
+
+/**
+ * Allocate the next managed-inventory outbox seq (`head + 1`).
+ *
+ * If that slot is already occupied (an entry from an earlier run whose head
+ * write failed), skip to the next free seq so that entry is not overwritten;
+ * inventory-sync reads `cursor+1..head`, so it is picked up once head moves
+ * past it.
+ *
+ * Throws if no free slot is found within MAX_OUTBOX_PROBE slots past head; it
+ * never returns an occupied seq.
+ *
+ * Callers must allocate ONCE per payload and reuse the seq on retries (see
+ * ebs-sync `queueInventoryDeltas`); re-allocating after a partial write would
+ * skip our own entry and publish a duplicate.
+ *
+ * @returns {Promise<number>}
+ */
+export async function allocateInventoryOutboxSeq() {
+  const c = await client();
+  const head = parseSeq(await c.get(OUTBOX_HEAD_KEY));
+  for (let seq = head + 1; seq <= head + MAX_OUTBOX_PROBE; seq++) {
+    if (!await c.get(outboxKey(seq))) return seq;
+    console.log(`[ebs-sync] inventory outbox seq ${seq} already exists past head ${head} — skipping`);
+  }
+  // Every probed slot holds another run's entry. Never return an occupied seq
+  // (that would overwrite those decrements); fail so the caller logs the
+  // payload for manual recovery.
+  throw new Error(
+    `inventory outbox: no free seq in ${head + 1}..${head + MAX_OUTBOX_PROBE} (head=${head}); `
+    + 'orphaned entries past head need manual recovery',
+  );
+}
+
+/**
+ * Write `inventory:outbox:{seq}`. Idempotent for a given seq + entry, so it is
+ * safe to repeat after an ambiguous failure.
+ *
+ * @param {number} seq
+ * @param {{ activationId?: string, createdAt: string, orderIds: string[], deltas: object[] }} entry
+ */
+export async function putInventoryOutboxEntry(seq, {
+  activationId, createdAt, orderIds, deltas,
+}) {
+  const c = await client();
+  const value = {
+    seq, activationId: activationId ?? null, createdAt, orderIds, deltas,
+  };
+  await c.put(outboxKey(seq), JSON.stringify(value), { ttl: OUTBOX_TTL_SEC });
+}
+
+/**
+ * Publish `inventory:outbox:head = seq` (after the entry is written).
+ * Idempotent for a given seq. ebs-sync is the only writer.
+ * @param {number} seq
+ */
+export async function publishInventoryOutboxHead(seq) {
+  const c = await client();
+  await c.put(OUTBOX_HEAD_KEY, String(seq), { ttl: OUTBOX_TTL_SEC });
+}
+
+/**
+ * Whether `inventory:outbox:{seq}` exists (used to word failure logs).
+ * @param {number} seq
+ * @returns {Promise<boolean>}
+ */
+export async function inventoryOutboxEntryExists(seq) {
+  const c = await client();
+  return Boolean(await c.get(outboxKey(seq)));
 }

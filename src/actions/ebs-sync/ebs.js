@@ -652,7 +652,7 @@ const WARRANTY_VITAMIX_ID = {
  * original product SKU. Applied only to bundle items — simple products keep
  * their SKU as-is.
  */
-function stripBundleSuffix(sku) {
+export function stripBundleSuffix(sku) {
   return String(sku || '').replace(/-VB$/, '');
 }
 
