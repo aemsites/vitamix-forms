@@ -1,3 +1,15 @@
+# [1.11.0](https://github.com/aemsites/vitamix-forms/compare/v1.10.0...v1.11.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ci:** reject manual deploys whose SHA is no longer the branch head ([4705fc5](https://github.com/aemsites/vitamix-forms/commit/4705fc54c0edd359b86d748edfc169de887c498b))
+
+
+### Features
+
+* **ci:** allow manual stage/prod deploys via workflow_dispatch ([d559723](https://github.com/aemsites/vitamix-forms/commit/d559723b52f2346a02e0941a7d8d1930a3cfc3fe))
+
 # [1.10.0](https://github.com/aemsites/vitamix-forms/compare/v1.9.0...v1.10.0) (2026-10-31)
 
 
