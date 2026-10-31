@@ -152,6 +152,14 @@ feeds.
 
 CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
 - Upload to the root `/` only; CJ ignores subdirectories.
+- **Atomic upload** (`atomicUpload: true`): each file is written as
+  `<file>.part`, its size checked against the bytes sent, then renamed to the
+  registered name with `posix-rename` (atomic replace). If the server lacks
+  `posix-rename`, the live file is deleted first and a plain `rename` is used.
+  CJ never sees a partial file under the registered name, and any failure
+  leaves the previous file in place and removes the temp file. CJ confirmed
+  that renaming is supported; only the final name must match the registration.
+  The result's `rename` field shows which method ran.
 - The file name must exactly match the CJ feed registration. Each locale is a
   separate registration (country/currency/language are fixed per feed).
 - CJ confirms receipt and processing **by email** to the registration's

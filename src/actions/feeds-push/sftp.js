@@ -73,17 +73,68 @@ export async function connect(options, { log, createClient = () => new SftpClien
   throw lastErr;
 }
 
+/** Suffix for the temporary upload name; never matches a registered file. */
+export const TEMP_SUFFIX = '.part';
+
+/** @param {unknown} err */
+const isUnsupported = (err) => /does not support/i.test(String(err?.message || err));
+
+/**
+ * Move `from` to `to`, replacing `to` if it exists.
+ * Prefers the atomic posix-rename@openssh.com extension; when the server
+ * doesn't offer it, deletes `to` and does a plain SFTPv3 rename (which won't
+ * overwrite). The provider just keeps its previous state if that gap is hit.
+ * @param {SftpClient} client
+ * @param {string} from
+ * @param {string} to
+ * @returns {Promise<'posix-rename' | 'delete+rename'>}
+ */
+export async function replace(client, from, to) {
+  try {
+    await client.posixRename(from, to);
+    return 'posix-rename';
+  } catch (err) {
+    if (!isUnsupported(err)) throw err;
+  }
+  await client.delete(to, true); // notFoundOK
+  await client.rename(from, to);
+  return 'delete+rename';
+}
+
 /**
  * Upload a string body to `remotePath`, overwriting any existing file.
+ *
+ * With `atomic`, the body is written to `<remotePath>.part`, its size is
+ * verified, and only then renamed to `remotePath`, so the provider never sees
+ * a partially written file under the registered name. On failure the temp
+ * file is removed (best effort) and the error is rethrown.
+ *
  * @param {SftpClient} client
  * @param {string} body
  * @param {string} remotePath
- * @returns {Promise<number>} bytes uploaded
+ * @param {{ atomic?: boolean }} [opts]
+ * @returns {Promise<{ bytes: number, rename?: 'posix-rename' | 'delete+rename' }>}
  */
-export async function upload(client, body, remotePath) {
+export async function upload(client, body, remotePath, { atomic = false } = {}) {
   const buffer = Buffer.from(body, 'utf-8');
-  await client.put(buffer, remotePath);
-  return buffer.length;
+  if (!atomic) {
+    await client.put(buffer, remotePath);
+    return { bytes: buffer.length };
+  }
+
+  const tempPath = `${remotePath}${TEMP_SUFFIX}`;
+  try {
+    await client.put(buffer, tempPath);
+    const { size } = await client.stat(tempPath);
+    if (size !== buffer.length) {
+      throw new Error(`size mismatch after upload: ${tempPath} is ${size} bytes, expected ${buffer.length}`);
+    }
+    const rename = await replace(client, tempPath, remotePath);
+    return { bytes: buffer.length, rename };
+  } catch (err) {
+    try { await client.delete(tempPath, true); } catch { /* best effort */ }
+    throw err;
+  }
 }
 
 /**

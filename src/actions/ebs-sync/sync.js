@@ -22,10 +22,23 @@
  *   5. Checks a 9.5-minute deadline before each order
  *   6. On success/deadline: advances cursor to the latest journal entry timestamp
  *   7. Saves updated state and releases the lock
+ *
+ * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): the sold units
+ * of each order accepted by EBS are logged at acceptance and queued as an
+ * `inventory:outbox:{seq}` entry right after its syncedAt is persisted (see the
+ * comment at the queue call for why not earlier). Queued per order, so a run
+ * that halts, throws or is killed at the action timeout (where `finally` does
+ * not run) keeps every order queued before that point. inventory-sync
+ * applies all queued entries once per run. No DA/IMS/catalog calls here.
  */
 
 import { Core } from '@adobe/aio-sdk';
-import { loadState, saveState, acquireLock, releaseLock } from './state.js';
+import {
+  loadState, saveState, acquireLock, releaseLock,
+  allocateInventoryOutboxSeq, putInventoryOutboxEntry, publishInventoryOutboxHead,
+  inventoryOutboxEntryExists,
+} from './state.js';
+import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
 import { syncOrderToEbs, isRetriableError } from './ebs.js';
 import { errorInfo } from '../../utils.js';
@@ -35,6 +48,8 @@ const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
 const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
 const CUSTOM_UPDATE_RETRIES = 3;
 const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
+const OUTBOX_WRITE_RETRIES = 3;
+const OUTBOX_WRITE_BASE_DELAY_MS = 1_000; // 1s, 2s
 
 /**
  * Run the EBS sync job.
@@ -80,6 +95,10 @@ export async function run(params) {
     startedAt: new Date().toISOString(),
     elapsedMs: 0,
   };
+
+  // Managed-inventory: queue sold units per order accepted by EBS.
+  const inventoryEnabled = isInventorySyncEnabled(params);
+  if (inventoryEnabled) summary.inventoryOutboxSeqs = [];
 
   try {
     // ── 0. Retry pending custom updates from previous runs ───────────
@@ -227,6 +246,21 @@ export async function run(params) {
       }
 
       if (ebsResult) {
+        // EBS accepted the order: record its managed-inventory units. Collecting
+        // and logging do no I/O, so they don't widen the resend window below;
+        // the log line is the recovery source if the run dies before queueing.
+        let inventoryDeltas = [];
+        if (inventoryEnabled) {
+          try {
+            inventoryDeltas = collectOrderDeltas(order);
+          } catch (invErr) {
+            log.error(`[ebs-sync] Failed to collect inventory deltas for ${orderId}`, errorInfo(invErr));
+          }
+          if (inventoryDeltas.length) {
+            log.info(`[ebs-sync] Inventory deltas for ${orderId}: ${JSON.stringify(inventoryDeltas)}`);
+          }
+        }
+
         await logOrderSync(params, {
           action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
         }).catch((logErr) => {
@@ -252,6 +286,18 @@ export async function run(params) {
           await saveState({ pendingCustomUpdates: state.pendingCustomUpdates }).catch((saveErr) => {
             log.error(`[ebs-sync] Failed to persist pending custom update for ${orderId}`, errorInfo(saveErr));
           });
+        }
+
+        // Queue the inventory decrement only AFTER syncedAt / the pending update is
+        // persisted. Queueing earlier would sit inside the window where a crash
+        // makes the next run resend the order to EBS, and that resend would also
+        // queue it again (double decrement), while lengthening the window with
+        // state round-trips and retry sleeps. Trade-off: a crash between here and
+        // the outbox write loses the queue write, but the deltas are in the info
+        // log above for manual recovery. Still per order (not in finally), so a
+        // run killed at the action timeout keeps every order queued before it.
+        if (inventoryDeltas.length) {
+          summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
         }
 
         state.lastProcessedOrderId = orderId;
@@ -302,6 +348,69 @@ export async function run(params) {
   }
 
   return { body: summary };
+}
+
+/**
+ * Write one accepted order's inventory deltas to the outbox: entry first, then head.
+ *
+ * Retries are idempotent: the seq is allocated once and reused, and the entry
+ * write is not repeated once it succeeded. So a failure between the entry and
+ * head writes (or an ambiguous failure of either) never publishes a second
+ * copy of the same run's deltas, which would double-decrement the sheet.
+ *
+ * Never throws: the orders are already in EBS and will not be processed again,
+ * so on final failure the full payload is logged for manual recovery.
+ *
+ * @returns {Promise<number | null>} the outbox seq, or null on failure
+ */
+export async function queueInventoryDeltas({ orderIds, deltas }, log) {
+  const entry = {
+    activationId: process.env.__OW_ACTIVATION_ID,
+    createdAt: new Date().toISOString(),
+    orderIds,
+    deltas,
+  };
+  let seq = null;
+  let entryWritten = false;
+  let lastErr = null;
+  for (let attempt = 1; attempt <= OUTBOX_WRITE_RETRIES; attempt++) {
+    try {
+      if (seq === null) seq = await allocateInventoryOutboxSeq();
+      if (!entryWritten) {
+        await putInventoryOutboxEntry(seq, entry);
+        entryWritten = true;
+      }
+      await publishInventoryOutboxHead(seq);
+      log.info(`[ebs-sync] Queued inventory outbox seq=${seq}: ${deltas.length} deltas for orders ${orderIds.join(', ')}`);
+      return seq;
+    } catch (err) {
+      lastErr = err;
+      log.warn(`[ebs-sync] Inventory outbox write attempt ${attempt}/${OUTBOX_WRITE_RETRIES} failed (seq=${seq ?? 'unallocated'}, entryWritten=${entryWritten})`, errorInfo(err));
+      if (attempt < OUTBOX_WRITE_RETRIES) await sleep(OUTBOX_WRITE_BASE_DELAY_MS * attempt);
+    }
+  }
+  log.error(await describeOutboxFailure(seq, entryWritten, entry), errorInfo(lastErr));
+  return null;
+}
+
+/**
+ * Final-failure message for an outbox write. Telling ops to "apply manually"
+ * when the entry was in fact stored would double-decrement: a stored entry past
+ * head is applied automatically once a later write moves head past it.
+ */
+async function describeOutboxFailure(seq, entryWritten, entry) {
+  const payload = JSON.stringify({ seq, ...entry });
+  let stored = entryWritten;
+  if (!stored && seq !== null) {
+    stored = await inventoryOutboxEntryExists(seq).catch(() => null); // null = unknown
+  }
+  if (stored === true) {
+    return `[ebs-sync] INVENTORY OUTBOX HEAD NOT PUBLISHED — entry inventory:outbox:${seq} is stored and will be applied automatically once a later write moves head past it. Do NOT apply manually: ${payload}`;
+  }
+  if (stored === null) {
+    return `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — check whether inventory:outbox:${seq} exists: if it does, it will be applied automatically (do NOT apply manually); if it does not, apply manually: ${payload}`;
+  }
+  return `[ebs-sync] INVENTORY OUTBOX WRITE FAILED — entry not stored, apply manually: ${payload}`;
 }
 
 function sleep(ms) {
