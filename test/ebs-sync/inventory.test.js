@@ -25,7 +25,7 @@ jest.unstable_mockModule('@adobe/aio-lib-state', () => ({
 
 const { collectOrderDeltas, isInventorySyncEnabled } = await import('../../src/actions/ebs-sync/inventory.js');
 const {
-  allocateInventoryOutboxSeq, putInventoryOutboxEntry, publishInventoryOutboxHead,
+  allocateInventoryOutboxSeq, putInventoryOutboxEntry, publishInventoryOutboxHead, MAX_OUTBOX_PROBE,
 } = await import('../../src/actions/ebs-sync/state.js');
 const { queueInventoryDeltas } = await import('../../src/actions/ebs-sync/sync.js');
 const { mergeDeltas, applyDeltas } = await import('../../src/actions/inventory-sync/sheet.js');
@@ -114,6 +114,20 @@ describe('inventory outbox state', () => {
     expect(await allocateInventoryOutboxSeq()).toBe(7);
     expect(JSON.parse(store.get('inventory:outbox:6')).orphan).toBe(true);
   });
+
+  test('returns the last probed slot when only it is free', async () => {
+    for (let seq = 1; seq < MAX_OUTBOX_PROBE; seq++) store.set(`inventory:outbox:${seq}`, '{}');
+    expect(await allocateInventoryOutboxSeq()).toBe(MAX_OUTBOX_PROBE);
+  });
+
+  test('throws instead of returning an occupied seq when the probe limit is exhausted', async () => {
+    for (let seq = 1; seq <= MAX_OUTBOX_PROBE + 1; seq++) {
+      store.set(`inventory:outbox:${seq}`, JSON.stringify({ seq, orderIds: [`old-${seq}`] }));
+    }
+    const before = new Map(store);
+    await expect(allocateInventoryOutboxSeq()).rejects.toThrow('no free seq');
+    expect(store).toEqual(before);
+  });
 });
 
 describe('queueInventoryDeltas retries are idempotent', () => {
@@ -170,6 +184,22 @@ describe('queueInventoryDeltas retries are idempotent', () => {
     expect(store.has('inventory:outbox:2')).toBe(false);
     expect(store.get('inventory:outbox:head')).toBe('1');
     expect(consume(2).Qty).toBe('1');
+  });
+
+  test('probe exhaustion: nothing is overwritten, head unchanged, payload logged', async () => {
+    const errors = [];
+    const errLog = { ...log, error: (msg) => errors.push(msg) };
+    for (let seq = 1; seq <= MAX_OUTBOX_PROBE + 1; seq++) {
+      store.set(`inventory:outbox:${seq}`, JSON.stringify({ seq, orderIds: [`old-${seq}`] }));
+    }
+    const before = new Map(store);
+    const p = queueInventoryDeltas(order, errLog);
+    await jest.runAllTimersAsync();
+    expect(await p).toBeNull();
+    expect(store).toEqual(before);
+    expect(errors).toHaveLength(1);
+    expect(errors[0]).toContain('INVENTORY OUTBOX WRITE FAILED');
+    expect(errors[0]).toContain('"orderIds":["o1"]');
   });
 
   test('an orphan from an earlier run is still preserved and published', async () => {

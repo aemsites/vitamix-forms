@@ -129,7 +129,7 @@ export async function releaseLock() {
  * Upper bound on free-slot probing past `head`. Slots past head only exist when
  * an earlier entry write succeeded but its head write failed.
  */
-const MAX_OUTBOX_PROBE = 50;
+export const MAX_OUTBOX_PROBE = 50;
 
 /**
  * Allocate the next managed-inventory outbox seq (`head + 1`).
@@ -138,6 +138,9 @@ const MAX_OUTBOX_PROBE = 50;
  * write failed), skip to the next free seq so that entry is not overwritten;
  * inventory-sync reads `cursor+1..head`, so it is picked up once head moves
  * past it.
+ *
+ * Throws if no free slot is found within MAX_OUTBOX_PROBE slots past head; it
+ * never returns an occupied seq.
  *
  * Callers must allocate ONCE per payload and reuse the seq on retries (see
  * ebs-sync `queueInventoryDeltas`); re-allocating after a partial write would
@@ -148,12 +151,17 @@ const MAX_OUTBOX_PROBE = 50;
 export async function allocateInventoryOutboxSeq() {
   const c = await client();
   const head = parseSeq(await c.get(OUTBOX_HEAD_KEY));
-  let seq = head + 1;
-  for (let i = 0; i < MAX_OUTBOX_PROBE && await c.get(outboxKey(seq)); i++) {
+  for (let seq = head + 1; seq <= head + MAX_OUTBOX_PROBE; seq++) {
+    if (!await c.get(outboxKey(seq))) return seq;
     console.log(`[ebs-sync] inventory outbox seq ${seq} already exists past head ${head} — skipping`);
-    seq += 1;
   }
-  return seq;
+  // Every probed slot holds another run's entry. Never return an occupied seq
+  // (that would overwrite those decrements); fail so the caller logs the
+  // payload for manual recovery.
+  throw new Error(
+    `inventory outbox: no free seq in ${head + 1}..${head + MAX_OUTBOX_PROBE} (head=${head}); `
+    + 'orphaned entries past head need manual recovery',
+  );
 }
 
 /**
