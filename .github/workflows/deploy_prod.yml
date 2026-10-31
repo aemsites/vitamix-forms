@@ -3,6 +3,15 @@ name: Production
 on:
   push:
     branches: [main]
+  # Manual redeploy of `main` without cutting a release (e.g. after changing a
+  # secret such as INVENTORY_SYNC_ENABLED_PROD). Pushes still release via
+  # semantic-release; a manual run only runs `aio app deploy`.
+  workflow_dispatch:
+
+# Never run two prod deploys at once; a queued run waits for the current one.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -13,8 +22,24 @@ permissions:
 jobs:
   test:
     name: Test
+    # Manual runs may only deploy `main` to prod.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      # Manual runs wait for any in-flight deploy (concurrency) and check out the
+      # SHA captured when the run was requested. If the branch moved meanwhile
+      # (e.g. semantic-release committed a new version), that SHA is stale:
+      # deploying it would overwrite the newer deployment. Fail instead.
+      - name: Reject stale manual run
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$GITHUB_REF_NAME" --jq .object.sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "::error::$GITHUB_REF_NAME moved to $head after this run was requested ($GITHUB_SHA). Re-run the workflow to deploy the latest commit."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - name: Use Node.js 24.x
         uses: actions/setup-node@v4
@@ -62,8 +87,15 @@ jobs:
           TECHNICALACCOUNTEMAIL: ${{ secrets.TECHNICALACCEMAIL_PROD }}
           IMSORGID: ${{ secrets.IMSORGID_PROD }}
           SCOPES: ${{ secrets.SCOPES_PROD }}
-      - name: Semantic Release
-        run: npm run semantic-release
+      # push: semantic-release (version, changelog, GitHub release; its publishCmd
+      # runs `aio app deploy`). Manual run: `aio app deploy` only, same env.
+      - name: Release and deploy
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            aio app deploy
+          else
+            npm run semantic-release
+          fi
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_PROD }}
