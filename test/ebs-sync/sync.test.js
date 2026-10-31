@@ -160,17 +160,19 @@ describe('ebs-sync managed inventory outbox', () => {
     };
   }
 
-  test('queues deltas right after EBS accepts the order (before syncedAt is patched)', async () => {
+  test('queues deltas only after syncedAt is patched (never inside the EBS-resend window)', async () => {
     updateOrderCustom.mockResolvedValue({});
     getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
 
     const { body } = await runSync(ENABLED);
 
     expect(body.inventoryOutboxSeqs).toEqual([7]);
+    expect(updateOrderCustom).toHaveBeenCalledWith(expect.anything(), ORDER_ID, expect.objectContaining({ syncedAt: expect.any(String) }));
+    // EBS accept → syncedAt patch → outbox write; first outbox state call after the patch
     expect(syncOrderToEbs.mock.invocationCallOrder[0])
-      .toBeLessThan(putInventoryOutboxEntry.mock.invocationCallOrder[0]);
-    expect(putInventoryOutboxEntry.mock.invocationCallOrder[0])
       .toBeLessThan(updateOrderCustom.mock.invocationCallOrder[0]);
+    expect(updateOrderCustom.mock.invocationCallOrder[0])
+      .toBeLessThan(allocateInventoryOutboxSeq.mock.invocationCallOrder[0]);
     expect(putInventoryOutboxEntry).toHaveBeenCalledTimes(1);
     const payload = putInventoryOutboxEntry.mock.calls[0][1];
     expect(payload.orderIds).toEqual([ORDER_ID]);
@@ -286,6 +288,21 @@ describe('ebs-sync managed inventory outbox', () => {
     getJournalEntries.mockResolvedValue({ entries: [], until: '2026-01-01T00:00:00.000Z' });
     await runSync(ENABLED);
     expect(putInventoryOutboxEntry).not.toHaveBeenCalled();
+  });
+
+  test('syncedAt patch fails: pending update is persisted first, then the order is still queued', async () => {
+    updateOrderCustom.mockRejectedValue(new Error('patch down'));
+    getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
+
+    const { body } = await runSync(ENABLED);
+
+    expect(body.pendingCustomUpdates).toEqual([ORDER_ID]);
+    expect(body.inventoryOutboxSeqs).toEqual([7]);
+    const pendingSave = saveState.mock.calls.findIndex(([u]) => u.pendingCustomUpdates?.[ORDER_ID]);
+    expect(pendingSave).toBeGreaterThanOrEqual(0);
+    expect(saveState.mock.invocationCallOrder[pendingSave])
+      .toBeLessThan(allocateInventoryOutboxSeq.mock.invocationCallOrder[0]);
+    updateOrderCustom.mockReset();
   });
 
   test('outbox write failure is retried, then logged without failing the run', async () => {

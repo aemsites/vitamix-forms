@@ -24,10 +24,11 @@
  *   7. Saves updated state and releases the lock
  *
  * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): the sold units
- * of each order accepted by EBS are logged and queued as an
- * `inventory:outbox:{seq}` entry immediately after acceptance, so a run that
- * halts, throws or is killed at the action timeout (where `finally` does not
- * run) never loses decrements for orders it already accepted. inventory-sync
+ * of each order accepted by EBS are logged at acceptance and queued as an
+ * `inventory:outbox:{seq}` entry right after its syncedAt is persisted (see the
+ * comment at the queue call for why not earlier). Queued per order, so a run
+ * that halts, throws or is killed at the action timeout (where `finally` does
+ * not run) keeps every order queued before that point. inventory-sync
  * applies all queued entries once per run. No DA/IMS/catalog calls here.
  */
 
@@ -245,19 +246,18 @@ export async function run(params) {
       }
 
       if (ebsResult) {
-        // EBS accepted the order: queue its units against managed inventory now,
-        // not at the end of the run, so a killed run cannot lose them.
+        // EBS accepted the order: record its managed-inventory units. Collecting
+        // and logging do no I/O, so they don't widen the resend window below;
+        // the log line is the recovery source if the run dies before queueing.
+        let inventoryDeltas = [];
         if (inventoryEnabled) {
-          let deltas = [];
           try {
-            deltas = collectOrderDeltas(order);
+            inventoryDeltas = collectOrderDeltas(order);
           } catch (invErr) {
             log.error(`[ebs-sync] Failed to collect inventory deltas for ${orderId}`, errorInfo(invErr));
           }
-          if (deltas.length) {
-            // Logged before the write so a killed run can be recovered from logs.
-            log.info(`[ebs-sync] Inventory deltas for ${orderId}: ${JSON.stringify(deltas)}`);
-            summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas }, log));
+          if (inventoryDeltas.length) {
+            log.info(`[ebs-sync] Inventory deltas for ${orderId}: ${JSON.stringify(inventoryDeltas)}`);
           }
         }
 
@@ -286,6 +286,18 @@ export async function run(params) {
           await saveState({ pendingCustomUpdates: state.pendingCustomUpdates }).catch((saveErr) => {
             log.error(`[ebs-sync] Failed to persist pending custom update for ${orderId}`, errorInfo(saveErr));
           });
+        }
+
+        // Queue the inventory decrement only AFTER syncedAt / the pending update is
+        // persisted. Queueing earlier would sit inside the window where a crash
+        // makes the next run resend the order to EBS, and that resend would also
+        // queue it again (double decrement), while lengthening the window with
+        // state round-trips and retry sleeps. Trade-off: a crash between here and
+        // the outbox write loses the queue write, but the deltas are in the info
+        // log above for manual recovery. Still per order (not in finally), so a
+        // run killed at the action timeout keeps every order queued before it.
+        if (inventoryDeltas.length) {
+          summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
         }
 
         state.lastProcessedOrderId = orderId;
