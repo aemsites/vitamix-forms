@@ -26,6 +26,20 @@ jobs:
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
+      # Manual runs wait for any in-flight deploy (concurrency) and check out the
+      # SHA captured when the run was requested. If the branch moved meanwhile
+      # (e.g. semantic-release committed a new version), that SHA is stale:
+      # deploying it would overwrite the newer deployment. Fail instead.
+      - name: Reject stale manual run
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          head=$(gh api "repos/$GITHUB_REPOSITORY/git/ref/heads/$GITHUB_REF_NAME" --jq .object.sha)
+          if [ "$head" != "$GITHUB_SHA" ]; then
+            echo "::error::$GITHUB_REF_NAME moved to $head after this run was requested ($GITHUB_SHA). Re-run the workflow to deploy the latest commit."
+            exit 1
+          fi
       - uses: actions/checkout@v4
       - name: Use Node.js 24.x
         uses: actions/setup-node@v4
