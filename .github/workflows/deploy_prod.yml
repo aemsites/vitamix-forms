@@ -3,6 +3,15 @@ name: Production
 on:
   push:
     branches: [main]
+  # Manual redeploy of `main` without cutting a release (e.g. after changing a
+  # secret such as INVENTORY_SYNC_ENABLED_PROD). Pushes still release via
+  # semantic-release; a manual run only runs `aio app deploy`.
+  workflow_dispatch:
+
+# Never run two prod deploys at once; a queued run waits for the current one.
+concurrency:
+  group: deploy-prod
+  cancel-in-progress: false
 
 permissions:
   id-token: write
@@ -13,6 +22,8 @@ permissions:
 jobs:
   test:
     name: Test
+    # Manual runs may only deploy `main` to prod.
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -62,8 +73,15 @@ jobs:
           TECHNICALACCOUNTEMAIL: ${{ secrets.TECHNICALACCEMAIL_PROD }}
           IMSORGID: ${{ secrets.IMSORGID_PROD }}
           SCOPES: ${{ secrets.SCOPES_PROD }}
-      - name: Semantic Release
-        run: npm run semantic-release
+      # push: semantic-release (version, changelog, GitHub release; its publishCmd
+      # runs `aio app deploy`). Manual run: `aio app deploy` only, same env.
+      - name: Release and deploy
+        run: |
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            aio app deploy
+          else
+            npm run semantic-release
+          fi
         env:
           GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
           AIO_RUNTIME_NAMESPACE: ${{ secrets.AIO_RUNTIME_NAMESPACE_PROD }}

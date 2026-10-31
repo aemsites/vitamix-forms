@@ -3,10 +3,19 @@ name: Stage
 on:
   push:
     branches: [stage]
+  # Manual redeploy of `stage` (e.g. after changing a secret).
+  workflow_dispatch:
+
+# Never run two stage deploys at once; a queued run waits for the current one.
+concurrency:
+  group: deploy-stage
+  cancel-in-progress: false
 
 jobs:
   test:
     name: Test
+    # Manual runs may only deploy the `stage` branch to stage.
+    if: github.ref == 'refs/heads/stage'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
