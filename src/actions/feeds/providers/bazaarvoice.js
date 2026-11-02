@@ -81,7 +81,7 @@ function categoryXml(id, cat, store) {
  *   2. the variant group: the parent sku (item_group_id), or the item's own id
  *      for a standalone product.
  * BV aggregates reviews across every product sharing any family value. Items
- * without a reviewsId (or when the index is unavailable) get the group alone.
+ * without a reviewsId get the group alone.
  * @param {Record<string, unknown>} item a normalized GMC item
  * @param {Map<string, Record<string, string>>} index sku -> product index row
  * @returns {string[]}
@@ -146,8 +146,9 @@ export default {
     const url = ctx.env.BV_CATEGORY_SHEET_URL || DEFAULT_SHEET_URL;
     const [{ categories, productCategory }, index] = await Promise.all([
       loadCategoryData(ctx, url),
-      // never throws: without it, families fall back to the variant group
-      loadProductIndex(ctx, locale),
+      // required: this is a full feed, so serving it without the reviewsId
+      // families would regroup every product's reviews
+      loadProductIndex(ctx, locale, { required: true }),
     ]);
     const store = String(locale || '').split('/')[0] === 'ca' ? 'ca' : 'us';
     const extractDate = new Date().toISOString();

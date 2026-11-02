@@ -86,13 +86,15 @@ const INDEX = {
  * Mock the fetches: the category sheet (JSON), the product index (JSON) and the
  * GMC feed (XML).
  */
-function mockFetch({ sheetOk = true, indexOk = true } = {}) {
+function mockFetch({ sheetOk = true, indexOk = true, index = INDEX } = {}) {
   return jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
     if (String(url).includes('bv-categories')) {
       return { ok: sheetOk, status: sheetOk ? 200 : 500, json: async () => SHEET };
     }
     if (String(url).includes('/products/index.json')) {
-      return { ok: indexOk, status: indexOk ? 200 : 503, json: async () => INDEX };
+      const body = typeof index === 'function' ? index(new URL(url)) : index;
+      const ok = indexOk && !!body;
+      return { ok, status: ok ? 200 : 503, json: async () => body };
     }
     return { ok: true, status: 200, text: async () => GMC };
   });
@@ -176,14 +178,27 @@ describe('bazaarvoice provider', () => {
     expect(res.body).not.toContain('/us/en_us/shop/blenders');
   });
 
-  test('falls back to the variant group when the product index is unavailable', async () => {
+  test('returns 502 when the product index is unavailable', async () => {
     mockFetch({ indexOk: false });
     const res = await GET({ locale: 'us/en_us' });
-    expect(res.statusCode).toBe(200);
-    const variant = asArray(parser.parse(res.body).Feed.Products.Product)
-      .find((p) => p.ExternalId === '056405');
-    expect(attrValues(variant, 'BV_FE_FAMILY')).toEqual(['7500']);
-    expect(attrValues(variant, 'BV_FE_EXPAND')).toEqual(['BV_FE_FAMILY:7500']);
+    expect(res.statusCode).toBe(502);
+  });
+
+  test('returns 502 when a later product index page fails', async () => {
+    // first page loads, the next one errors: no partial index
+    mockFetch({
+      index: (url) => (url.searchParams.get('offset') === '0'
+        ? { total: 2000, data: INDEX.data }
+        : undefined),
+    });
+    const res = await GET({ locale: 'us/en_us' });
+    expect(res.statusCode).toBe(502);
+  });
+
+  test('returns 502 when the product index is empty', async () => {
+    mockFetch({ index: { total: 0, data: [] } });
+    const res = await GET({ locale: 'us/en_us' });
+    expect(res.statusCode).toBe(502);
   });
 
   test('returns 502 when the category sheet is unavailable', async () => {

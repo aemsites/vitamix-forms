@@ -95,7 +95,9 @@ Supported providers:
   feed: the parent's `reviewsId` from the product index (the PDP's BV product
   id, which groups related products such as a blender and its bundles) and the
   variant group (`item_group_id`, or the product's own id). Without a
-  `reviewsId` only the variant group is sent. A
+  `reviewsId` only the variant group is sent. Like the category sheet, the
+  index is required: the feed is a full (non-incremental) feed, so it returns 502
+  rather than serving products without their families. A
   variant missing from the category sheet inherits its parent's category (the
   sheet was lifted from the legacy feed, which listed configurable parents).
   `raw=true` serves the previous, unprepared Bazaarvoice feed.
