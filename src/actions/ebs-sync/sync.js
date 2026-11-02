@@ -1,27 +1,38 @@
 /**
  * Core EBS sync orchestration.
  *
- * Each scheduled invocation:
+ * Each invocation:
  *   0. Retries any pending custom.syncedAt patches left over from earlier runs
  *      (orders already accepted by EBS). These are never sent to EBS again.
- *   1. Acquires a distributed lock (bails if already held)
- *   2. Loads the persisted `since` cursor from state
- *   3. Reads the global journal and filters to terminal events
- *      (payment_completed / payment_cancelled) to discover resolved orderIds
- *   4. For each resolved orderId (oldest first):
- *        a. Fetches the order — skips if already synced (custom.syncedAt or custom.syncedToEbs)
- *        b. Skips cancelled orders (including fraud-declined) — no EBS sync needed
- *        c. For payment_completed: queries complete per-order journal
- *        d. Calls syncOrderToEbs(ctx, params, order, orderJournal), retrying up to MAX_RETRIES
- *        e. On success: patches custom.syncedAt and clears custom.syncError to null,
+ *   1. Acquires a distributed lock (bails if already held, without touching state)
+ *   2. Loads the persisted `since` cursor from state (or the manual override)
+ *   3. Reads the global journal from `since - OVERLAP_MS` (60 min, see
+ *      commerce.js) and collects orders with a terminal event
+ *      (payment_completed / payment_cancelled), oldest terminal entry first
+ *   4. For each order:
+ *        a. Fetches the order — skips if already synced (custom.syncedAt or
+ *           custom.syncedToEbs), its syncedAt patch is pending, or it is
+ *           cancelled (including fraud-declined)
+ *        b. Queries the complete per-order journal
+ *        c. Calls syncOrderToEbs(ctx, params, order, orderJournal), retrying up to MAX_RETRIES
+ *        d. On success: patches custom.syncedAt and clears custom.syncError to null,
  *           retrying the patch up to CUSTOM_UPDATE_RETRIES times. If it still fails,
  *           the order is saved in state.pendingCustomUpdates so later runs retry
  *           only the patch and don't send the order to EBS again.
- *        f. On max-retries exhausted: patches custom.syncError with a short error
- *           code, records the error, halts without advancing cursor
+ *        e. On max-retries exhausted: patches custom.syncError with a short error
+ *           code, records the error and halts
  *   5. Checks a 9.5-minute deadline before each order
- *   6. On success/deadline: advances cursor to the latest journal entry timestamp
- *   7. Saves updated state and releases the lock
+ *   6. Cursor (see nextCursor): completed → the query's `until`; max-retries →
+ *      unchanged; deadline → the terminal entry of the first order not handled
+ *   7. Scheduled runs only, at most hourly: reconciliation (reconcile.js) lists
+ *      recently completed orders without syncedAt / syncError straight from the
+ *      orders API, so orders missing from the global journal are still found;
+ *      each one found is reported to the operations log
+ *   8. Saves updated state and releases the lock
+ *
+ * Manual (POST) runs scan [sinceOverride, untilOverride] and keep the persisted
+ * cursor unless params.persistCursor is true. The response's `nextSince` is
+ * where to resume a backfill cut short by the deadline. They never reconcile.
  *
  * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): the sold units
  * of each order accepted by EBS are logged at acceptance and queued as an
@@ -40,12 +51,13 @@ import {
 } from './state.js';
 import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
+import { reconcileOrders, isReconcileDue, RECONCILE_MIN_REMAINING_MS } from './reconcile.js';
 import { syncOrderToEbs, isRetriableError } from './ebs.js';
 import { errorInfo } from '../../utils.js';
 
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
-const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
+export const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
 const CUSTOM_UPDATE_RETRIES = 3;
 const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
 const OUTBOX_WRITE_RETRIES = 3;
@@ -61,6 +73,12 @@ export async function run(params) {
   const log = Core.Logger('ebs-sync', { level: params.LOG_LEVEL ?? 'info' });
   const ctx = { env: params, log };
   const startTime = Date.now();
+  const deadlineAt = startTime + DEADLINE_MS;
+
+  // Manual (POST) runs carry sinceOverride. They are backfills: they leave the
+  // persisted cursor alone unless the caller opts in with persistCursor.
+  const manual = Boolean(params.sinceOverride);
+  const persistCursor = !manual || params.persistCursor === true;
 
   const locked = await acquireLock();
   if (!locked) {
@@ -73,58 +91,55 @@ export async function run(params) {
     };
   }
 
-  const state = await loadState();
-
-  // Allow the caller to override the cursor start (e.g. manual trigger via API).
-  if (params.sinceOverride) {
-    log.info(`[ebs-sync] Cursor overridden: ${state.since ?? 'null'} → ${params.sinceOverride}`);
-    state.since = params.sinceOverride;
-  }
-
-  log.info(`[ebs-sync] State loaded — since=${state.since ?? 'null (will default to 1h ago)'}, status=${state.status}, processedCount=${state.processedCount ?? 0}, failedCount=${state.failedCount ?? 0}`);
-
   /** Accumulated summary returned as the action response body. */
   const summary = {
-    since: state.since,
+    manual,
+    since: null,
+    until: null,
+    nextSince: null,
+    cursorPersisted: false,
     processedOrders: [],
-    lastProcessedOrderId: state.lastProcessedOrderId,
+    lastProcessedOrderId: null,
     lastError: null,
     pendingCustomUpdates: [],
     halted: false,
     haltReason: null,
-    startedAt: new Date().toISOString(),
+    reconcile: null,
+    startedAt: new Date(startTime).toISOString(),
     elapsedMs: 0,
   };
 
-  // Managed-inventory: queue sold units per order accepted by EBS.
-  const inventoryEnabled = isInventorySyncEnabled(params);
-  if (inventoryEnabled) summary.inventoryOutboxSeqs = [];
-
   try {
+    const state = await loadState();
+    const scanSince = params.sinceOverride ?? state.since;
+    summary.since = scanSince;
+    summary.lastProcessedOrderId = state.lastProcessedOrderId;
+
+    if (manual) {
+      log.info(`[ebs-sync] Manual run from ${scanSince}${params.untilOverride ? ` until ${params.untilOverride}` : ''}; persisted cursor ${state.since ?? 'null'} is ${persistCursor ? 'replaced' : 'kept'}.`);
+    }
+    log.info(`[ebs-sync] State loaded — since=${state.since ?? 'null (will default to 1h ago)'}, status=${state.status}, processedCount=${state.processedCount ?? 0}, failedCount=${state.failedCount ?? 0}`);
+
+    // Managed-inventory: queue sold units per order accepted by EBS.
+    const inventoryEnabled = isInventorySyncEnabled(params);
+    if (inventoryEnabled) summary.inventoryOutboxSeqs = [];
+
+    const runCtx = {
+      params, ctx, log, state, summary, inventoryEnabled,
+    };
+
     // ── 0. Retry pending custom updates from previous runs ───────────
     await flushPendingCustomUpdates(params, state, log);
 
     // ── 1. Fetch journal entries and find the batch boundary ────────────
-    const { entries, until: batchUntil } = await getJournalEntries(params, state.since, log, params.untilOverride);
-    log.info(`[ebs-sync] ${entries.length} journal entries since ${state.since ?? 'default (1h ago)'} until ${batchUntil}`);
+    const { entries, until: batchUntil } = await getJournalEntries(params, scanSince, log, params.untilOverride);
+    summary.until = batchUntil;
+    log.info(`[ebs-sync] ${entries.length} journal entries since ${scanSince ?? 'default (1h ago)'} until ${batchUntil}`);
 
-    // ── 2. Filter to terminal events, collect unique orderIds ──────────
-    const TERMINAL_EVENTS = new Set(['payment_completed', 'payment_cancelled']);
-    const terminalEntries = entries.filter(
-      (e) => e.orderId && TERMINAL_EVENTS.has(e.event),
-    );
+    // ── 2. Terminal events → unique orders, oldest first ─────────────
+    const queue = terminalOrders(entries);
 
-    // Deduplicate to unique orderIds, preserving oldest-first order.
-    const seen = new Set();
-    const orderIds = [];
-    for (const e of terminalEntries) {
-      if (!seen.has(e.orderId)) {
-        seen.add(e.orderId);
-        orderIds.push(e.orderId);
-      }
-    }
-
-    if (entries.length > 0 && terminalEntries.length === 0) {
+    if (entries.length > 0 && queue.length === 0) {
       // Entries came back but none were terminal — log event type breakdown to diagnose.
       const eventCounts = {};
       for (const e of entries) {
@@ -134,213 +149,57 @@ export async function run(params) {
     }
 
     log.info(
-      `[ebs-sync] ${terminalEntries.length} terminal entries, ${orderIds.length} unique order IDs to evaluate${orderIds.length > 0 ? `: ${orderIds.join(', ')}` : ''}`,
+      `[ebs-sync] ${queue.length} unique order IDs to evaluate${queue.length > 0 ? `: ${queue.map((q) => q.orderId).join(', ')}` : ''}`,
     );
 
-    let halted = false;
-
-    for (const orderId of orderIds) {
-      // ── Deadline guard ──────────────────────────────────────────────
-      if (Date.now() - startTime > DEADLINE_MS) {
-        log.info('[ebs-sync] Approaching 10-minute deadline. Stopping.');
+    // ── 3. Process each order ──────────────────────────────────────────
+    let stoppedAt = -1; // index of the first order not handled on deadline
+    let failed = false;
+    for (let i = 0; i < queue.length; i++) {
+      if (Date.now() > deadlineAt) {
+        log.info(`[ebs-sync] Approaching 10-minute deadline. Stopping with ${queue.length - i} order(s) left.`);
         summary.halted = true;
         summary.haltReason = 'deadline';
+        stoppedAt = i;
         break;
       }
 
-      // ── Already accepted by EBS, custom patch still pending ─────────
-      if (state.pendingCustomUpdates[orderId]) {
-        log.info(
-          `[ebs-sync] Order ${orderId} already sent to EBS (custom update pending) — skipping.`,
-        );
-        continue;
-      }
-
-      // ── 3. Fetch the order ──────────────────────────────────────────
-      let order;
-      try {
-        order = await getOrder(params, orderId);
-      } catch (fetchErr) {
-        log.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
-        continue;
-      }
-
-      if (!order) {
-        log.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
-        continue;
-      }
-
-      // ── Already synced ─────────────────────────────────────────────
-      const alreadySyncedAt = order.custom?.syncedAt || order.custom?.syncedToEbs;
-      if (alreadySyncedAt) {
-        log.info(
-          `[ebs-sync] Order ${orderId} already synced at ${alreadySyncedAt} — skipping.`,
-        );
-        continue;
-      }
-
-      // ── Cancelled (including fraud-declined) — no EBS sync needed ──
-      if (order.state === 'payment_cancelled') {
-        log.info(`[ebs-sync] Order ${orderId} is payment_cancelled — skipping.`);
-        continue;
-      }
-
-      // ── 4. Fetch complete per-order journal ─────────────────────────
-      let orderJournal;
-      try {
-        const since = order.createdAt
-          ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-        const until = new Date().toISOString();
-        orderJournal = await getOrderJournalEntries(params, orderId, since, until);
-        log.info(`[ebs-sync] Order ${orderId} journal: ${orderJournal.length} entries`);
-      } catch (journalErr) {
-        log.warn(
-          `[ebs-sync] Could not fetch journal for ${orderId}: ${journalErr.message}`,
-        );
-        await updateOrderCustom(params, orderId, { syncError: 'journal_fetch_failed' }).catch((patchErr) => {
-          log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
-        });
-        continue;
-      }
-
-      // ── 5. Sync to EBS (with retries) ──────────────────────────────
-      let lastErr = null;
-      let ebsResult = null;
-
-      for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-        try {
-          ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal);
-          log.info(`[ebs-sync] Order ${orderId} synced to EBS on attempt ${attempt}.`);
-          break;
-        } catch (err) {
-          lastErr = err;
-
-          const errStatus = err?.ebsStatus ?? err?.response?.error?.statusCode ?? 0;
-          const syncLog = { action: 'order-sync', id: orderId, status: errStatus, error: err.message };
-          // Set only on errors raised by proxyFetch. 'none' means the proxy rejected the
-          // request itself; a status means the proxy forwarded that status from EBS.
-          if (err?.upstreamStatus) syncLog.upstreamStatus = err.upstreamStatus;
-          if (errStatus >= 400) {
-            const body = err?.response?.error?.body;
-            if (body) syncLog.response = typeof body === 'string' ? body : JSON.stringify(body);
-          }
-          await logOrderSync(params, syncLog).catch((logErr) => {
-            log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
-          });
-
-          if (!isRetriableError(err)) {
-            log.warn(
-              `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error`,
-              errorInfo(err),
-            );
-            break;
-          }
-          log.warn(
-            `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed`,
-            errorInfo(err),
-          );
-          if (attempt < MAX_RETRIES) {
-            await sleep(RETRY_BASE_DELAY_MS * attempt);
-          }
-        }
-      }
-
-      if (ebsResult) {
-        // EBS accepted the order: record its managed-inventory units. Collecting
-        // and logging do no I/O, so they don't widen the resend window below;
-        // the log line is the recovery source if the run dies before queueing.
-        let inventoryDeltas = [];
-        if (inventoryEnabled) {
-          try {
-            inventoryDeltas = collectOrderDeltas(order);
-          } catch (invErr) {
-            log.error(`[ebs-sync] Failed to collect inventory deltas for ${orderId}`, errorInfo(invErr));
-          }
-          if (inventoryDeltas.length) {
-            log.info(`[ebs-sync] Inventory deltas for ${orderId}: ${JSON.stringify(inventoryDeltas)}`);
-          }
-        }
-
-        await logOrderSync(params, {
-          action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
-        }).catch((logErr) => {
-          log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
-        });
-
-        // EBS has the order now. From here on, never send it again. If the
-        // syncedAt patch fails, keep it in state and retry only the patch.
-        const syncedAt = new Date().toISOString();
-        const patchErr = await markOrderSynced(params, orderId, syncedAt, log);
-        if (patchErr) {
-          state.pendingCustomUpdates[orderId] = {
-            syncedAt,
-            failedAt: new Date().toISOString(),
-            error: patchErr.message,
-          };
-          summary.pendingCustomUpdates.push(orderId);
-          log.error(
-            `[ebs-sync] Order ${orderId} sent to EBS but custom update failed after ${CUSTOM_UPDATE_RETRIES} attempts — will retry the update on the next run.`,
-            errorInfo(patchErr),
-          );
-          // Persist now so a crash later in this run can't cause the order to be resent.
-          await saveState({ pendingCustomUpdates: state.pendingCustomUpdates }).catch((saveErr) => {
-            log.error(`[ebs-sync] Failed to persist pending custom update for ${orderId}`, errorInfo(saveErr));
-          });
-        }
-
-        // Queue the inventory decrement only AFTER syncedAt / the pending update is
-        // persisted. Queueing earlier would sit inside the window where a crash
-        // makes the next run resend the order to EBS, and that resend would also
-        // queue it again (double decrement), while lengthening the window with
-        // state round-trips and retry sleeps. Trade-off: a crash between here and
-        // the outbox write loses the queue write, but the deltas are in the info
-        // log above for manual recovery. Still per order (not in finally), so a
-        // run killed at the action timeout keeps every order queued before it.
-        if (inventoryDeltas.length) {
-          summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
-        }
-
-        state.lastProcessedOrderId = orderId;
-        state.processedCount = (state.processedCount || 0) + 1;
-        state.lastError = null;
-
-        summary.processedOrders.push(orderId);
-        summary.lastProcessedOrderId = orderId;
-        summary.lastError = null;
-      } else {
-        const errStack = lastErr?.stack || String(lastErr);
-        state.failedCount = (state.failedCount || 0) + 1;
-        state.lastError = errStack;
-
-        summary.lastError = errStack;
+      const outcome = await processOrder(runCtx, queue[i].orderId);
+      if (outcome === 'failed') {
         summary.halted = true;
         summary.haltReason = 'max-retries';
-        halted = true;
-
-        // Surface the failure on the order itself so it's visible downstream.
-        await updateOrderCustom(params, orderId, { syncError: describeSyncError(lastErr) }).catch((patchErr) => {
-          log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}`, errorInfo(patchErr));
-        });
-
-        log.error(
-          `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.`,
-          errorInfo(lastErr),
-        );
+        failed = true;
         break;
       }
     }
 
-    // ── 8. Advance cursor ──────────────────────────────────────────────
-    // On success or deadline: advance to the query's `until` boundary so the
-    // next invocation starts right where this one left off — even when the
-    // batch was empty.
-    // On halt (max-retries): do NOT advance — the batch will be re-fetched
-    // next invocation and already-synced orders are skipped cheaply.
-    if (!halted) {
-      state.since = batchUntil;
+    // ── 4. Cursor ──────────────────────────────────────────────────────
+    summary.nextSince = nextCursor({
+      scanSince, batchUntil, failed, stoppedAt, queue,
+    });
+    if (persistCursor && summary.nextSince) {
+      state.since = summary.nextSince;
+      summary.cursorPersisted = true;
     }
+
+    // ── 5. Journal-independent reconciliation (scheduled runs, hourly) ─
+    if (manual) {
+      summary.reconcile = { skipped: 'manual' };
+    } else if (summary.haltReason === 'deadline' || Date.now() > deadlineAt - RECONCILE_MIN_REMAINING_MS) {
+      summary.reconcile = { skipped: 'deadline' };
+    } else if (!isReconcileDue(state)) {
+      summary.reconcile = { skipped: 'not-due' };
+    } else {
+      summary.reconcile = await reconcileOrders(runCtx, {
+        deadlineAt,
+        sendOrder: (orderId, order, orderJournal) => sendOrder(runCtx, orderId, order, orderJournal),
+        skipReason: (orderId, order) => skipReason(state, orderId, order),
+      });
+      if (summary.reconcile.failedOrderId) failed = true;
+    }
+
     state.lastRun = new Date().toISOString();
-    state.status = halted ? 'error' : 'idle';
+    state.status = failed ? 'error' : 'idle';
     await saveState(state);
   } finally {
     await releaseLock();
@@ -349,6 +208,248 @@ export async function run(params) {
 
   return { body: summary };
 }
+
+const TERMINAL_EVENTS = new Set(['payment_completed', 'payment_cancelled']);
+
+/**
+ * Unique orderIds with a terminal entry, ordered by their earliest terminal
+ * entry's timestamp (journal buckets are not guaranteed to come back sorted).
+ *
+ * @param {object[]} entries
+ * @returns {{ orderId: string, ts: number }[]} ts is NaN when unknown
+ */
+export function terminalOrders(entries) {
+  const byOrder = new Map();
+  entries.forEach((e, idx) => {
+    if (!e.orderId || !TERMINAL_EVENTS.has(e.event)) return;
+    const ts = Date.parse(e.timestamp);
+    const prev = byOrder.get(e.orderId);
+    if (!prev || (!Number.isNaN(ts) && (Number.isNaN(prev.ts) || ts < prev.ts))) {
+      byOrder.set(e.orderId, { orderId: e.orderId, ts, idx: prev?.idx ?? idx });
+    }
+  });
+  // Unknown timestamps sort first so the cursor never moves past them.
+  const key = (o) => (Number.isNaN(o.ts) ? -Infinity : o.ts);
+  return [...byOrder.values()]
+    .sort((a, b) => key(a) - key(b) || a.idx - b.idx)
+    .map(({ orderId, ts }) => ({ orderId, ts }));
+}
+
+/**
+ * Where the next run should start reading.
+ *
+ *   completed      → the queried `until`, even for an empty batch
+ *   max-retries    → unchanged (`scanSince`): the batch is re-read next run
+ *   deadline       → the terminal entry of the first unhandled order, so the
+ *                    next run re-reads it; unchanged if that timestamp is unknown
+ *
+ * @returns {string | null}
+ */
+export function nextCursor({
+  scanSince, batchUntil, failed, stoppedAt, queue,
+}) {
+  if (failed) return scanSince;
+  if (stoppedAt < 0) return batchUntil;
+  const { ts } = queue[stoppedAt];
+  if (Number.isNaN(ts)) return scanSince;
+  return new Date(Math.min(ts, Date.parse(batchUntil))).toISOString();
+}
+
+/** Why an order must not be (re)sent to EBS, or null if it may be. */
+export function skipReason(state, orderId, order) {
+  if (state.pendingCustomUpdates[orderId]) return 'custom-update-pending';
+  const alreadySyncedAt = order.custom?.syncedAt || order.custom?.syncedToEbs;
+  if (alreadySyncedAt) return `already synced at ${alreadySyncedAt}`;
+  if (order.state === 'payment_cancelled') return 'payment_cancelled';
+  return null;
+}
+
+/**
+ * Journal path: fetch one order, skip it if it needs no sync, else load its
+ * per-order journal and send it to EBS.
+ *
+ * @returns {Promise<'synced' | 'skipped' | 'failed'>}
+ */
+async function processOrder(runCtx, orderId) {
+  const { params, log, state } = runCtx;
+
+  // Already accepted by EBS, custom patch still pending — don't even fetch.
+  if (state.pendingCustomUpdates[orderId]) {
+    log.info(`[ebs-sync] Order ${orderId} already sent to EBS (custom update pending) — skipping.`);
+    return 'skipped';
+  }
+
+  let order;
+  try {
+    order = await getOrder(params, orderId);
+  } catch (fetchErr) {
+    log.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
+    return 'skipped';
+  }
+  if (!order) {
+    log.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
+    return 'skipped';
+  }
+
+  const reason = skipReason(state, orderId, order);
+  if (reason) {
+    log.info(`[ebs-sync] Order ${orderId}: ${reason} — skipping.`);
+    return 'skipped';
+  }
+
+  let orderJournal;
+  try {
+    const since = order.createdAt
+      ?? new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+    orderJournal = await getOrderJournalEntries(params, orderId, since, new Date().toISOString());
+    log.info(`[ebs-sync] Order ${orderId} journal: ${orderJournal.length} entries`);
+  } catch (journalErr) {
+    log.warn(`[ebs-sync] Could not fetch journal for ${orderId}: ${journalErr.message}`);
+    await updateOrderCustom(params, orderId, { syncError: 'journal_fetch_failed' }).catch((patchErr) => {
+      log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
+    });
+    return 'skipped';
+  }
+
+  const { outcome } = await sendOrder(runCtx, orderId, order, orderJournal);
+  return outcome;
+}
+
+/**
+ * Send one order to EBS (with retries) and record the outcome: syncedAt (or a
+ * pending custom update), inventory outbox, counters; on failure syncError.
+ * Callers must have checked skipReason() right before.
+ *
+ * @returns {Promise<{ outcome: 'synced' | 'failed', syncError?: string }>}
+ */
+async function sendOrder(runCtx, orderId, order, orderJournal) {
+  const {
+    params, ctx, log, state, summary, inventoryEnabled,
+  } = runCtx;
+  let lastErr = null;
+  let ebsResult = null;
+
+  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    try {
+      ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal);
+      log.info(`[ebs-sync] Order ${orderId} synced to EBS on attempt ${attempt}.`);
+      break;
+    } catch (err) {
+      lastErr = err;
+
+      const errStatus = err?.ebsStatus ?? err?.response?.error?.statusCode ?? 0;
+      const syncLog = { action: 'order-sync', id: orderId, status: errStatus, error: err.message };
+      // Set only on errors raised by proxyFetch. 'none' means the proxy rejected the
+      // request itself; a status means the proxy forwarded that status from EBS.
+      if (err?.upstreamStatus) syncLog.upstreamStatus = err.upstreamStatus;
+      if (errStatus >= 400) {
+        const body = err?.response?.error?.body;
+        if (body) syncLog.response = typeof body === 'string' ? body : JSON.stringify(body);
+      }
+      await logOrderSync(params, syncLog).catch((logErr) => {
+        log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
+      });
+
+      if (!isRetriableError(err)) {
+        log.warn(
+          `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error`,
+          errorInfo(err),
+        );
+        break;
+      }
+      log.warn(
+        `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed`,
+        errorInfo(err),
+      );
+      if (attempt < MAX_RETRIES) {
+        await sleep(RETRY_BASE_DELAY_MS * attempt);
+      }
+    }
+  }
+
+  if (ebsResult) {
+    // EBS accepted the order: record its managed-inventory units. Collecting
+    // and logging do no I/O, so they don't widen the resend window below;
+    // the log line is the recovery source if the run dies before queueing.
+    let inventoryDeltas = [];
+    if (inventoryEnabled) {
+      try {
+        inventoryDeltas = collectOrderDeltas(order);
+      } catch (invErr) {
+        log.error(`[ebs-sync] Failed to collect inventory deltas for ${orderId}`, errorInfo(invErr));
+      }
+      if (inventoryDeltas.length) {
+        log.info(`[ebs-sync] Inventory deltas for ${orderId}: ${JSON.stringify(inventoryDeltas)}`);
+      }
+    }
+
+    await logOrderSync(params, {
+      action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
+    }).catch((logErr) => {
+      log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
+    });
+
+    // EBS has the order now. From here on, never send it again. If the
+    // syncedAt patch fails, keep it in state and retry only the patch.
+    const syncedAt = new Date().toISOString();
+    const patchErr = await markOrderSynced(params, orderId, syncedAt, log);
+    if (patchErr) {
+      state.pendingCustomUpdates[orderId] = {
+        syncedAt,
+        failedAt: new Date().toISOString(),
+        error: patchErr.message,
+      };
+      summary.pendingCustomUpdates.push(orderId);
+      log.error(
+        `[ebs-sync] Order ${orderId} sent to EBS but custom update failed after ${CUSTOM_UPDATE_RETRIES} attempts — will retry the update on the next run.`,
+        errorInfo(patchErr),
+      );
+      // Persist now so a crash later in this run can't cause the order to be resent.
+      await saveState({ pendingCustomUpdates: state.pendingCustomUpdates }).catch((saveErr) => {
+        log.error(`[ebs-sync] Failed to persist pending custom update for ${orderId}`, errorInfo(saveErr));
+      });
+    }
+
+    // Queue the inventory decrement only AFTER syncedAt / the pending update is
+    // persisted. Queueing earlier would sit inside the window where a crash
+    // makes the next run resend the order to EBS, and that resend would also
+    // queue it again (double decrement), while lengthening the window with
+    // state round-trips and retry sleeps. Trade-off: a crash between here and
+    // the outbox write loses the queue write, but the deltas are in the info
+    // log above for manual recovery. Still per order (not in finally), so a
+    // run killed at the action timeout keeps every order queued before it.
+    if (inventoryDeltas.length) {
+      summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
+    }
+
+    state.lastProcessedOrderId = orderId;
+    state.processedCount = (state.processedCount || 0) + 1;
+    state.lastError = null;
+
+    summary.processedOrders.push(orderId);
+    summary.lastProcessedOrderId = orderId;
+    summary.lastError = null;
+    return { outcome: 'synced' };
+  }
+
+  const errStack = lastErr?.stack || String(lastErr);
+  state.failedCount = (state.failedCount || 0) + 1;
+  state.lastError = errStack;
+  summary.lastError = errStack;
+
+  // Surface the failure on the order itself so it's visible downstream.
+  const syncError = describeSyncError(lastErr);
+  await updateOrderCustom(params, orderId, { syncError }).catch((patchErr) => {
+    log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}`, errorInfo(patchErr));
+  });
+
+  log.error(
+    `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.`,
+    errorInfo(lastErr),
+  );
+  return { outcome: 'failed', syncError };
+}
+
 
 /**
  * Write one accepted order's inventory deltas to the outbox: entry first, then head.

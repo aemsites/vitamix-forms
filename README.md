@@ -20,7 +20,17 @@ Returns the currently deployed version (`{ "version": "..." }`). Used by post-de
 
 Synchronizes completed commerce orders to Oracle EBS. Runs on a 5-minute cron schedule and is also available as an HTTP endpoint for status checks and manual triggers.
 
-**Scheduled mode** (every 5 min): Reads the global orders journal since the last cursor, filters to terminal events (`payment_completed` / `payment_cancelled`), and for each completed order builds a SOAP XML payload and POSTs it to EBS via a static-IP proxy. Cancelled orders are skipped. A 15-minute overlap is applied to journal queries to catch late-arriving entries.
+**Scheduled mode** (every 5 min): Reads the global orders journal since the last cursor, filters to terminal events (`payment_completed` / `payment_cancelled`), and for each completed order builds a SOAP XML payload and POSTs it to EBS via a static-IP proxy. Cancelled and already-synced orders are skipped. Each query re-reads 60 minutes before the cursor to catch journal entries that land late.
+
+The cursor moves to the end of the queried window when every order was handled. If the 9.5-minute deadline stops a run, it moves only to the first order not yet handled; if an order fails after all retries, it stays put.
+
+**Reconciliation** (scheduled runs, at most hourly): lists `payment_completed` orders updated between 30 minutes and 24 hours ago that have no `syncedAt` or `syncError`, straight from the orders API. This finds orders whose entry never reached the global journal. At most 20 are checked per pass; if the cap or the deadline stops a pass, the next run continues it. For each order found:
+
+- its per-order journal has `payment_completed` from the last 6 hours: sent to EBS, then reported
+- no `payment_completed` entry: reported once, not sent, and checked again each pass (sent once the entry shows up)
+- completed more than 6 hours ago: reported once, not sent. EBS has no duplicate protection, so someone checks EBS first, then runs a manual backfill.
+
+Reports go to the operations log as `order-sync` events with `source: "ebs-sync-reconcile"`, a `reason` and an `error`, which raises an alert. The orders token needs `orders:read` and the admin role to list orders. If the list call fails, that is reported too (at most hourly).
 
 **Supported payment methods**: Credit card (Chase), PayPal, Apple Pay (Chase wallet), Affirm.
 
@@ -214,7 +224,7 @@ GET /ebs-sync/ebs-sync
 Authorization: Bearer <SYNC_STATUS_TOKEN>
 ```
 
-Returns JSON with current sync state: `since`, `lastProcessedOrderId`, `lastRun`, `status`, `processedCount`, `failedCount`, `lastError`.
+Returns JSON with current sync state: `since`, `lastProcessedOrderId`, `lastRun`, `status`, `processedCount`, `failedCount`, `lastError`, `reconcile` (`lastRunAt`, `reportedOrderIds`).
 
 ### EBS Sync Manual Trigger
 
@@ -226,11 +236,17 @@ Content-Type: application/json
 {
   "since": "<ISO 8601>",
   "until": "<ISO 8601>",   // optional upper bound
-  "duration": <minutes>     // optional, alternative to "until"
+  "duration": <minutes>,    // optional, alternative to "until"
+  "persistCursor": false     // optional, default false
 }
 ```
 
-Triggers a sync run starting from the given timestamp. `since` is required. Provide `until` or `duration` (not both) to cap the query window; omit both to scan up to the current time. The cursor advances normally after a successful run.
+Runs a backfill of the journal pass over the window (the 60-minute look-back before `since` still applies). `since` is required. Provide `until` or `duration` (not both) to cap the window; omit both to scan up to the current time. Manual runs never run reconciliation.
+
+- **Cursor:** the scheduled cursor is not changed unless `persistCursor` is `true`; then it is set to `nextSince`.
+- **`nextSince`** (response) is how far the window was handled: `until` when complete, the first unhandled order's terminal entry when the deadline stopped the run, or `since` after a max-retries halt. POST again from `nextSince` to finish a long backfill.
+- **Duplicates:** orders already synced are skipped, but every other completed order in the window is sent to EBS, which has no duplicate protection. Check that the orders were not entered in EBS by hand.
+- **Lock:** if another run holds the lock, the response is `{ "skipped": true }` and nothing changes. Scheduled runs start at :00/:05 and usually finish within seconds.
 
 ### Recipe Notify Status
 

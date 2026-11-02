@@ -13,11 +13,20 @@
  *
  *   HTTP POST (web action) — manual trigger
  *     Requires:  Authorization: Bearer {SYNC_STATUS_TOKEN}
- *     Body:      { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes> }
- *     Runs the sync using the provided timestamp as the cursor start.
- *     Optionally cap the window with `until` (timestamp) or `duration` (minutes
- *     from since). Only one of until/duration may be provided; omit both to
- *     scan up to the current time. Cursor advances normally after a successful run.
+ *     Body:      { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes>,
+ *                  "persistCursor"?: <boolean> }
+ *     Backfill: runs the journal pass over [since, until] (the usual 60-min
+ *     look-back before `since` applies). Optionally cap the window with `until`
+ *     (timestamp) or `duration` (minutes from since); only one may be provided;
+ *     omit both to scan up to the current time.
+ *     The persisted (scheduled) cursor is NOT changed unless `persistCursor` is
+ *     true, in which case it is set to the response's `nextSince`. `nextSince`
+ *     is where the window was fully handled up to: `until` when complete, the
+ *     first unhandled order's terminal entry on the deadline, `since` on a
+ *     max-retries halt. POST again from `nextSince` to finish a long backfill.
+ *     Manual runs never run the reconciliation pass. Orders already synced are
+ *     skipped; anything else in the window IS sent to EBS, which has no
+ *     duplicate protection.
  */
 
 import { run } from './sync.js';
@@ -73,6 +82,10 @@ async function handleStatusRequest(params) {
     processedCount: state.processedCount,
     failedCount: state.failedCount,
     lastError: state.lastError,
+    reconcile: {
+      lastRunAt: state.reconcile?.lastRunAt ?? null,
+      reportedOrderIds: Object.keys(state.reconcile?.alerted ?? {}),
+    },
     ebs: describeEbsConfig(params),
   });
 }
@@ -120,6 +133,8 @@ function describeEbsConfig(params) {
  * `until`  — optional upper bound timestamp (defaults to now).
  * `duration` — optional window in minutes from `since` (e.g. 30 → since + 30 min).
  * Only one of `until` / `duration` may be provided.
+ * `persistCursor` — optional boolean (default false): save `nextSince` as the
+ * scheduled cursor. Without it the scheduled cursor is left untouched.
  */
 async function handleTriggerRequest(params) {
   const authErr = requireAuth(params);
@@ -156,7 +171,14 @@ async function handleTriggerRequest(params) {
     untilOverride = new Date(new Date(since).getTime() + minutes * 60_000).toISOString();
   }
 
-  return run({ ...params, sinceOverride: since, untilOverride });
+  const { persistCursor = false } = body;
+  if (typeof persistCursor !== 'boolean') {
+    return jsonResponse(400, { error: '"persistCursor" must be a boolean' });
+  }
+
+  return run({
+    ...params, sinceOverride: since, untilOverride, persistCursor,
+  });
 }
 
 /** Extract body fields from params (auto-parsed JSON) or __ow_body (base64). */
