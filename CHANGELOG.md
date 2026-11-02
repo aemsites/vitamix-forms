@@ -1,3 +1,15 @@
+# [1.12.0](https://github.com/aemsites/vitamix-forms/compare/v1.11.0...v1.12.0) (2026-11-02)
+
+
+### Bug Fixes
+
+* **feeds:** fail the Bazaarvoice feed when the product index can't be loaded ([4da8c16](https://github.com/aemsites/vitamix-forms/commit/4da8c16ecd5c21b8ca8bd26d165aa230a3d14814))
+
+
+### Features
+
+* **feeds:** send the legacy reviews family to Bazaarvoice ([3c9bf2c](https://github.com/aemsites/vitamix-forms/commit/3c9bf2c3967e4b116c69b688c781cec708424ed0))
+
 # [1.11.0](https://github.com/aemsites/vitamix-forms/compare/v1.10.0...v1.11.0) (2026-10-31)
 
 
