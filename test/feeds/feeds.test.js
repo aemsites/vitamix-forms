@@ -270,11 +270,13 @@ describe('feeds action', () => {
 
   test('every provider sends the same products', async () => {
     const SHEET = { categories: { data: [] }, products: { data: [] } };
-    jest.spyOn(global, 'fetch').mockImplementation(async (url) => (
-      String(url).includes('bv-categories')
-        ? { ok: true, status: 200, json: async () => SHEET }
-        : { ok: true, status: 200, text: async () => SAMPLE_FEED }
-    ));
+    // bazaarvoice requires the product index
+    const INDEX = { total: 1, data: [{ sku: '064584' }] };
+    jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
+      if (String(url).includes('bv-categories')) return { ok: true, status: 200, json: async () => SHEET };
+      if (String(url).includes('/products/index.json')) return { ok: true, status: 200, json: async () => INDEX };
+      return { ok: true, status: 200, text: async () => SAMPLE_FEED };
+    });
     const idsOf = {
       meta: (b) => [...b.matchAll(/<id>([^<]+)<\/id>/g)].map((m) => m[1]),
       pinterest: (b) => [...b.matchAll(/<id>([^<]+)<\/id>/g)].map((m) => m[1]),

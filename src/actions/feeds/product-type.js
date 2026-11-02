@@ -17,6 +17,8 @@
  *   4. the item's, then the parent's, `categories` via CATEGORY_RULES
  */
 
+import { errorWithResponse } from '../../utils.js';
+
 // Ordered category -> product_type rules; the first rule matching any of the
 // item's categories wins, so the most specific come first: smoothie cups and
 // food-processing bowls are also in "Blender Containers", personal blender
@@ -87,13 +89,21 @@ export function unknownCategories(categories) {
 }
 
 /**
- * Fetch the product index for a locale, keyed by sku. Never throws: on any
- * failure the feed is still served, just without index-derived product_type.
+ * Fetch the product index for a locale, keyed by sku.
+ *
+ * By default this never throws: on any failure it logs a warning and returns
+ * what it loaded (possibly nothing), for consumers where the index only adds
+ * optional data (e.g. Pinterest `product_type`).
+ *
+ * With `required: true` a failed, empty or incomplete load throws a 502 instead,
+ * for consumers whose output would be wrong without the full index (e.g. the
+ * Bazaarvoice review families in a full, non-incremental feed).
  * @param {{ env: { FEED_SITE_BASE: string }, log: Console }} ctx
  * @param {string} locale e.g. "us/en_us"
+ * @param {{ required?: boolean }} [opts]
  * @returns {Promise<Map<string, Record<string, string>>>}
  */
-export async function loadProductIndex(ctx, locale) {
+export async function loadProductIndex(ctx, locale, { required = false } = {}) {
   const base = ctx.env.FEED_SITE_BASE.replace(/\/$/, '');
   const url = `${base}/${locale}/products/index.json`;
   const bySku = new Map();
@@ -114,8 +124,17 @@ export async function loadProductIndex(ctx, locale) {
       offset += rows.length;
       if (!rows.length) break;
     } while (offset < total);
+    if (offset < total) throw new Error(`incomplete: ${offset} of ${total} rows`);
+    if (!bySku.size) throw new Error('empty');
     ctx.log.info(`loaded product index ${url}: ${bySku.size} skus`);
   } catch (err) {
+    if (required) {
+      throw errorWithResponse(
+        `failed to load product index ${url}: ${err.message}`,
+        502,
+        'failed to fetch product index',
+      );
+    }
     ctx.log.warn(`failed to load product index ${url}: ${err.message}`);
   }
   return bySku;
