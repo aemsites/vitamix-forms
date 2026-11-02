@@ -91,7 +91,13 @@ Supported providers:
   `availability` (`in_stock`); replaces the current SFTP drop.
 - **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
   from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
-  (`gtin`→`UPC`) and variant grouping (`item_group_id`→`BV_FE_FAMILY`). A
+  (`gtin`→`UPC`). Each product gets two `BV_FE_FAMILY` values, as in the legacy
+  feed: the parent's `reviewsId` from the product index (the PDP's BV product
+  id, which groups related products such as a blender and its bundles) and the
+  variant group (`item_group_id`, or the product's own id). Without a
+  `reviewsId` only the variant group is sent. Like the category sheet, the
+  index is required: the feed is a full (non-incremental) feed, so it returns 502
+  rather than serving products without their families. A
   variant missing from the category sheet inherits its parent's category (the
   sheet was lifted from the legacy feed, which listed configurable parents).
   `raw=true` serves the previous, unprepared Bazaarvoice feed.
