@@ -1,3 +1,20 @@
+# [1.13.0](https://github.com/aemsites/vitamix-forms/compare/v1.12.0...v1.13.0) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ebs-sync:** address review of the missed-orders fix ([549c87d](https://github.com/aemsites/vitamix-forms/commit/549c87db447e6a74a13dfc1fe5da4443e285f3e9))
+* **ebs-sync:** limit how long an unreadable order holds the cursor ([3310df8](https://github.com/aemsites/vitamix-forms/commit/3310df81178106521b775ee66a7ed3715c1b0f6a))
+* **ebs-sync:** release unreadable orders by failure time, report each once ([46e4422](https://github.com/aemsites/vitamix-forms/commit/46e442278f0bce87610880afcdb78570126e8ea3))
+* **ebs-sync:** ship order reconciliation disabled ([dbbc38f](https://github.com/aemsites/vitamix-forms/commit/dbbc38f22bed0a5df24436f558c181bb8d4178dc))
+* **ebs-sync:** stop missing orders on late journals and deadlines ([39b47ec](https://github.com/aemsites/vitamix-forms/commit/39b47ec2266b31948408a5ac1520ba79ab7a354e)), closes [#124](https://github.com/aemsites/vitamix-forms/issues/124)
+* **ebs-sync:** store the sync marker first and hold the cursor on read failures ([ca55a13](https://github.com/aemsites/vitamix-forms/commit/ca55a1332e2edc229ca9486652bd1c416c55b64f))
+
+
+### Features
+
+* **ebs-sync:** alert on ongoing read and run failures within the hour ([b413f45](https://github.com/aemsites/vitamix-forms/commit/b413f453d6a02cdd17a33df506a56e2b8890eb88))
+
 # [1.12.0](https://github.com/aemsites/vitamix-forms/compare/v1.11.0...v1.12.0) (2026-11-02)
 
 
