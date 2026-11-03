@@ -21,7 +21,7 @@
  *           only the patch and don't send the order to EBS again.
  *        e. On max-retries exhausted: patches custom.syncError with a short error
  *           code, records the error and halts
- *   5. Checks a 9.5-minute deadline before each order
+ *   5. Checks a 9.5-minute deadline before each order (see Time below)
  *   6. Cursor (see nextCursor): completed → the query's `until`; max-retries →
  *      unchanged; deadline → the terminal entry of the first order not handled
  *   7. Scheduled runs only, at most hourly, and only when EBS_RECONCILE_ENABLED
@@ -31,9 +31,17 @@
  *      each one found is reported to the operations log
  *   8. Saves updated state and releases the lock
  *
- * Manual (POST) runs scan [sinceOverride, untilOverride] and keep the persisted
- * cursor unless params.persistCursor is true. The response's `nextSince` is
- * where to resume a backfill cut short by the deadline. They never reconcile.
+ * Time: no order starts after DEADLINE_MS, and no EBS attempt starts once
+ * there is less than one attempt (EBS_ATTEMPT_TIMEOUT_MS) plus
+ * AFTER_SEND_RESERVE_MS left before the action timeout; such an order is
+ * treated like a deadline stop and is first on the next run.
+ *
+ * Manual (POST) runs either scan [sinceOverride, untilOverride] or process one
+ * order (orderIdOverride). They keep the persisted cursor unless
+ * params.persistCursor is true (window runs only), never reconcile, and leave
+ * the scheduled status / lastError alone. Their summary is saved as
+ * state.lastManualRun, since the HTTP response can time out on long runs;
+ * `nextSince` there is where to resume a backfill cut short by the deadline.
  *
  * Managed inventory (only when INVENTORY_SYNC_ENABLED is "true"): the sold units
  * of each order accepted by EBS are logged at acceptance and queued as an
@@ -61,6 +69,15 @@ import { errorInfo } from '../../utils.js';
 const MAX_RETRIES = 3;
 const RETRY_BASE_DELAY_MS = 3_000; // 3s, 6s, 9s
 export const DEADLINE_MS = 9.5 * 60 * 1000; // stop accepting new orders at 9.5 min
+/** Must match `limits.timeout` in app.config.yaml. */
+export const ACTION_TIMEOUT_MS = 10 * 60 * 1000;
+/** Each EBS request is aborted after this long. */
+export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
+/**
+ * Time kept free after an EBS attempt for the syncedAt patch (with retries),
+ * the inventory outbox, saving state and releasing the lock.
+ */
+export const AFTER_SEND_RESERVE_MS = 30_000;
 const CUSTOM_UPDATE_RETRIES = 3;
 const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
 const OUTBOX_WRITE_RETRIES = 3;
@@ -77,11 +94,19 @@ export async function run(params) {
   const ctx = { env: params, log };
   const startTime = Date.now();
   const deadlineAt = startTime + DEADLINE_MS;
+  // No EBS attempt starts after this, so a running attempt (aborted at
+  // EBS_ATTEMPT_TIMEOUT_MS) still finishes and records its result before the
+  // Runtime kills the action. A kill skips `finally`: state isn't saved and an
+  // order EBS accepted has no syncedAt, so the next run would resend it.
+  const lastAttemptStartAt = startTime + ACTION_TIMEOUT_MS - EBS_ATTEMPT_TIMEOUT_MS - AFTER_SEND_RESERVE_MS;
 
-  // Manual (POST) runs carry sinceOverride. They are backfills: they leave the
-  // persisted cursor alone unless the caller opts in with persistCursor.
-  const manual = Boolean(params.sinceOverride);
-  const persistCursor = !manual || params.persistCursor === true;
+  // Manual (POST) runs carry sinceOverride (a backfill window) or
+  // orderIdOverride (one order). They leave the persisted cursor alone unless
+  // the caller opts in with persistCursor, and they don't change the scheduled
+  // run's status / lastError; their summary is kept in state.lastManualRun.
+  const singleOrderId = params.orderIdOverride || null;
+  const manual = Boolean(params.sinceOverride || singleOrderId);
+  const persistCursor = !manual || (params.persistCursor === true && !singleOrderId);
 
   const locked = await acquireLock();
   if (!locked) {
@@ -108,12 +133,15 @@ export async function run(params) {
     halted: false,
     haltReason: null,
     reconcile: null,
+    ...(singleOrderId ? { orderId: singleOrderId, outcome: null } : {}),
     startedAt: new Date(startTime).toISOString(),
     elapsedMs: 0,
   };
 
+  let state;
   try {
-    const state = await loadState();
+    state = await loadState();
+    const scheduledStatus = { status: state.status, lastError: state.lastError };
     const scanSince = params.sinceOverride ?? state.since;
     summary.since = scanSince;
     summary.lastProcessedOrderId = state.lastProcessedOrderId;
@@ -128,11 +156,32 @@ export async function run(params) {
     if (inventoryEnabled) summary.inventoryOutboxSeqs = [];
 
     const runCtx = {
-      params, ctx, log, state, summary, inventoryEnabled,
+      params, ctx, log, state, summary, inventoryEnabled, lastAttemptStartAt,
     };
 
     // ── 0. Retry pending custom updates from previous runs ───────────
     await flushPendingCustomUpdates(params, state, log);
+
+    // ── Single order (manual POST { orderId }) ───────────────────────
+    // Same checks and send as the journal pass, for an order the journal
+    // pass can't see (its global journal entry is missing). Ignores
+    // custom.syncError on purpose: this is the explicit retry.
+    if (singleOrderId) {
+      const { outcome, reason } = await processOrder(runCtx, singleOrderId);
+      summary.outcome = outcome;
+      if (reason) summary.reason = reason;
+      if (outcome === 'failed') {
+        summary.halted = true;
+        summary.haltReason = 'max-retries';
+      } else if (outcome === 'deferred') {
+        summary.halted = true;
+        summary.haltReason = 'deadline';
+      }
+      summary.reconcile = { skipped: 'manual' };
+      finishManualRun(state, summary, scheduledStatus);
+      await saveState(state);
+      return { body: summary };
+    }
 
     // ── 1. Fetch journal entries and find the batch boundary ────────────
     const { entries, until: batchUntil } = await getJournalEntries(params, scanSince, log, params.untilOverride);
@@ -167,11 +216,19 @@ export async function run(params) {
         break;
       }
 
-      const outcome = await processOrder(runCtx, queue[i].orderId);
+      const { outcome } = await processOrder(runCtx, queue[i].orderId);
       if (outcome === 'failed') {
         summary.halted = true;
         summary.haltReason = 'max-retries';
         failed = true;
+        break;
+      }
+      if (outcome === 'deferred') {
+        // Not enough time left to send it safely; it is first next run.
+        log.info(`[ebs-sync] Not enough time left to send ${queue[i].orderId}. Stopping with ${queue.length - i} order(s) left.`);
+        summary.halted = true;
+        summary.haltReason = 'deadline';
+        stoppedAt = i;
         break;
       }
     }
@@ -190,6 +247,9 @@ export async function run(params) {
       summary.reconcile = { skipped: 'disabled' };
     } else if (manual) {
       summary.reconcile = { skipped: 'manual' };
+    } else if (failed) {
+      // EBS just failed for an order; don't send more until the next pass.
+      summary.reconcile = { skipped: 'journal-pass-failed' };
     } else if (summary.haltReason === 'deadline' || Date.now() > deadlineAt - RECONCILE_MIN_REMAINING_MS) {
       summary.reconcile = { skipped: 'deadline' };
     } else if (!isReconcileDue(state)) {
@@ -203,15 +263,44 @@ export async function run(params) {
       if (summary.reconcile.failedOrderId) failed = true;
     }
 
-    state.lastRun = new Date().toISOString();
-    state.status = failed ? 'error' : 'idle';
+    if (manual) {
+      finishManualRun(state, summary, scheduledStatus);
+    } else {
+      state.lastRun = new Date().toISOString();
+      state.status = failed ? 'error' : 'idle';
+    }
     await saveState(state);
+  } catch (err) {
+    // A manual run's HTTP response may be gone by now (long runs): record
+    // the failure where GET can show it. Best effort; rethrow either way.
+    if (manual && state) {
+      summary.lastError = err.message;
+      await saveState({ lastManualRun: manualRunRecord(summary) }).catch(() => {});
+    }
+    throw err;
   } finally {
     await releaseLock();
     summary.elapsedMs = Date.now() - startTime;
   }
 
   return { body: summary };
+}
+
+/** What GET shows about the last manual run (its HTTP response may time out). */
+function manualRunRecord(summary) {
+  const keys = [
+    'since', 'until', 'orderId', 'outcome', 'reason', 'nextSince', 'cursorPersisted',
+    'processedOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
+  ];
+  const record = Object.fromEntries(keys.filter((k) => k in summary).map((k) => [k, summary[k]]));
+  record.finishedAt = new Date().toISOString();
+  return record;
+}
+
+/** Manual runs leave the scheduled run's status / lastError as they were. */
+function finishManualRun(state, summary, scheduledStatus) {
+  Object.assign(state, scheduledStatus);
+  state.lastManualRun = manualRunRecord(summary);
 }
 
 const TERMINAL_EVENTS = new Set(['payment_completed', 'payment_cancelled']);
@@ -273,7 +362,7 @@ export function skipReason(state, orderId, order) {
  * Journal path: fetch one order, skip it if it needs no sync, else load its
  * per-order journal and send it to EBS.
  *
- * @returns {Promise<'synced' | 'skipped' | 'failed'>}
+ * @returns {Promise<{ outcome: 'synced' | 'skipped' | 'failed' | 'deferred', reason?: string }>}
  */
 async function processOrder(runCtx, orderId) {
   const { params, log, state } = runCtx;
@@ -281,7 +370,7 @@ async function processOrder(runCtx, orderId) {
   // Already accepted by EBS, custom patch still pending — don't even fetch.
   if (state.pendingCustomUpdates[orderId]) {
     log.info(`[ebs-sync] Order ${orderId} already sent to EBS (custom update pending) — skipping.`);
-    return 'skipped';
+    return { outcome: 'skipped', reason: 'custom-update-pending' };
   }
 
   let order;
@@ -289,17 +378,17 @@ async function processOrder(runCtx, orderId) {
     order = await getOrder(params, orderId);
   } catch (fetchErr) {
     log.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
-    return 'skipped';
+    return { outcome: 'skipped', reason: 'order-fetch-failed' };
   }
   if (!order) {
     log.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
-    return 'skipped';
+    return { outcome: 'skipped', reason: 'not-found' };
   }
 
   const reason = skipReason(state, orderId, order);
   if (reason) {
     log.info(`[ebs-sync] Order ${orderId}: ${reason} — skipping.`);
-    return 'skipped';
+    return { outcome: 'skipped', reason };
   }
 
   let orderJournal;
@@ -313,11 +402,11 @@ async function processOrder(runCtx, orderId) {
     await updateOrderCustom(params, orderId, { syncError: 'journal_fetch_failed' }).catch((patchErr) => {
       log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
     });
-    return 'skipped';
+    return { outcome: 'skipped', reason: 'journal-fetch-failed' };
   }
 
   const { outcome } = await sendOrder(runCtx, orderId, order, orderJournal);
-  return outcome;
+  return { outcome };
 }
 
 /**
@@ -325,18 +414,28 @@ async function processOrder(runCtx, orderId) {
  * pending custom update), inventory outbox, counters; on failure syncError.
  * Callers must have checked skipReason() right before.
  *
- * @returns {Promise<{ outcome: 'synced' | 'failed', syncError?: string }>}
+ * 'deferred': an attempt could not start in time (runCtx.lastAttemptStartAt).
+ * The order was not accepted by EBS and gets no syncError; it is retried on a
+ * later run.
+ *
+ * @returns {Promise<{ outcome: 'synced' | 'failed' | 'deferred', syncError?: string }>}
  */
 async function sendOrder(runCtx, orderId, order, orderJournal) {
   const {
-    params, ctx, log, state, summary, inventoryEnabled,
+    params, ctx, log, state, summary, inventoryEnabled, lastAttemptStartAt,
   } = runCtx;
   let lastErr = null;
   let ebsResult = null;
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+    if (Date.now() > lastAttemptStartAt) {
+      log.info(`[ebs-sync] Order ${orderId}: no time left for attempt ${attempt}; leaving it for the next run.`);
+      return { outcome: 'deferred' };
+    }
     try {
-      ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal);
+      ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal, {
+        signal: AbortSignal.timeout(EBS_ATTEMPT_TIMEOUT_MS),
+      });
       log.info(`[ebs-sync] Order ${orderId} synced to EBS on attempt ${attempt}.`);
       break;
     } catch (err) {
@@ -367,6 +466,10 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
         errorInfo(err),
       );
       if (attempt < MAX_RETRIES) {
+        if (Date.now() + RETRY_BASE_DELAY_MS * attempt > lastAttemptStartAt) {
+          log.info(`[ebs-sync] Order ${orderId}: no time left to retry; leaving it for the next run.`);
+          return { outcome: 'deferred' };
+        }
         await sleep(RETRY_BASE_DELAY_MS * attempt);
       }
     }

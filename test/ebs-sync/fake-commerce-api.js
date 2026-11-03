@@ -37,24 +37,36 @@ export function createFakeCommerceApi() {
    * @param {string} [o.state]
    * @param {object} [o.custom]
    * @param {object} [o.listMeta] - overrides for the listing metadata only (stale metadata)
+   * @param {boolean} [o.inGlobal] - false: only the per-order journal has the entries
+   * @param {object[]} [o.items]
    */
   function addOrder({
     id, completedAt, visibleAt = completedAt, state = 'payment_completed', custom = {}, listMeta,
+    inGlobal = true, items,
   }) {
     const createdAt = completedAt - 2 * 60 * 1000;
     orders.set(id, {
-      id, state, createdAt: iso(createdAt), updatedAt: iso(completedAt), custom: { ...custom }, listMeta,
+      id,
+      state,
+      country: 'US',
+      createdAt: iso(createdAt),
+      updatedAt: iso(completedAt),
+      custom: { ...custom },
+      ...(items ? { items } : {}),
+      listMeta,
     });
     const terminal = state === 'payment_cancelled' ? 'payment_cancelled' : 'payment_completed';
     journal.push(
       {
         visibleAt,
+        inGlobal,
         entry: {
           id: `${id}-create`, orderId: id, event: 'create', timestamp: iso(createdAt),
         },
       },
       {
         visibleAt,
+        inGlobal,
         entry: {
           id: `${id}-terminal`, orderId: id, event: terminal, timestamp: iso(completedAt), provider: 'chase',
         },
@@ -90,15 +102,16 @@ export function createFakeCommerceApi() {
     if (path === '/orders/journal' && method === 'GET') {
       const since = Date.parse(q.since);
       const until = Date.parse(q.until);
-      const visible = journal.filter((j) => j.visibleAt <= now).map((j) => j.entry);
+      const visibleJ = journal.filter((j) => j.visibleAt <= now);
       if (q.orderId) {
         return json(200, {
-          entries: visible.filter((e) => e.orderId === q.orderId
+          entries: visibleJ.map((j) => j.entry).filter((e) => e.orderId === q.orderId
             && Date.parse(e.timestamp) >= since && Date.parse(e.timestamp) <= until),
         });
       }
       if (failures.journal) return json(failures.journal, { message: 'journal failure' });
       if (until - since > MAX_JOURNAL_RANGE_MS) return json(400, { message: 'range too large' });
+      const visible = visibleJ.filter((j) => j.inGlobal).map((j) => j.entry);
       return json(200, {
         entries: visible.filter((e) => Date.parse(e.timestamp) >= since && Date.parse(e.timestamp) <= until),
       });
@@ -151,7 +164,9 @@ export function createFakeCommerceApi() {
 
 /** In-memory aio-lib-state replacement with real lock semantics. */
 export function createFakeState() {
-  const store = { state: null, lock: false };
+  const store = {
+    state: null, lock: false, outbox: [], seq: 0,
+  };
   return {
     store,
     module: {
@@ -179,8 +194,8 @@ export function createFakeState() {
         return true;
       },
       releaseLock: async () => { store.lock = false; },
-      allocateInventoryOutboxSeq: async () => 1,
-      putInventoryOutboxEntry: async () => {},
+      allocateInventoryOutboxSeq: async () => { store.seq += 1; return store.seq; },
+      putInventoryOutboxEntry: async (seq, entry) => { store.outbox.push({ seq, ...entry }); },
       publishInventoryOutboxHead: async () => {},
       inventoryOutboxEntryExists: async () => false,
     },

@@ -17,9 +17,12 @@ jest.unstable_mockModule('../../src/actions/ebs-sync/state.js', () => fakeState.
 
 /** Orders "sent to EBS" (the EBS call is mocked; nothing leaves the test). */
 const sent = [];
-const ebsHooks = { onSend: null, failIds: new Set() };
+const ebsHooks = {
+  onSend: null, failIds: new Set(), attempts: [],
+};
 jest.unstable_mockModule('../../src/actions/ebs-sync/ebs.js', () => ({
-  syncOrderToEbs: jest.fn(async (_ctx, _params, order, journal) => {
+  syncOrderToEbs: jest.fn(async (_ctx, _params, order, journal, opts) => {
+    ebsHooks.attempts.push({ id: order.id, at: Date.now(), signal: opts?.signal });
     if (!journal.some((e) => e.event === 'payment_completed')) {
       throw new Error(`Order ${order.id}: cannot build payment snapshot`);
     }
@@ -32,7 +35,7 @@ jest.unstable_mockModule('../../src/actions/ebs-sync/ebs.js', () => ({
     sent.push(order.id);
     return { status: 200, xml: '<xml/>' };
   }),
-  isRetriableError: () => false,
+  isRetriableError: (err) => Boolean(err?.retriable),
   stripBundleSuffix: (sku) => String(sku || '').replace(/-VB$/, ''),
 }));
 
@@ -45,9 +48,11 @@ jest.unstable_mockModule('@adobe/aio-sdk', () => ({
 }));
 
 const { main } = await import('../../src/actions/ebs-sync/index.js');
-const { terminalOrders, nextCursor, DEADLINE_MS } = await import('../../src/actions/ebs-sync/sync.js');
 const {
-  RECONCILE_MAX_ORDERS, RECONCILE_INTERVAL_MS, RECONCILE_MAX_AUTO_SYNC_AGE_MS,
+  terminalOrders, nextCursor, DEADLINE_MS, ACTION_TIMEOUT_MS, EBS_ATTEMPT_TIMEOUT_MS, AFTER_SEND_RESERVE_MS,
+} = await import('../../src/actions/ebs-sync/sync.js');
+const {
+  RECONCILE_MAX_ORDERS, RECONCILE_INTERVAL_MS, RECONCILE_MAX_AUTO_SYNC_AGE_MS, RECONCILE_MIN_AGE_MS,
 } = await import('../../src/actions/ebs-sync/reconcile.js');
 
 const MIN = 60 * 1000;
@@ -68,12 +73,12 @@ async function scheduledRun(extra = ON) {
 }
 
 /** Scheduled runs every 5 minutes in [from, to]. Returns the bodies. */
-async function runEvery5Min(from, to) {
+async function runEvery5Min(from, to, extra = ON) {
   const bodies = [];
   for (let t = from; t <= to; t += 5 * MIN) {
     at(t);
     // eslint-disable-next-line no-await-in-loop
-    bodies.push(await scheduledRun());
+    bodies.push(await scheduledRun(extra));
   }
   return bodies;
 }
@@ -102,6 +107,9 @@ beforeEach(() => {
   sent.length = 0;
   ebsHooks.onSend = null;
   ebsHooks.failIds = new Set();
+  ebsHooks.attempts = [];
+  fakeState.store.outbox = [];
+  fakeState.store.seq = 0;
 });
 
 afterEach(() => {
@@ -159,10 +167,11 @@ describe('delayed journal buckets', () => {
   test('an entry later than the look-back is missed by the journal pass, then synced by reconciliation', async () => {
     api.addOrder({ id: 'synth-late-90', completedAt: T0 + 2 * MIN, visibleAt: T0 + 92 * MIN });
 
-    // Until the entry lands, reconciliation can only report it.
+    // Reconciliation leaves orders younger than the look-back + 10 min to the
+    // journal pass, so there's no early (false) report while it's in flight.
     await runEvery5Min(T0, T0 + 90 * MIN);
     expect(sent).toEqual([]);
-    expect(alerts('journal_missing_payment')).toEqual(['synth-late-90']);
+    expect(api.opsLog).toEqual([]);
 
     // Lands at +92: the journal pass has moved on (cursor - 60 min > +2 min).
     await runEvery5Min(T0 + 95 * MIN, T0 + 110 * MIN);
@@ -171,8 +180,7 @@ describe('delayed journal buckets', () => {
     // Next hourly pass (+120) syncs it and reports it.
     await runEvery5Min(T0 + 115 * MIN, T0 + 180 * MIN);
     expect(sent).toEqual(['synth-late-90']);
-    expect(alerts('reconciled')).toEqual(['synth-late-90']);
-    expect(alerts('journal_missing_payment')).toEqual(['synth-late-90']); // reported once
+    expect(api.opsLog.filter((e) => e.source).map((e) => e.reason)).toEqual(['reconciled']);
     expect(persisted().reconcile.alerted).toEqual({});
   });
 });
@@ -507,5 +515,190 @@ describe('reconciliation bounds', () => {
     expect(sent).toEqual(['synth-new']);
     expect(body.reconcile).toMatchObject({ deferred: 1, complete: true });
     expect(alerts('journal_missing_payment')).toHaveLength(RECONCILE_MAX_ORDERS); // no repeats
+  });
+});
+
+describe('time budget for EBS attempts', () => {
+  const lastAttemptStart = ACTION_TIMEOUT_MS - EBS_ATTEMPT_TIMEOUT_MS - AFTER_SEND_RESERVE_MS;
+
+  test('each EBS attempt gets a timeout signal', async () => {
+    api.addOrder({ id: 'synth-sig', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    await scheduledRun();
+    expect(ebsHooks.attempts).toHaveLength(1);
+    expect(ebsHooks.attempts[0].signal).toBeInstanceOf(AbortSignal);
+  });
+
+  test('no attempt starts too close to the action timeout; the order is left for the next run', async () => {
+    ['synth-t1', 'synth-t2', 'synth-t3', 'synth-t4'].forEach((id, i) => api.addOrder({ id, completedAt: T0 - (40 - i) * MIN }));
+    fakeState.store.state = { since: iso(T0 - 45 * MIN) };
+    ebsHooks.onSend = () => at(Date.now() + 3 * MIN);
+
+    const body = await scheduledRun();
+
+    expect(ebsHooks.attempts.every((a) => a.at - T0 <= lastAttemptStart)).toBe(true);
+    expect(sent).toEqual(['synth-t1', 'synth-t2', 'synth-t3']);
+    expect(body).toMatchObject({ haltReason: 'deadline', nextSince: iso(T0 - 37 * MIN) });
+    expect(api.orders.get('synth-t4').custom.syncError).toBeUndefined();
+  });
+
+  test('a retry is not started without time for it; no syncError is set', async () => {
+    api.addOrder({ id: 'synth-slow-retry', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    ebsHooks.onSend = () => {
+      at(Date.now() + 5 * MIN);
+      const err = new Error('The operation was aborted due to timeout');
+      err.retriable = true;
+      throw err;
+    };
+
+    const p = scheduledRun();
+    await jest.runAllTimersAsync();
+    const body = await p;
+
+    expect(ebsHooks.attempts).toHaveLength(2);
+    expect(body).toMatchObject({ haltReason: 'deadline', nextSince: iso(T0 - 10 * MIN) });
+    expect(api.orders.get('synth-slow-retry').custom.syncError).toBeUndefined();
+    expect(persisted().status).toBe('idle');
+  });
+});
+
+describe('manual single order (POST { orderId })', () => {
+  test('sends an order missing from the global journal, cursor untouched', async () => {
+    api.addOrder({ id: 'synth-one', completedAt: T0 - 3 * 60 * MIN, inGlobal: false });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN), status: 'idle' };
+
+    const { body } = await manualRun({ orderId: 'synth-one' });
+
+    expect(body).toMatchObject({ orderId: 'synth-one', outcome: 'synced', reconcile: { skipped: 'manual' } });
+    expect(sent).toEqual(['synth-one']);
+    expect(persisted().since).toBe(iso(T0 - 5 * MIN));
+    expect(api.requests.some((r) => r.path === '/orders/journal' && !r.query.orderId)).toBe(false);
+  });
+
+  test('retries an order with syncError, skips synced ones', async () => {
+    api.addOrder({ id: 'synth-err', completedAt: T0 - 60 * MIN, custom: { syncError: 'ebs_http_502' } });
+    api.addOrder({ id: 'synth-ok', completedAt: T0 - 60 * MIN, custom: { syncedAt: iso(T0 - 59 * MIN) } });
+
+    expect((await manualRun({ orderId: 'synth-err' })).body.outcome).toBe('synced');
+    const skipped = (await manualRun({ orderId: 'synth-ok' })).body;
+    expect(skipped).toMatchObject({ outcome: 'skipped', reason: expect.stringContaining('already synced') });
+    expect(sent).toEqual(['synth-err']);
+  });
+
+  test('validates the body', async () => {
+    expect((await manualRun({ orderId: 'x', since: iso(T0) })).statusCode).toBe(400);
+    expect((await manualRun({ orderId: '' })).statusCode).toBe(400);
+    expect((await manualRun({ orderId: 42 })).statusCode).toBe(400);
+  });
+});
+
+describe('manual runs and the scheduled status', () => {
+  test('a failed manual run keeps the scheduled status and is recorded for GET', async () => {
+    api.addOrder({ id: 'synth-mfail', completedAt: T0 - 3 * 60 * MIN });
+    ebsHooks.failIds.add('synth-mfail');
+    fakeState.store.state = { since: iso(T0 - 5 * MIN), status: 'idle', lastError: null };
+
+    const { body } = await manualRun({ since: iso(T0 - 3 * 60 * MIN - MIN), duration: 5 });
+    expect(body.haltReason).toBe('max-retries');
+    expect(persisted()).toMatchObject({ status: 'idle', lastError: null });
+    expect(persisted().lastManualRun).toMatchObject({ haltReason: 'max-retries', nextSince: body.since });
+
+    const status = await main({
+      ...PARAMS, SYNC_STATUS_TOKEN: 'secret', __ow_method: 'get', __ow_headers: { authorization: 'Bearer secret' },
+    });
+    expect(JSON.parse(status.body).lastManualRun).toMatchObject({ haltReason: 'max-retries', finishedAt: expect.any(String) });
+  });
+
+  test('a manual run that throws is recorded too', async () => {
+    api.failures.journal = 500;
+    const res = manualRun({ since: iso(T0 - 60 * MIN) });
+    await expect(res).rejects.toThrow('Journal API 500');
+    expect(persisted().lastManualRun).toMatchObject({ lastError: expect.stringContaining('Journal API 500') });
+  });
+});
+
+describe('reconciliation guards', () => {
+  test('does not start after the journal pass failed', async () => {
+    api.addOrder({ id: 'synth-jfail', completedAt: T0 - 10 * MIN });
+    api.addOrder({ id: 'synth-missed', completedAt: T0 - 3 * 60 * MIN, inGlobal: false });
+    ebsHooks.failIds.add('synth-jfail');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    const body = await scheduledRun();
+
+    expect(body.reconcile).toEqual({ skipped: 'journal-pass-failed' });
+    expect(api.requests.some((r) => r.path === '/orders')).toBe(false);
+    expect(sent).toEqual([]);
+  });
+
+  test('stops checking at the run deadline and continues next run', async () => {
+    for (let i = 0; i < 4; i++) {
+      api.addOrder({ id: `synth-dl${i}`, completedAt: T0 - 3 * 60 * MIN + i * MIN, visibleAt: Infinity });
+    }
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    const realFetch = api.fetch;
+    global.fetch = async (url, init) => {
+      if (/\/orders\/synth-dl\d$/.test(new URL(url).pathname)) at(Date.now() + 3.3 * MIN);
+      return realFetch(url, init);
+    };
+
+    const body = await scheduledRun();
+
+    expect(body.reconcile).toMatchObject({ checked: 3, deferred: 1, complete: false });
+    expect(Date.now() - T0).toBeLessThan(ACTION_TIMEOUT_MS);
+    expect(persisted().reconcile.lastRunAt).toBeNull();
+  });
+
+  test('candidates younger than the look-back are left to the journal pass', () => {
+    expect(RECONCILE_MIN_AGE_MS).toBeGreaterThan(60 * MIN);
+  });
+
+  test('orders skipped on the full re-fetch do not hold the pass open', async () => {
+    const n = RECONCILE_MAX_ORDERS + 5;
+    for (let i = 0; i < n; i++) {
+      const completedAt = T0 - 3 * 60 * MIN + i * MIN;
+      api.addOrder({
+        id: `synth-meta${String(i).padStart(2, '0')}`, completedAt, custom: { syncedAt: iso(completedAt + MIN) }, listMeta: { syncedAt: undefined },
+      });
+    }
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+
+    expect((await scheduledRun()).reconcile).toMatchObject({ checked: RECONCILE_MAX_ORDERS, complete: false });
+    at(T0 + 5 * MIN);
+    // never-checked first, then the least recently checked; nothing new left → done
+    expect((await scheduledRun()).reconcile).toMatchObject({ checked: RECONCILE_MAX_ORDERS, complete: true });
+    at(T0 + 10 * MIN);
+    expect((await scheduledRun()).reconcile).toEqual({ skipped: 'not-due' });
+
+    // a real miss shows up later: checked first on the next pass
+    api.addOrder({ id: 'synth-real-miss', completedAt: T0 - 2 * 60 * MIN, inGlobal: false });
+    at(T0 + 5 * MIN + RECONCILE_INTERVAL_MS);
+    await scheduledRun();
+    expect(sent).toEqual(['synth-real-miss']);
+    expect(api.requests.filter((r) => r.method === 'GET' && /^\/orders\/synth-/.test(r.path)).length)
+      .toBeLessThanOrEqual(3 * RECONCILE_MAX_ORDERS);
+  });
+});
+
+describe('managed inventory with both passes', () => {
+  const ITEMS = [{ sku: '001811', quantity: 2, path: '/us/en_us/products/x' }];
+
+  test('each order is queued once, whichever pass sends it', async () => {
+    api.addOrder({ id: 'synth-inv-journal', completedAt: T0 - 10 * MIN, items: ITEMS });
+    api.addOrder({
+      id: 'synth-inv-reconcile', completedAt: T0 - 3 * 60 * MIN, items: ITEMS, inGlobal: false,
+    });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    const INV = { ...ON, INVENTORY_SYNC_ENABLED: 'true' };
+    await runEvery5Min(T0, T0 + 2 * 60 * MIN, INV);
+    await runEvery5Min(T0 + 2 * 60 * MIN + 5 * MIN, T0 + 3 * 60 * MIN, INV);
+
+    expect(sent.sort()).toEqual(['synth-inv-journal', 'synth-inv-reconcile']);
+    expect(fakeState.store.outbox.map((e) => e.orderIds)).toEqual([['synth-inv-journal'], ['synth-inv-reconcile']]);
+    expect(fakeState.store.outbox[1].deltas).toEqual([{
+      sku: '001811', market: 'us', units: 2, orderId: 'synth-inv-reconcile',
+    }]);
   });
 });

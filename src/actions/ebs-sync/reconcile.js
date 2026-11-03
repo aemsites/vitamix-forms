@@ -10,39 +10,44 @@
  * a token that may list orders (today: admin role only); enabling is tracked
  * in #126.
  *
- * At most once per RECONCILE_INTERVAL_MS (scheduled runs only):
+ * At most once per RECONCILE_INTERVAL_MS (scheduled runs whose journal pass
+ * didn't fail):
  *   1. List orders in state payment_completed whose latest snapshot is between
  *      RECONCILE_LOOKBACK_MS and RECONCILE_MIN_AGE_MS old, without syncedAt or
  *      an EBS syncError (journal_fetch_failed is retried), and not waiting on a
- *      pending syncedAt patch.
- *   2. Check at most RECONCILE_MAX_ORDERS of them, never-reported first, then
- *      oldest first. For each, re-fetch the order (skip if synced, failed,
- *      cancelled or no longer payment_completed) and load its per-order journal.
+ *      pending syncedAt patch. The minimum age is above the journal look-back,
+ *      so orders the journal pass can still pick up are left to it.
+ *   2. Check at most RECONCILE_MAX_ORDERS of them: never-checked first (oldest
+ *      first), then least recently checked. For each, re-fetch the order (skip
+ *      if synced, failed, cancelled or no longer payment_completed) and load
+ *      its per-order journal.
  *   3. If the journal has a payment_completed entry from the last
  *      RECONCILE_MAX_AUTO_SYNC_AGE_MS, send the order to EBS through the normal
  *      path and report it. Otherwise report it once and leave it alone:
  *        - no payment_completed entry: the order can't be built; it is
  *          re-checked every pass and sent once the entry appears
- *        - older entries: EBS has no duplicate protection, so these need a
- *          person to check EBS first, then a manual backfill
+ *        - older entries: EBS has no duplicate protection, so a person checks
+ *          EBS first, then sends it with a manual POST { "orderId" }
  *
  * Every order found is reported to the operations log as an `order-sync` event
- * with an `error` field, which raises an alert. Reports for unsendable orders
- * are recorded in state.reconcile.alerted so they are sent once per reason.
+ * with an `error` field, which raises an alert. state.reconcile keeps
+ * `alerted` (sent once per reason) and `checked` (last check per order, for
+ * ordering); entries are dropped once the order is no longer a candidate.
  *
  * The pass is bounded: one list call, at most RECONCILE_MAX_ORDERS orders and
- * the run deadline. When it stops early with unreported orders left, it is not
- * marked done, so the next scheduled run (5 min later) continues.
+ * the run deadline. When it stops early with never-checked orders left, it is
+ * not marked done, so the next scheduled run (5 min later) continues.
  */
 
 import {
-  listOrders, getOrder, getOrderJournalEntries, logOrderSync,
+  listOrders, getOrder, getOrderJournalEntries, logOrderSync, OVERLAP_MS,
 } from './commerce.js';
 import { errorInfo } from '../../utils.js';
 
 export const RECONCILE_INTERVAL_MS = 60 * 60 * 1000;
 export const RECONCILE_LOOKBACK_MS = 24 * 60 * 60 * 1000;
-export const RECONCILE_MIN_AGE_MS = 30 * 60 * 1000;
+/** Journal look-back plus two scheduled runs: older entries can't be found by the journal pass. */
+export const RECONCILE_MIN_AGE_MS = OVERLAP_MS + 10 * 60 * 1000;
 export const RECONCILE_MAX_AUTO_SYNC_AGE_MS = 6 * 60 * 60 * 1000;
 export const RECONCILE_MAX_ORDERS = 20;
 /** Don't start a pass with less than this left before the run deadline. */
@@ -58,13 +63,21 @@ const RETRYABLE_SYNC_ERRORS = new Set(['journal_fetch_failed']);
 const blocksReconcile = (syncError) => Boolean(syncError) && !RETRYABLE_SYNC_ERRORS.has(syncError);
 
 /**
- * @typedef {{ lastRunAt: string | null, alerted: Record<string, { reason: string, at: string }> }} ReconcileState
+ * @typedef {{
+ *   lastRunAt: string | null,
+ *   alerted: Record<string, { reason: string, at: string }>,
+ *   checked: Record<string, string>,
+ * }} ReconcileState
  */
 
 /** @returns {ReconcileState} */
 function reconcileState(state) {
   const r = state.reconcile || {};
-  return { lastRunAt: r.lastRunAt ?? null, alerted: { ...(r.alerted || {}) } };
+  return {
+    lastRunAt: r.lastRunAt ?? null,
+    alerted: { ...(r.alerted || {}) },
+    checked: { ...(r.checked || {}) },
+  };
 }
 
 /** Whether reconciliation is switched on for this deployment. */
@@ -124,10 +137,6 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
   const finish = (complete) => {
     result.complete = complete;
     if (complete) rs.lastRunAt = new Date(now).toISOString();
-    // Forget reports for orders that have left the window.
-    for (const [id, a] of Object.entries(rs.alerted)) {
-      if (!(now - Date.parse(a.at) < 2 * RECONCILE_LOOKBACK_MS)) delete rs.alerted[id];
-    }
     state.reconcile = rs;
     log.info(`[ebs-sync] reconcile: ${JSON.stringify(result)}`);
     return result;
@@ -149,14 +158,22 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
   }
   result.listed = listed.length;
 
+  const lastChecked = (o) => rs.checked[o.id] ?? '';
   const candidates = listed
     .filter((o) => o?.id
       && o.state === 'payment_completed'
       && !o.syncedAt && !blocksReconcile(o.syncError)
       && !state.pendingCustomUpdates[o.id])
-    .sort((a, b) => Number(Boolean(rs.alerted[a.id])) - Number(Boolean(rs.alerted[b.id]))
+    // never checked (''), oldest first; then least recently checked
+    .sort((a, b) => lastChecked(a).localeCompare(lastChecked(b))
       || String(a.updatedAt).localeCompare(String(b.updatedAt)));
   result.candidates = candidates.length;
+
+  // Forget orders that are no longer candidates (synced, failed or out of the window).
+  const ids = new Set(candidates.map((o) => o.id));
+  for (const map of [rs.alerted, rs.checked]) {
+    for (const id of Object.keys(map)) if (!ids.has(id)) delete map[id];
+  }
 
   let i = 0;
   let stoppedEarly = false;
@@ -167,6 +184,7 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
     }
     const orderId = candidates[i].id;
     result.checked += 1;
+    rs.checked[orderId] = new Date().toISOString();
 
     let order;
     try {
@@ -202,7 +220,7 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
       await reportOnce(
         orderId,
         'journal_missing_payment',
-        'Completed order is not synced to EBS and its journal has no payment_completed entry, so it cannot be sent. Re-checked hourly; sent automatically once the entry appears.',
+        'Completed order is not synced to EBS and its journal has no payment_completed entry, so it cannot be sent. Restore the journal entry; the order is re-checked hourly and sent once the entry appears.',
       );
       continue;
     }
@@ -211,19 +229,26 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
       await reportOnce(
         orderId,
         'too_old_for_auto_sync',
-        `Completed order is not synced to EBS and completed more than ${RECONCILE_MAX_AUTO_SYNC_AGE_MS / 3_600_000}h ago, so it is not sent automatically (EBS has no duplicate protection). Check EBS, then run a manual backfill.`,
+        `Completed order is not synced to EBS and completed more than ${RECONCILE_MAX_AUTO_SYNC_AGE_MS / 3_600_000}h ago, so it is not sent automatically (EBS has no duplicate protection). Check EBS; if it is not there, send it with a manual POST { "orderId" }.`,
       );
       continue;
     }
 
     const { outcome, syncError } = await sendOrder(orderId, order, journal);
+    if (outcome === 'deferred') {
+      // Out of time before an attempt could start; not sent, retried next run.
+      delete rs.checked[orderId];
+      result.checked -= 1;
+      stoppedEarly = true;
+      break;
+    }
     delete rs.alerted[orderId];
     if (outcome === 'synced') {
       result.synced.push(orderId);
       await report(orderId, 'reconciled', 'Completed order was missing from the orders journal scan; sent to EBS by reconciliation.');
     } else {
       result.failedOrderId = orderId;
-      await report(orderId, 'reconcile_failed', `Completed order was missing from the orders journal scan; sending it to EBS failed (${syncError}).`);
+      await report(orderId, 'reconcile_failed', `Completed order was missing from the orders journal scan; sending it to EBS failed (${syncError}). Fix the cause, then send it with a manual POST { "orderId" }.`);
       // Likely an EBS problem: stop here and let the next pass continue.
       i += 1;
       stoppedEarly = true;
@@ -236,8 +261,8 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
   if (rest.length) {
     log.warn(`[ebs-sync] reconcile: ${rest.length} candidate(s) left for a later pass: ${rest.map((o) => o.id).join(', ')}`);
   }
-  // Done unless orders never reported were left unchecked (deadline or cap).
+  // Done unless never-checked orders were left (deadline, cap or no time to send).
   // A failed send counts as done so a down EBS isn't retried every 5 minutes.
-  const unreportedLeft = rest.some((o) => !rs.alerted[o.id]);
-  return finish(result.failedOrderId !== null || !(stoppedEarly && unreportedLeft));
+  const uncheckedLeft = rest.some((o) => !rs.checked[o.id]);
+  return finish(result.failedOrderId !== null || !(stoppedEarly && uncheckedLeft));
 }

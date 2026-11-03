@@ -27,6 +27,16 @@
  *     Manual runs never run the reconciliation pass. Orders already synced are
  *     skipped; anything else in the window IS sent to EBS, which has no
  *     duplicate protection.
+ *
+ *     Body:      { "orderId": "<order id>" }
+ *     Single order: the journal pass's checks and send for one order, without
+ *     the global journal (for orders whose global journal entry is missing).
+ *     Needs a payment_completed entry in the order's own journal. Skips synced,
+ *     pending and cancelled orders; retries orders with custom.syncError.
+ *
+ *     Manual runs leave the scheduled status / lastError alone. Their summary is
+ *     also saved and shown by GET as `lastManualRun`, because the HTTP response
+ *     of a long run can time out before the run finishes.
  */
 
 import { run } from './sync.js';
@@ -82,6 +92,7 @@ async function handleStatusRequest(params) {
     processedCount: state.processedCount,
     failedCount: state.failedCount,
     lastError: state.lastError,
+    lastManualRun: state.lastManualRun ?? null,
     reconcile: {
       lastRunAt: state.reconcile?.lastRunAt ?? null,
       reportedOrderIds: Object.keys(state.reconcile?.alerted ?? {}),
@@ -128,6 +139,7 @@ function describeEbsConfig(params) {
 /**
  * POST — manually trigger a sync run.
  * Body: { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes> }
+ *    or { "orderId": "<order id>" }
  *
  * `since` is required — overrides the persisted cursor for this run only.
  * `until`  — optional upper bound timestamp (defaults to now).
@@ -144,6 +156,18 @@ async function handleTriggerRequest(params) {
   //   application/json → parsed and merged into params directly
   //   other / raw      → base64-encoded in __ow_body
   const body = parseBody(params);
+
+  if (body.orderId !== undefined && body.orderId !== null) {
+    const extra = ['since', 'until', 'duration', 'persistCursor']
+      .filter((k) => body[k] !== undefined && body[k] !== null);
+    if (extra.length) {
+      return jsonResponse(400, { error: `"orderId" can't be combined with ${extra.map((k) => `"${k}"`).join(', ')}` });
+    }
+    if (typeof body.orderId !== 'string' || !body.orderId.trim()) {
+      return jsonResponse(400, { error: '"orderId" must be a non-empty string' });
+    }
+    return run({ ...params, orderIdOverride: body.orderId.trim() });
+  }
 
   const { since } = body;
   if (!since || isNaN(Date.parse(since))) {
@@ -183,7 +207,7 @@ async function handleTriggerRequest(params) {
 
 /** Extract body fields from params (auto-parsed JSON) or __ow_body (base64). */
 function parseBody(params) {
-  if (params.since) return params;
+  if (params.since || params.orderId) return params;
   if (!params.__ow_body) return {};
   try {
     return JSON.parse(Buffer.from(params.__ow_body, 'base64').toString('utf-8'));

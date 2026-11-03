@@ -93,8 +93,9 @@ export function isRetriableError(err) {
  * @param {object}   params       - Action params (needs EBS_BASE_URL)
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
+ * @param {{ signal?: AbortSignal }} [opts] - signal aborts the EBS request (per-attempt timeout)
  */
-export async function syncOrderToEbs(ctx, params, order, orderJournal) {
+export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal } = {}) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
   if (!paymentSnapshot) {
     throw new Error(
@@ -115,6 +116,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal) {
       Pragma: 'no-cache',
     },
     body: xml,
+    signal,
   });
 
   const responseText = await res.text();
