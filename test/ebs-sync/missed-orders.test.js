@@ -50,6 +50,7 @@ jest.unstable_mockModule('@adobe/aio-sdk', () => ({
 const { main } = await import('../../src/actions/ebs-sync/index.js');
 const {
   terminalOrders, nextCursor, DEADLINE_MS, ACTION_TIMEOUT_MS, EBS_ATTEMPT_TIMEOUT_MS, AFTER_SEND_RESERVE_MS,
+  RETRY_HOLD_MAX_MS,
 } = await import('../../src/actions/ebs-sync/sync.js');
 const {
   RECONCILE_MAX_ORDERS, RECONCILE_INTERVAL_MS, RECONCILE_MAX_AUTO_SYNC_AGE_MS, RECONCILE_MIN_AGE_MS,
@@ -810,5 +811,66 @@ describe('manual run state writes', () => {
 
     expect(sent).toEqual(['synth-manual']);
     expect(persisted().since).toBe(iso(T0));
+  });
+});
+
+describe('unreadable orders', () => {
+  test('hold the cursor up to the limit, show in GET status, then are reported once and released', async () => {
+    api.addOrder({ id: 'synth-stuck', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.getOrder = (id) => id === 'synth-stuck';
+
+    const first = await scheduledRun({});
+    expect(first.nextSince).toBe(iso(T0 - 10 * MIN));
+    expect(persisted()).toMatchObject({ status: 'error', lastError: expect.stringContaining('synth-stuck') });
+
+    // newer orders keep syncing while it is held
+    api.addOrder({ id: 'synth-newer', completedAt: T0 + 60 * MIN });
+    const held = RETRY_HOLD_MAX_MS - 10 * MIN; // last run where the entry is still within the limit
+    await runEvery5Min(T0 + 5 * MIN, T0 + held, {});
+    expect(sent).toEqual(['synth-newer']);
+    expect(persisted().since).toBe(iso(T0 - 10 * MIN));
+    expect(api.opsLog.filter((e) => e.reason === 'unreadable')).toEqual([]);
+
+    const bodies = await runEvery5Min(T0 + held + 5 * MIN, T0 + held + 60 * MIN, {});
+    expect(bodies[0].releasedOrders).toEqual(['synth-stuck']);
+    expect(api.opsLog.filter((e) => e.reason === 'unreadable')).toEqual([
+      expect.objectContaining({ orderIds: ['synth-stuck'], error: expect.stringContaining('orderId') }),
+    ]);
+    expect(Date.parse(persisted().since)).toBeGreaterThan(T0 + held);
+  });
+
+  test('stay held while the report cannot be delivered', async () => {
+    api.addOrder({ id: 'synth-stuck2', completedAt: T0 - RETRY_HOLD_MAX_MS - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - RETRY_HOLD_MAX_MS - 15 * MIN) };
+    api.failures.getOrder = () => true;
+    api.failures.opsLog = 1;
+
+    const first = await scheduledRun({});
+    expect(first.releasedOrders).toBeUndefined();
+    expect(first.nextSince).toBe(iso(T0 - RETRY_HOLD_MAX_MS - 10 * MIN));
+
+    at(T0 + 5 * MIN);
+    const second = await scheduledRun({});
+    expect(second.releasedOrders).toEqual(['synth-stuck2']);
+  });
+});
+
+describe('manual single order checks', () => {
+  test('an order that never completed is skipped without patching it', async () => {
+    api.addOrder({
+      id: 'synth-pending', completedAt: T0 - 60 * MIN, state: 'pending', noTerminal: true,
+    });
+    const { body } = await manualRun({ orderId: 'synth-pending' });
+    expect(body).toMatchObject({ outcome: 'skipped', reason: expect.stringContaining('payment_completed') });
+    expect(sent).toEqual([]);
+    expect(api.requests.some((r) => r.method === 'PATCH')).toBe(false);
+  });
+
+  test.each(['cancelled', 'delivery_returned'])('a %s order is not sent', async (state) => {
+    api.addOrder({ id: `synth-${state}`, completedAt: T0 - 60 * MIN, state });
+    const { body } = await manualRun({ orderId: `synth-${state}` });
+    expect(body).toMatchObject({ outcome: 'skipped', reason: `state ${state}` });
+    expect(sent).toEqual([]);
   });
 });

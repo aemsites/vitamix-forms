@@ -80,6 +80,14 @@ export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
  */
 export const AFTER_SEND_RESERVE_MS = 60_000;
 const PENDING_SAVE_RETRIES = 2;
+/**
+ * How long an order whose reads keep failing may hold the cursor. Past this
+ * (well beyond OVERLAP_MS) it is reported once and the cursor moves on; a
+ * manual POST { orderId } sends it later.
+ */
+export const RETRY_HOLD_MAX_MS = 4 * 60 * 60 * 1000;
+/** Order states that must never be sent, whatever the journal says. */
+const NEVER_SEND_STATES = new Set(['cancelled', 'delivery_returned']);
 const CUSTOM_UPDATE_RETRIES = 3;
 const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
 const OUTBOX_WRITE_RETRIES = 3;
@@ -169,7 +177,7 @@ export async function run(params) {
     // pass can't see (its global journal entry is missing). Ignores
     // custom.syncError on purpose: this is the explicit retry.
     if (singleOrderId) {
-      const { outcome, reason } = await processOrder(runCtx, singleOrderId);
+      const { outcome, reason } = await processOrder(runCtx, singleOrderId, { requireCompleted: true });
       summary.outcome = outcome;
       if (reason) summary.reason = reason;
       if (outcome === 'failed') {
@@ -208,7 +216,8 @@ export async function run(params) {
 
     // ── 3. Process each order ──────────────────────────────────────────
     let stoppedAt = -1; // index of the first order not handled on deadline
-    let firstRetryAt = -1; // index of the first order whose reads failed
+    let firstRetryAt = -1; // index of the first order whose reads failed (held)
+    const released = []; // indexes of unreadable orders too old to keep holding the cursor
     let failed = false;
     for (let i = 0; i < queue.length; i++) {
       if (Date.now() > deadlineAt) {
@@ -230,9 +239,16 @@ export async function run(params) {
       }
       if (outcome === 'retry') {
         // Order or journal read failed: keep going, but the cursor must not
-        // pass this order's entry or it would never be read again.
-        if (firstRetryAt < 0) firstRetryAt = i;
+        // pass this order's entry (or it would never be read again) unless
+        // the entry is older than RETRY_HOLD_MAX_MS: then it is reported once
+        // and released, so one unreadable order can't stop the sync.
         summary.retryOrders = [...(summary.retryOrders ?? []), queue[i].orderId];
+        const { ts } = queue[i];
+        if (!Number.isNaN(ts) && Date.now() - ts <= RETRY_HOLD_MAX_MS) {
+          if (firstRetryAt < 0) firstRetryAt = i;
+        } else {
+          released.push(i);
+        }
         continue;
       }
       if (outcome === 'failed') {
@@ -248,6 +264,17 @@ export async function run(params) {
         summary.haltReason = 'deadline';
         stoppedAt = i;
         break;
+      }
+    }
+
+    if (released.length) {
+      // Release only once the report is delivered: past the cursor these
+      // orders are never read again. Otherwise keep holding and retry.
+      const ids = released.map((i) => queue[i].orderId);
+      if (await reportReleased(runCtx, ids)) {
+        summary.releasedOrders = ids;
+      } else if (firstRetryAt < 0 || released[0] < firstRetryAt) {
+        [firstRetryAt] = released;
       }
     }
 
@@ -287,7 +314,16 @@ export async function run(params) {
       await saveState(manualRunUpdates(state, persistCursor));
     } else {
       state.lastRun = new Date().toISOString();
-      state.status = failed ? 'error' : 'idle';
+      if (failed) {
+        state.status = 'error';
+      } else if (summary.retryOrders?.length) {
+        // Reads failed: visible in GET even when nothing else went wrong (an
+        // expired orders token makes every order a retry and stops the cursor).
+        state.status = 'error';
+        state.lastError = `Could not read ${summary.retryOrders.length} order(s) or their journals: ${summary.retryOrders.join(', ')}`;
+      } else {
+        state.status = 'idle';
+      }
       await saveState(state);
     }
   } catch (err) {
@@ -310,7 +346,7 @@ export async function run(params) {
 function manualRunRecord(summary) {
   const keys = [
     'since', 'until', 'orderId', 'outcome', 'reason', 'nextSince', 'cursorPersisted',
-    'processedOrders', 'retryOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
+    'processedOrders', 'retryOrders', 'releasedOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
   ];
   const record = Object.fromEntries(keys.filter((k) => k in summary).map((k) => [k, summary[k]]));
   record.finishedAt = new Date().toISOString();
@@ -404,7 +440,7 @@ export function skipReason(state, orderId, order) {
  *
  * @returns {Promise<{ outcome: 'synced' | 'skipped' | 'retry' | 'failed' | 'deferred', reason?: string, stopRun?: boolean }>}
  */
-async function processOrder(runCtx, orderId) {
+async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) {
   const { params, log, state } = runCtx;
 
   // Already accepted by EBS, custom patch still pending — don't even fetch.
@@ -443,6 +479,18 @@ async function processOrder(runCtx, orderId) {
       log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
     });
     return { outcome: 'retry', reason: 'journal-fetch-failed' };
+  }
+
+  if (requireCompleted) {
+    // An id someone typed: unlike the journal pass, nothing says it completed.
+    if (NEVER_SEND_STATES.has(order.state)) {
+      log.info(`[ebs-sync] Order ${orderId} is ${order.state} — skipping.`);
+      return { outcome: 'skipped', reason: `state ${order.state}` };
+    }
+    if (!orderJournal.some((e) => e.event === 'payment_completed')) {
+      log.info(`[ebs-sync] Order ${orderId} has no payment_completed journal entry — skipping.`);
+      return { outcome: 'skipped', reason: 'no payment_completed entry in the order journal' };
+    }
   }
 
   return sendOrder(runCtx, orderId, order, orderJournal);
@@ -702,6 +750,28 @@ async function markOrderSynced(params, orderId, syncedAt, log) {
     }
   }
   return lastErr;
+}
+
+/**
+ * Report unreadable orders released from the cursor hold: one operations-log
+ * event per run (with `error`, so it alerts).
+ * @returns {Promise<boolean>} whether the report was delivered
+ */
+async function reportReleased({ params, log }, orderIds) {
+  try {
+    await logOrderSync(params, {
+      action: 'order-sync',
+      id: orderIds[0],
+      orderIds,
+      source: 'ebs-sync',
+      reason: 'unreadable',
+      error: `Could not read ${orderIds.length} completed order(s) or their journals for over ${RETRY_HOLD_MAX_MS / 3_600_000}h; the sync moved on without them. Fix the cause, then send each with a manual POST { "orderId" }.`,
+    });
+    return true;
+  } catch (err) {
+    log.warn('[ebs-sync] Failed to report unreadable orders; still holding the cursor', errorInfo(err));
+    return false;
+  }
 }
 
 /**

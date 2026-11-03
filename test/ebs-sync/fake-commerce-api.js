@@ -41,10 +41,11 @@ export function createFakeCommerceApi() {
    * @param {object} [o.listMeta] - overrides for the listing metadata only (stale metadata)
    * @param {boolean} [o.inGlobal] - false: only the per-order journal has the entries
    * @param {object[]} [o.items]
+   * @param {boolean} [o.noTerminal] - journal has only the create entry (never completed)
    */
   function addOrder({
     id, completedAt, visibleAt = completedAt, state = 'payment_completed', custom = {}, listMeta,
-    inGlobal = true, items,
+    inGlobal = true, items, noTerminal = false,
   }) {
     const createdAt = completedAt - 2 * 60 * 1000;
     orders.set(id, {
@@ -58,6 +59,16 @@ export function createFakeCommerceApi() {
       listMeta,
     });
     const terminal = state === 'payment_cancelled' ? 'payment_cancelled' : 'payment_completed';
+    if (noTerminal) {
+      journal.push({
+        visibleAt,
+        inGlobal,
+        entry: {
+          id: `${id}-create`, orderId: id, event: 'create', timestamp: iso(createdAt),
+        },
+      });
+      return;
+    }
     journal.push(
       {
         visibleAt,
