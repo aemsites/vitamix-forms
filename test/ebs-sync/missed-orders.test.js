@@ -50,7 +50,7 @@ jest.unstable_mockModule('@adobe/aio-sdk', () => ({
 const { main } = await import('../../src/actions/ebs-sync/index.js');
 const {
   terminalOrders, nextCursor, DEADLINE_MS, ACTION_TIMEOUT_MS, EBS_ATTEMPT_TIMEOUT_MS, AFTER_SEND_RESERVE_MS,
-  RETRY_HOLD_MAX_MS,
+  RETRY_HOLD_MAX_MS, INCIDENT_ALERT_AFTER_MS, INCIDENT_REPEAT_MS,
 } = await import('../../src/actions/ebs-sync/sync.js');
 const {
   RECONCILE_MAX_ORDERS, RECONCILE_INTERVAL_MS, RECONCILE_MAX_AUTO_SYNC_AGE_MS, RECONCILE_MIN_AGE_MS,
@@ -872,5 +872,83 @@ describe('manual single order checks', () => {
     const { body } = await manualRun({ orderId: `synth-${state}` });
     expect(body).toMatchObject({ outcome: 'skipped', reason: `state ${state}` });
     expect(sent).toEqual([]);
+  });
+});
+
+describe('early incident alerts', () => {
+  const incidentAlerts = (reason) => api.opsLog.filter((e) => e.source === 'ebs-sync' && e.reason === reason);
+
+  test('read failures alert within the hour, repeat hourly, keep retrying, and clear on recovery', async () => {
+    api.addOrder({ id: 'synth-down', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.getOrder = () => true;
+
+    // quiet until it has lasted INCIDENT_ALERT_AFTER_MS, then one alert
+    await runEvery5Min(T0, T0 + INCIDENT_ALERT_AFTER_MS - 5 * MIN, {});
+    expect(incidentAlerts('read_failures')).toEqual([]);
+    at(T0 + INCIDENT_ALERT_AFTER_MS);
+    const body = await scheduledRun({});
+    expect(body.alerts).toEqual(['read_failures']);
+    expect(incidentAlerts('read_failures')).toEqual([
+      expect.objectContaining({ since: iso(T0), orderIds: ['synth-down'], error: expect.any(String) }),
+    ]);
+    expect(INCIDENT_ALERT_AFTER_MS).toBeLessThanOrEqual(60 * MIN);
+
+    // still retried every run; next alert an hour later
+    await runEvery5Min(T0 + INCIDENT_ALERT_AFTER_MS + 5 * MIN, T0 + INCIDENT_ALERT_AFTER_MS + INCIDENT_REPEAT_MS, {});
+    expect(incidentAlerts('read_failures')).toHaveLength(2);
+    expect(persisted().since).toBe(iso(T0 - 10 * MIN));
+
+    // recovers: sent, incident cleared
+    api.failures.getOrder = null;
+    at(T0 + 2 * 60 * MIN);
+    await scheduledRun({});
+    expect(sent).toEqual(['synth-down']);
+    expect(persisted().incidents).toEqual({});
+    expect(persisted().status).toBe('idle');
+  });
+
+  test('a blip shorter than the threshold does not alert', async () => {
+    api.addOrder({ id: 'synth-blip', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.getOrder = () => true;
+    await runEvery5Min(T0, T0 + 20 * MIN, {});
+    api.failures.getOrder = null;
+    await runEvery5Min(T0 + 25 * MIN, T0 + 60 * MIN, {});
+    expect(incidentAlerts('read_failures')).toEqual([]);
+    expect(sent).toEqual(['synth-blip']);
+  });
+
+  test('scheduled runs that fail outright alert within the hour and clear on recovery', async () => {
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    api.failures.journal = 500;
+    for (let t = T0; t <= T0 + 90 * MIN; t += 5 * MIN) {
+      at(t);
+      // eslint-disable-next-line no-await-in-loop
+      await expect(scheduledRun({})).rejects.toThrow('Journal API 500');
+    }
+    const alertsSent = incidentAlerts('run_failing');
+    expect(alertsSent).toHaveLength(2); // at +30 and +90
+    expect(alertsSent[0]).toMatchObject({ since: iso(T0), error: expect.stringContaining('Journal API 500') });
+    expect(fakeState.store.lock).toBe(false);
+
+    api.failures.journal = null;
+    at(T0 + 95 * MIN);
+    await scheduledRun({});
+    expect(persisted().incidents).toEqual({});
+  });
+
+  test('a failed incident alert is retried on the next run', async () => {
+    api.addOrder({ id: 'synth-down2', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.getOrder = () => true;
+    await runEvery5Min(T0, T0 + INCIDENT_ALERT_AFTER_MS - 5 * MIN, {});
+    api.failures.opsLog = 1;
+    at(T0 + INCIDENT_ALERT_AFTER_MS);
+    await scheduledRun({});
+    expect(incidentAlerts('read_failures')).toEqual([]);
+    at(T0 + INCIDENT_ALERT_AFTER_MS + 5 * MIN);
+    await scheduledRun({});
+    expect(incidentAlerts('read_failures')).toHaveLength(1);
   });
 });

@@ -85,7 +85,14 @@ const PENDING_SAVE_RETRIES = 2;
  * (well beyond OVERLAP_MS) it is reported once and the cursor moves on; a
  * manual POST { orderId } sends it later.
  */
-export const RETRY_HOLD_MAX_MS = 4 * 60 * 60 * 1000;
+export const RETRY_HOLD_MAX_MS = 4 * 60 * 60 * 1000; // early alerts: INCIDENT_ALERT_AFTER_MS
+/**
+ * Ongoing problems (scheduled runs whose reads fail, or that fail outright)
+ * alert once they have lasted this long, so a short blip stays quiet...
+ */
+export const INCIDENT_ALERT_AFTER_MS = 30 * 60 * 1000;
+/** ...and then at most this often while they last. */
+export const INCIDENT_REPEAT_MS = 60 * 60 * 1000;
 /** Order states that must never be sent, whatever the journal says. */
 const NEVER_SEND_STATES = new Set(['cancelled', 'delivery_returned']);
 const CUSTOM_UPDATE_RETRIES = 3;
@@ -324,6 +331,11 @@ export async function run(params) {
       } else {
         state.status = 'idle';
       }
+      await trackIncident(runCtx, 'read_failures', summary.retryOrders?.length > 0, {
+        error: `Order or order-journal reads have been failing for ebs-sync; affected orders are retried every run (cursor held up to ${RETRY_HOLD_MAX_MS / 3_600_000}h).`,
+        orderIds: summary.retryOrders,
+      });
+      await trackIncident(runCtx, 'run_failing', false);
       await saveState(state);
     }
   } catch (err) {
@@ -332,6 +344,13 @@ export async function run(params) {
     if (manual && state) {
       summary.lastError = err.message;
       await saveState({ lastManualRun: manualRunRecord(summary) }).catch(() => {});
+    } else if (state) {
+      // Scheduled run failed outright (journal API, state store, …): alert
+      // once it has lasted INCIDENT_ALERT_AFTER_MS. Best effort.
+      await trackIncident({ params, log, state, summary }, 'run_failing', true, {
+        error: `Scheduled ebs-sync runs are failing: ${err.message}`,
+      }).catch(() => {});
+      await saveState({ incidents: state.incidents }).catch(() => {});
     }
     throw err;
   } finally {
@@ -750,6 +769,38 @@ async function markOrderSynced(params, orderId, syncedAt, log) {
     }
   }
   return lastErr;
+}
+
+/**
+ * Track an ongoing problem across scheduled runs in state.incidents[key]
+ * ({ since, alertedAt }). While `active`, send an operations-log alert once
+ * it has lasted INCIDENT_ALERT_AFTER_MS, then every INCIDENT_REPEAT_MS.
+ * Cleared on the first run where it is not active. alertedAt is recorded
+ * only when the alert was delivered, so a failed alert is retried next run.
+ */
+async function trackIncident({
+  params, log, state, summary,
+}, key, active, details = {}) {
+  state.incidents = { ...(state.incidents || {}) };
+  if (!active) {
+    if (state.incidents[key]) log.info(`[ebs-sync] Incident ${key} is over (since ${state.incidents[key].since}).`);
+    delete state.incidents[key];
+    return;
+  }
+  const now = Date.now();
+  const incident = state.incidents[key] ?? { since: new Date(now).toISOString(), alertedAt: null };
+  state.incidents[key] = incident;
+  if (now - Date.parse(incident.since) < INCIDENT_ALERT_AFTER_MS) return;
+  if (incident.alertedAt && now - Date.parse(incident.alertedAt) < INCIDENT_REPEAT_MS) return;
+  try {
+    await logOrderSync(params, {
+      action: 'order-sync', id: 'ebs-sync', source: 'ebs-sync', reason: key, since: incident.since, ...details,
+    });
+    incident.alertedAt = new Date(now).toISOString();
+    summary.alerts = [...(summary.alerts ?? []), key];
+  } catch (err) {
+    log.warn(`[ebs-sync] Failed to send ${key} alert; will retry next run`, errorInfo(err));
+  }
 }
 
 /**

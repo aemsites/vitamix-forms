@@ -93,6 +93,7 @@ async function handleStatusRequest(params) {
     failedCount: state.failedCount,
     lastError: state.lastError,
     lastManualRun: state.lastManualRun ?? null,
+    incidents: state.incidents ?? {},
     reconcile: {
       lastRunAt: state.reconcile?.lastRunAt ?? null,
       reportedOrderIds: Object.keys(state.reconcile?.alerted ?? {}),
