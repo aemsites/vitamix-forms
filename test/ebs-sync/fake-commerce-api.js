@@ -26,7 +26,9 @@ export function createFakeCommerceApi() {
   const journal = [];
   const opsLog = [];
   const requests = [];
-  const failures = { list: null, journal: null };
+  const failures = {
+    list: null, journal: null, getOrder: null, opsLog: 0, patch: null,
+  };
 
   /**
    * Add a synthetic order that completed (or was cancelled) at `completedAt`.
@@ -95,6 +97,10 @@ export function createFakeCommerceApi() {
     requests.push({ method, path, query: q });
 
     if (path === '/operations-log' && method === 'POST') {
+      if (failures.opsLog > 0) {
+        failures.opsLog -= 1;
+        return json(503, { message: 'ops log down' });
+      }
       opsLog.push(JSON.parse(init.body));
       return json(200, {});
     }
@@ -138,6 +144,7 @@ export function createFakeCommerceApi() {
 
     const custom = path.match(/^\/orders\/([^/]+)\/custom$/);
     if (custom && method === 'PATCH') {
+      if (failures.patch) return json(failures.patch, { message: 'patch failure' });
       const order = orders.get(decodeURIComponent(custom[1]));
       if (!order) return json(404, {});
       Object.assign(order.custom, JSON.parse(init.body));
@@ -147,6 +154,9 @@ export function createFakeCommerceApi() {
 
     const one = path.match(/^\/orders\/([^/]+)$/);
     if (one && method === 'GET') {
+      if (typeof failures.getOrder === 'function' ? failures.getOrder(decodeURIComponent(one[1])) : failures.getOrder) {
+        return json(503, { message: 'order read failure' });
+      }
       const order = orders.get(decodeURIComponent(one[1]));
       if (!order) return json(404, {});
       const rest = { ...order };
@@ -165,7 +175,7 @@ export function createFakeCommerceApi() {
 /** In-memory aio-lib-state replacement with real lock semantics. */
 export function createFakeState() {
   const store = {
-    state: null, lock: false, outbox: [], seq: 0,
+    state: null, lock: false, outbox: [], seq: 0, failSave: null,
   };
   return {
     store,
@@ -185,6 +195,7 @@ export function createFakeState() {
         };
       },
       saveState: async (updates) => {
+        if (store.failSave?.(updates)) throw new Error('state store down');
         store.state = structuredClone({ ...(store.state || {}), ...updates });
         return store.state;
       },

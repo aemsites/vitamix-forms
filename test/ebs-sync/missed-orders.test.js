@@ -110,6 +110,7 @@ beforeEach(() => {
   ebsHooks.attempts = [];
   fakeState.store.outbox = [];
   fakeState.store.seq = 0;
+  fakeState.store.failSave = null;
 });
 
 afterEach(() => {
@@ -700,5 +701,114 @@ describe('managed inventory with both passes', () => {
     expect(fakeState.store.outbox[1].deltas).toEqual([{
       sku: '001811', market: 'us', units: 2, orderId: 'synth-inv-reconcile',
     }]);
+  });
+});
+
+describe('acceptance marker before anything else', () => {
+  const ITEMS = [{ sku: '001811', quantity: 1, path: '/us/en_us/products/x' }];
+
+  test('syncedAt is patched before the operations log is written', async () => {
+    api.addOrder({ id: 'synth-order', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    await scheduledRun({});
+    const idx = (pred) => api.requests.findIndex(pred);
+    const patch = idx((r) => r.method === 'PATCH' && r.path === '/orders/synth-order/custom');
+    const log = idx((r) => r.method === 'POST' && r.path === '/operations-log');
+    expect(patch).toBeGreaterThanOrEqual(0);
+    expect(patch).toBeLessThan(log);
+  });
+
+  test('no marker stored at all: stop the run, keep the cursor, do not queue inventory', async () => {
+    api.addOrder({ id: 'synth-a', completedAt: T0 - 12 * MIN, items: ITEMS });
+    api.addOrder({ id: 'synth-b', completedAt: T0 - 10 * MIN, items: ITEMS });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.patch = 503;
+    // the pending-update save fails; the final full save works again
+    fakeState.store.failSave = (u) => Object.keys(u).length === 1 && 'pendingCustomUpdates' in u;
+
+    const p = scheduledRun({ INVENTORY_SYNC_ENABLED: 'true' });
+    await jest.runAllTimersAsync();
+    const body = await p;
+
+    expect(sent).toEqual(['synth-a']);
+    expect(body).toMatchObject({ haltReason: 'state-unavailable', nextSince: iso(T0 - 15 * MIN) });
+    expect(fakeState.store.outbox).toEqual([]);
+    expect(persisted()).toMatchObject({ status: 'error', since: iso(T0 - 15 * MIN) });
+    expect(persisted().pendingCustomUpdates['synth-a']).toBeTruthy(); // final save stored it
+
+    // Recovered: the patch is applied from state, synth-a is not resent, synth-b goes out.
+    api.failures.patch = null;
+    fakeState.store.failSave = null;
+    at(T0 + 5 * MIN);
+    await scheduledRun({ INVENTORY_SYNC_ENABLED: 'true' });
+    expect(sent).toEqual(['synth-a', 'synth-b']);
+    expect(api.orders.get('synth-a').custom.syncedAt).toBeTruthy();
+    expect(fakeState.store.outbox.map((e) => e.orderIds)).toEqual([['synth-b']]);
+  });
+});
+
+describe('read failures hold the cursor', () => {
+  test('an order whose reads fail beyond the look-back is still sent once they recover', async () => {
+    api.addOrder({ id: 'synth-readfail', completedAt: T0 - 10 * MIN });
+    api.addOrder({ id: 'synth-fine', completedAt: T0 - 8 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.getOrder = (id) => id === 'synth-readfail';
+
+    const bodies = await runEvery5Min(T0, T0 + 2 * 60 * MIN, {});
+    expect(sent).toEqual(['synth-fine']);
+    expect(bodies.at(-1)).toMatchObject({ retryOrders: ['synth-readfail'], nextSince: iso(T0 - 10 * MIN) });
+    expect(persisted().since).toBe(iso(T0 - 10 * MIN));
+
+    api.failures.getOrder = null;
+    at(T0 + 2 * 60 * MIN + 5 * MIN);
+    await scheduledRun({});
+    expect(sent).toEqual(['synth-fine', 'synth-readfail']);
+    expect(persisted().since).toBe(iso(Date.now()));
+  });
+});
+
+describe('reconciliation delivery and inspection', () => {
+  test('a report that fails to send is sent again next pass', async () => {
+    api.addOrder({ id: 'synth-unreported', completedAt: T0 - 3 * 60 * MIN, visibleAt: Infinity });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    api.failures.opsLog = 1;
+
+    const first = await scheduledRun();
+    expect(first.reconcile).toMatchObject({ reportFailed: 1, reported: [] });
+    expect(persisted().reconcile.alerted).toEqual({});
+
+    at(T0 + RECONCILE_INTERVAL_MS);
+    await scheduledRun();
+    expect(alerts('journal_missing_payment')).toEqual(['synth-unreported']);
+  });
+
+  test('an order whose reads failed keeps the pass open and is retried next run', async () => {
+    api.addOrder({ id: 'synth-flaky', completedAt: T0 - 3 * 60 * MIN, inGlobal: false });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    api.failures.getOrder = () => true;
+
+    const first = await scheduledRun();
+    expect(first.reconcile.complete).toBe(false);
+    expect(persisted().reconcile.lastRunAt).toBeNull();
+
+    api.failures.getOrder = null;
+    at(T0 + 5 * MIN);
+    const second = await scheduledRun();
+    expect(second.reconcile.complete).toBe(true);
+    expect(sent).toEqual(['synth-flaky']);
+  });
+});
+
+describe('manual run state writes', () => {
+  test('a manual run does not overwrite a cursor saved meanwhile', async () => {
+    api.addOrder({ id: 'synth-manual', completedAt: T0 - 3 * 60 * MIN });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    // a scheduled run (lock race, #127) saves a newer cursor while this one is sending
+    ebsHooks.onSend = () => { fakeState.store.state.since = iso(T0); };
+
+    await manualRun({ since: iso(T0 - 3 * 60 * MIN - MIN), duration: 5 });
+
+    expect(sent).toEqual(['synth-manual']);
+    expect(persisted().since).toBe(iso(T0));
   });
 });

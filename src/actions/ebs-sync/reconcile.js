@@ -121,15 +121,23 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
     const payload = {
       action: 'order-sync', id: orderId, source: ALERT_SOURCE, reason, error: message, ...extra,
     };
-    await logOrderSync(params, payload).catch((err) => {
+    try {
+      await logOrderSync(params, payload);
+      return true;
+    } catch (err) {
       log.warn(`[ebs-sync] reconcile: failed to report ${reason} for ${orderId}`, errorInfo(err));
-    });
+      return false;
+    }
   };
 
   // Unsendable orders: report once per reason, then just re-check quietly.
+  // Recorded only once delivered, so a failed report is retried next pass.
   const reportOnce = async (orderId, reason, message) => {
     if (rs.alerted[orderId]?.reason === reason) return;
-    await report(orderId, reason, message);
+    if (!await report(orderId, reason, message)) {
+      result.reportFailed = (result.reportFailed ?? 0) + 1;
+      return;
+    }
     rs.alerted[orderId] = { reason, at: new Date().toISOString() };
     result.reported.push(orderId);
   };
@@ -184,13 +192,13 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
     }
     const orderId = candidates[i].id;
     result.checked += 1;
-    rs.checked[orderId] = new Date().toISOString();
 
     let order;
     try {
       order = await getOrder(params, orderId);
     } catch (err) {
       log.warn(`[ebs-sync] reconcile: could not fetch order ${orderId}: ${err.message}`);
+      result.readFailed = (result.readFailed ?? 0) + 1;
       continue;
     }
     // Re-check on the full order right before sending: listing metadata can be stale.
@@ -198,6 +206,7 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
       || (blocksReconcile(order.custom?.syncError) && `syncError ${order.custom.syncError}`)
       || (order.state !== 'payment_completed' && `state ${order.state}`));
     if (skip) {
+      rs.checked[orderId] = new Date().toISOString();
       log.info(`[ebs-sync] reconcile: order ${orderId}: ${skip} — skipping.`);
       continue;
     }
@@ -212,8 +221,12 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
       );
     } catch (err) {
       log.warn(`[ebs-sync] reconcile: could not fetch journal for ${orderId}: ${err.message}`);
+      result.readFailed = (result.readFailed ?? 0) + 1;
       continue;
     }
+    // Inspected. Orders whose reads failed stay never-checked, so the pass
+    // isn't done and the next run (5 min) retries them.
+    rs.checked[orderId] = new Date().toISOString();
 
     const completed = journal.find((e) => e.event === 'payment_completed');
     if (!completed) {
@@ -234,7 +247,7 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
       continue;
     }
 
-    const { outcome, syncError } = await sendOrder(orderId, order, journal);
+    const { outcome, syncError, stopRun } = await sendOrder(orderId, order, journal);
     if (outcome === 'deferred') {
       // Out of time before an attempt could start; not sent, retried next run.
       delete rs.checked[orderId];
@@ -246,6 +259,12 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
     if (outcome === 'synced') {
       result.synced.push(orderId);
       await report(orderId, 'reconciled', 'Completed order was missing from the orders journal scan; sent to EBS by reconciliation.');
+      if (stopRun) {
+        result.stateUnavailable = true;
+        i += 1;
+        stoppedEarly = true;
+        break;
+      }
     } else {
       result.failedOrderId = orderId;
       await report(orderId, 'reconcile_failed', `Completed order was missing from the orders journal scan; sending it to EBS failed (${syncError}). Fix the cause, then send it with a manual POST { "orderId" }.`);
@@ -261,8 +280,10 @@ export async function reconcileOrders(runCtx, { deadlineAt, sendOrder, skipReaso
   if (rest.length) {
     log.warn(`[ebs-sync] reconcile: ${rest.length} candidate(s) left for a later pass: ${rest.map((o) => o.id).join(', ')}`);
   }
-  // Done unless never-checked orders were left (deadline, cap or no time to send).
+  // Done unless never-checked orders were left (deadline, cap or no time to
+  // send) or a read failed: then the next run (5 min) continues.
   // A failed send counts as done so a down EBS isn't retried every 5 minutes.
   const uncheckedLeft = rest.some((o) => !rs.checked[o.id]);
-  return finish(result.failedOrderId !== null || !(stoppedEarly && uncheckedLeft));
+  return finish(result.failedOrderId !== null
+    || (!(stoppedEarly && uncheckedLeft) && !result.readFailed));
 }

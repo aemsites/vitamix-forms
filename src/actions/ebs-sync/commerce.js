@@ -25,6 +25,15 @@ const JOURNAL_CHUNK_HOURS = 11;
 export const OVERLAP_MS = 60 * 60 * 1000;
 
 /**
+ * Every commerce API request is aborted after this long, so the time after an
+ * EBS send (syncedAt patch, operations log) is bounded; see
+ * AFTER_SEND_RESERVE_MS in sync.js.
+ */
+export const COMMERCE_TIMEOUT_MS = 10_000;
+const timeout = () => AbortSignal.timeout(COMMERCE_TIMEOUT_MS);
+const JOURNAL_RANGE_TIMEOUT_MS = 60_000;
+
+/**
  * Fetch all journal entries since the given ISO timestamp, chunking the
  * request into ≤11-hour windows if the full range exceeds the API limit.
  *
@@ -89,6 +98,8 @@ async function fetchJournalChunk(baseUrl, token, since, until, log) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
+    // Range reads touch many buckets; before any order is sent, so not part of the post-send budget.
+    signal: AbortSignal.timeout(JOURNAL_RANGE_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -119,6 +130,7 @@ export async function getOrder(params, orderId) {
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+    signal: timeout(),
   });
 
   if (res.status === 404) return null;
@@ -150,6 +162,7 @@ export async function updateOrderCustom(params, orderId, custom) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(custom),
+    signal: timeout(),
   });
 
   if (!res.ok) {
@@ -177,6 +190,7 @@ export async function logOrderSync(params, payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: timeout(),
   });
 
   if (!res.ok) {
@@ -208,6 +222,7 @@ export async function getOrderJournalEntries(params, orderId, since, until) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+    signal: timeout(),
   });
 
   if (!res.ok) {
@@ -241,6 +256,7 @@ export async function listOrders(params, { since, until, state }) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+    signal: timeout(),
   });
 
   if (!res.ok) {

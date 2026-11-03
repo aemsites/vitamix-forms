@@ -74,10 +74,12 @@ export const ACTION_TIMEOUT_MS = 10 * 60 * 1000;
 /** Each EBS request is aborted after this long. */
 export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
 /**
- * Time kept free after an EBS attempt for the syncedAt patch (with retries),
- * the inventory outbox, saving state and releasing the lock.
+ * Time kept free after an EBS attempt for the syncedAt patch (3 tries of at
+ * most COMMERCE_TIMEOUT_MS plus backoff), the pending-update save, the
+ * operations log, the inventory outbox, saving state and releasing the lock.
  */
-export const AFTER_SEND_RESERVE_MS = 30_000;
+export const AFTER_SEND_RESERVE_MS = 60_000;
+const PENDING_SAVE_RETRIES = 2;
 const CUSTOM_UPDATE_RETRIES = 3;
 const CUSTOM_UPDATE_BASE_DELAY_MS = 1_000; // 1s, 2s
 const OUTBOX_WRITE_RETRIES = 3;
@@ -179,7 +181,7 @@ export async function run(params) {
       }
       summary.reconcile = { skipped: 'manual' };
       finishManualRun(state, summary, scheduledStatus);
-      await saveState(state);
+      await saveState(manualRunUpdates(state, false));
       return { body: summary };
     }
 
@@ -206,6 +208,7 @@ export async function run(params) {
 
     // ── 3. Process each order ──────────────────────────────────────────
     let stoppedAt = -1; // index of the first order not handled on deadline
+    let firstRetryAt = -1; // index of the first order whose reads failed
     let failed = false;
     for (let i = 0; i < queue.length; i++) {
       if (Date.now() > deadlineAt) {
@@ -216,7 +219,22 @@ export async function run(params) {
         break;
       }
 
-      const { outcome } = await processOrder(runCtx, queue[i].orderId);
+      const { outcome, stopRun } = await processOrder(runCtx, queue[i].orderId);
+      if (stopRun) {
+        // EBS has the order but neither syncedAt nor the pending update could
+        // be stored. Send nothing more; keep the cursor so it is re-read.
+        summary.halted = true;
+        summary.haltReason = 'state-unavailable';
+        failed = true;
+        break;
+      }
+      if (outcome === 'retry') {
+        // Order or journal read failed: keep going, but the cursor must not
+        // pass this order's entry or it would never be read again.
+        if (firstRetryAt < 0) firstRetryAt = i;
+        summary.retryOrders = [...(summary.retryOrders ?? []), queue[i].orderId];
+        continue;
+      }
       if (outcome === 'failed') {
         summary.halted = true;
         summary.haltReason = 'max-retries';
@@ -234,8 +252,9 @@ export async function run(params) {
     }
 
     // ── 4. Cursor ──────────────────────────────────────────────────────
+    const holdAt = [stoppedAt, firstRetryAt].filter((x) => x >= 0);
     summary.nextSince = nextCursor({
-      scanSince, batchUntil, failed, stoppedAt, queue,
+      scanSince, batchUntil, failed, stoppedAt: holdAt.length ? Math.min(...holdAt) : -1, queue,
     });
     if (persistCursor && summary.nextSince) {
       state.since = summary.nextSince;
@@ -260,16 +279,17 @@ export async function run(params) {
         sendOrder: (orderId, order, orderJournal) => sendOrder(runCtx, orderId, order, orderJournal),
         skipReason: (orderId, order) => skipReason(state, orderId, order),
       });
-      if (summary.reconcile.failedOrderId) failed = true;
+      if (summary.reconcile.failedOrderId || summary.reconcile.stateUnavailable) failed = true;
     }
 
     if (manual) {
       finishManualRun(state, summary, scheduledStatus);
+      await saveState(manualRunUpdates(state, persistCursor));
     } else {
       state.lastRun = new Date().toISOString();
       state.status = failed ? 'error' : 'idle';
+      await saveState(state);
     }
-    await saveState(state);
   } catch (err) {
     // A manual run's HTTP response may be gone by now (long runs): record
     // the failure where GET can show it. Best effort; rethrow either way.
@@ -290,11 +310,27 @@ export async function run(params) {
 function manualRunRecord(summary) {
   const keys = [
     'since', 'until', 'orderId', 'outcome', 'reason', 'nextSince', 'cursorPersisted',
-    'processedOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
+    'processedOrders', 'retryOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
   ];
   const record = Object.fromEntries(keys.filter((k) => k in summary).map((k) => [k, summary[k]]));
   record.finishedAt = new Date().toISOString();
   return record;
+}
+
+/**
+ * The fields a manual run writes. Not the whole state: a scheduled run may
+ * have saved a newer cursor (or other fields) meanwhile.
+ */
+function manualRunUpdates(state, persistCursor) {
+  const updates = {
+    pendingCustomUpdates: state.pendingCustomUpdates,
+    lastManualRun: state.lastManualRun,
+    lastProcessedOrderId: state.lastProcessedOrderId,
+    processedCount: state.processedCount,
+    failedCount: state.failedCount,
+  };
+  if (persistCursor) updates.since = state.since;
+  return updates;
 }
 
 /** Manual runs leave the scheduled run's status / lastError as they were. */
@@ -334,8 +370,10 @@ export function terminalOrders(entries) {
  *
  *   completed      → the queried `until`, even for an empty batch
  *   max-retries    → unchanged (`scanSince`): the batch is re-read next run
- *   deadline       → the terminal entry of the first unhandled order, so the
- *                    next run re-reads it; unchanged if that timestamp is unknown
+ *   deadline / read failure
+ *                  → the terminal entry of the first unhandled order (stoppedAt:
+ *                    deadline stop or the first order whose reads failed), so
+ *                    the next run re-reads it; unchanged if its time is unknown
  *
  * @returns {string | null}
  */
@@ -362,7 +400,9 @@ export function skipReason(state, orderId, order) {
  * Journal path: fetch one order, skip it if it needs no sync, else load its
  * per-order journal and send it to EBS.
  *
- * @returns {Promise<{ outcome: 'synced' | 'skipped' | 'failed' | 'deferred', reason?: string }>}
+ * 'retry': reading the order or its journal failed; nothing was sent.
+ *
+ * @returns {Promise<{ outcome: 'synced' | 'skipped' | 'retry' | 'failed' | 'deferred', reason?: string, stopRun?: boolean }>}
  */
 async function processOrder(runCtx, orderId) {
   const { params, log, state } = runCtx;
@@ -378,7 +418,7 @@ async function processOrder(runCtx, orderId) {
     order = await getOrder(params, orderId);
   } catch (fetchErr) {
     log.warn(`[ebs-sync] Could not fetch order ${orderId}: ${fetchErr.message}`);
-    return { outcome: 'skipped', reason: 'order-fetch-failed' };
+    return { outcome: 'retry', reason: 'order-fetch-failed' };
   }
   if (!order) {
     log.warn(`[ebs-sync] Order ${orderId} not found — skipping.`);
@@ -402,11 +442,10 @@ async function processOrder(runCtx, orderId) {
     await updateOrderCustom(params, orderId, { syncError: 'journal_fetch_failed' }).catch((patchErr) => {
       log.warn(`[ebs-sync] Failed to patch syncError for ${orderId}: ${patchErr.message}`);
     });
-    return { outcome: 'skipped', reason: 'journal-fetch-failed' };
+    return { outcome: 'retry', reason: 'journal-fetch-failed' };
   }
 
-  const { outcome } = await sendOrder(runCtx, orderId, order, orderJournal);
-  return { outcome };
+  return sendOrder(runCtx, orderId, order, orderJournal);
 }
 
 /**
@@ -418,7 +457,10 @@ async function processOrder(runCtx, orderId) {
  * The order was not accepted by EBS and gets no syncError; it is retried on a
  * later run.
  *
- * @returns {Promise<{ outcome: 'synced' | 'failed' | 'deferred', syncError?: string }>}
+ * stopRun: EBS accepted the order but no marker could be stored; the caller
+ * must not send anything else in this run.
+ *
+ * @returns {Promise<{ outcome: 'synced' | 'failed' | 'deferred', syncError?: string, stopRun?: boolean }>}
  */
 async function sendOrder(runCtx, orderId, order, orderJournal) {
   const {
@@ -491,15 +533,12 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
       }
     }
 
-    await logOrderSync(params, {
-      action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
-    }).catch((logErr) => {
-      log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
-    });
-
-    // EBS has the order now. From here on, never send it again. If the
+    // EBS has the order now. From here on, never send it again. Store that
+    // first (syncedAt, else a pending update in state), before any other I/O:
+    // a run killed in between would resend the order on the next run. If the
     // syncedAt patch fails, keep it in state and retry only the patch.
     const syncedAt = new Date().toISOString();
+    let stopRun = false;
     const patchErr = await markOrderSynced(params, orderId, syncedAt, log);
     if (patchErr) {
       state.pendingCustomUpdates[orderId] = {
@@ -513,10 +552,20 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
         errorInfo(patchErr),
       );
       // Persist now so a crash later in this run can't cause the order to be resent.
-      await saveState({ pendingCustomUpdates: state.pendingCustomUpdates }).catch((saveErr) => {
-        log.error(`[ebs-sync] Failed to persist pending custom update for ${orderId}`, errorInfo(saveErr));
-      });
+      const saveErr = await savePendingUpdates(state, log);
+      if (saveErr) {
+        // Nothing durable says EBS has this order. Stop sending; the final
+        // state save at the end of the run is the last chance to store it.
+        stopRun = true;
+        log.error(`[ebs-sync] ORDER ${orderId} IS IN EBS BUT NOT MARKED SYNCED (custom patch and state save failed). Stopping the run; if the next run resends it, EBS gets a duplicate.`, errorInfo(saveErr));
+      }
     }
+
+    await logOrderSync(params, {
+      action: 'order-sync', id: orderId, status: ebsResult.status, xml: ebsResult.xml,
+    }).catch((logErr) => {
+      log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
+    });
 
     // Queue the inventory decrement only AFTER syncedAt / the pending update is
     // persisted. Queueing earlier would sit inside the window where a crash
@@ -526,7 +575,11 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     // the outbox write loses the queue write, but the deltas are in the info
     // log above for manual recovery. Still per order (not in finally), so a
     // run killed at the action timeout keeps every order queued before it.
-    if (inventoryDeltas.length) {
+    // Not when stopRun: then the next run will most likely resend the order
+    // and queue it itself; queueing here too would decrement twice.
+    if (inventoryDeltas.length && stopRun) {
+      log.error(`[ebs-sync] INVENTORY NOT QUEUED for ${orderId} (no sync marker stored). If the order is not resent, apply manually: ${JSON.stringify(inventoryDeltas)}`);
+    } else if (inventoryDeltas.length) {
       summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
     }
 
@@ -537,7 +590,7 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     summary.processedOrders.push(orderId);
     summary.lastProcessedOrderId = orderId;
     summary.lastError = null;
-    return { outcome: 'synced' };
+    return { outcome: 'synced', ...(stopRun ? { stopRun } : {}) };
   }
 
   const errStack = lastErr?.stack || String(lastErr);
@@ -646,6 +699,24 @@ async function markOrderSynced(params, orderId, syncedAt, log) {
       if (attempt < CUSTOM_UPDATE_RETRIES) {
         await sleep(CUSTOM_UPDATE_BASE_DELAY_MS * attempt);
       }
+    }
+  }
+  return lastErr;
+}
+
+/**
+ * Persist state.pendingCustomUpdates, retrying once.
+ * @returns {Promise<Error | null>} null on success, or the last error
+ */
+async function savePendingUpdates(state, log) {
+  let lastErr = null;
+  for (let attempt = 1; attempt <= PENDING_SAVE_RETRIES; attempt++) {
+    try {
+      await saveState({ pendingCustomUpdates: state.pendingCustomUpdates });
+      return null;
+    } catch (err) {
+      lastErr = err;
+      log.warn(`[ebs-sync] Saving pending custom updates attempt ${attempt}/${PENDING_SAVE_RETRIES} failed`, errorInfo(err));
     }
   }
   return lastErr;
