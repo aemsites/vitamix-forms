@@ -826,7 +826,7 @@ describe('unreadable orders', () => {
 
     // newer orders keep syncing while it is held
     api.addOrder({ id: 'synth-newer', completedAt: T0 + 60 * MIN });
-    const held = RETRY_HOLD_MAX_MS - 10 * MIN; // last run where the entry is still within the limit
+    const held = RETRY_HOLD_MAX_MS - 5 * MIN; // last run before reads have failed for the limit
     await runEvery5Min(T0 + 5 * MIN, T0 + held, {});
     expect(sent).toEqual(['synth-newer']);
     expect(persisted().since).toBe(iso(T0 - 10 * MIN));
@@ -841,18 +841,83 @@ describe('unreadable orders', () => {
   });
 
   test('stay held while the report cannot be delivered', async () => {
-    api.addOrder({ id: 'synth-stuck2', completedAt: T0 - RETRY_HOLD_MAX_MS - 10 * MIN });
-    fakeState.store.state = { since: iso(T0 - RETRY_HOLD_MAX_MS - 15 * MIN) };
+    api.addOrder({ id: 'synth-stuck2', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = {
+      since: iso(T0 - 15 * MIN),
+      readFailures: { 'synth-stuck2': { since: iso(T0 - RETRY_HOLD_MAX_MS), reportedAt: null } },
+    };
     api.failures.getOrder = () => true;
     api.failures.opsLog = 1;
 
     const first = await scheduledRun({});
     expect(first.releasedOrders).toBeUndefined();
-    expect(first.nextSince).toBe(iso(T0 - RETRY_HOLD_MAX_MS - 10 * MIN));
+    expect(first.nextSince).toBe(iso(T0 - 10 * MIN));
 
     at(T0 + 5 * MIN);
     const second = await scheduledRun({});
     expect(second.releasedOrders).toEqual(['synth-stuck2']);
+  });
+
+  test('a long outage reports each released order once, and retries it until it reads', async () => {
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    for (let t = T0; t < T0 + 6 * 60 * MIN; t += 10 * MIN) api.addOrder({ id: `synth-o${(t - T0) / MIN}`, completedAt: t });
+    api.failures.getOrder = () => true;
+
+    await runEvery5Min(T0, T0 + 6 * 60 * MIN, {});
+
+    const reported = api.opsLog.filter((e) => e.reason === 'unreadable').flatMap((e) => e.orderIds);
+    expect(reported.length).toBeGreaterThan(0);
+    expect(new Set(reported).size).toBe(reported.length); // never twice
+    // released orders are batched: at most one report per hour (here: at +4h and +5h, +6h)
+    expect(api.opsLog.filter((e) => e.reason === 'unreadable').length).toBeLessThanOrEqual(3);
+    // every reported order had been failing for the full limit
+    const { readFailures } = persisted();
+    expect(Object.values(readFailures).every((f) => Date.parse(f.since) >= T0)).toBe(true);
+
+    // reads recover: everything still in the window is sent, including released ones there
+    api.failures.getOrder = null;
+    at(T0 + 6 * 60 * MIN + 5 * MIN);
+    await scheduledRun({});
+    expect(persisted().readFailures).toEqual({});
+    expect(sent.length).toBeGreaterThan(0);
+  });
+
+  test('catch-up after an outage: old entries are not released on their first read failure', async () => {
+    api.addOrder({ id: 'synth-old-entry', completedAt: T0 - 6 * 60 * MIN });
+    fakeState.store.state = { since: iso(T0 - 6 * 60 * MIN - 5 * MIN) };
+    api.failures.getOrder = () => true;
+
+    const body = await scheduledRun({});
+
+    expect(body.releasedOrders).toBeUndefined();
+    expect(body.nextSince).toBe(iso(T0 - 6 * 60 * MIN));
+    expect(api.opsLog.filter((e) => e.reason === 'unreadable')).toEqual([]);
+  });
+
+  test('manual backfills never release: nextSince stays on the order', async () => {
+    api.addOrder({ id: 'synth-manual-fail', completedAt: T0 - 10 * 60 * MIN });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    api.failures.getOrder = () => true;
+
+    const { body } = await manualRun({ since: iso(T0 - 10 * 60 * MIN - 5 * MIN), duration: 30 });
+
+    expect(body.nextSince).toBe(iso(T0 - 10 * 60 * MIN));
+    expect(body.releasedOrders).toBeUndefined();
+    expect(persisted().lastManualRun.retryOrders).toEqual(['synth-manual-fail']);
+    expect(persisted().readFailures).toBeUndefined();
+  });
+
+  test('lastError from read failures is cleared once reads work again', async () => {
+    api.addOrder({ id: 'synth-le', completedAt: T0 - 10 * MIN, custom: { syncedAt: iso(T0 - 9 * MIN) } });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    api.failures.getOrder = () => true;
+    await scheduledRun({});
+    expect(persisted().lastError).toMatch(/^Could not read/);
+
+    api.failures.getOrder = null;
+    at(T0 + 5 * MIN);
+    await scheduledRun({});
+    expect(persisted()).toMatchObject({ status: 'idle', lastError: null });
   });
 });
 

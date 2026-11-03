@@ -81,9 +81,10 @@ export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
 export const AFTER_SEND_RESERVE_MS = 60_000;
 const PENDING_SAVE_RETRIES = 2;
 /**
- * How long an order whose reads keep failing may hold the cursor. Past this
- * (well beyond OVERLAP_MS) it is reported once and the cursor moves on; a
- * manual POST { orderId } sends it later.
+ * How long an order's reads may keep failing (measured from the first failure,
+ * in state.readFailures) while it holds the cursor. Past this it is reported
+ * once and the cursor moves on; a manual POST { orderId } sends it later.
+ * Manual runs never release: their nextSince stays on the order.
  */
 export const RETRY_HOLD_MAX_MS = 4 * 60 * 60 * 1000; // early alerts: INCIDENT_ALERT_AFTER_MS
 /**
@@ -93,6 +94,7 @@ export const RETRY_HOLD_MAX_MS = 4 * 60 * 60 * 1000; // early alerts: INCIDENT_A
 export const INCIDENT_ALERT_AFTER_MS = 30 * 60 * 1000;
 /** ...and then at most this often while they last. */
 export const INCIDENT_REPEAT_MS = 60 * 60 * 1000;
+const READ_FAILURE_ERROR_PREFIX = 'Could not read ';
 /** Order states that must never be sent, whatever the journal says. */
 const NEVER_SEND_STATES = new Set(['cancelled', 'delivery_returned']);
 const CUSTOM_UPDATE_RETRIES = 3;
@@ -224,7 +226,9 @@ export async function run(params) {
     // ── 3. Process each order ──────────────────────────────────────────
     let stoppedAt = -1; // index of the first order not handled on deadline
     let firstRetryAt = -1; // index of the first order whose reads failed (held)
-    const released = []; // indexes of unreadable orders too old to keep holding the cursor
+    const released = []; // indexes of orders unreadable for RETRY_HOLD_MAX_MS, not reported yet
+    // Scheduled runs: when each order's reads started failing (state.readFailures).
+    const readFailures = manual ? {} : { ...(state.readFailures || {}) };
     let failed = false;
     for (let i = 0; i < queue.length; i++) {
       if (Date.now() > deadlineAt) {
@@ -236,6 +240,7 @@ export async function run(params) {
       }
 
       const { outcome, stopRun } = await processOrder(runCtx, queue[i].orderId);
+      if (outcome !== 'retry') delete readFailures[queue[i].orderId]; // readable again
       if (stopRun) {
         // EBS has the order but neither syncedAt nor the pending update could
         // be stored. Send nothing more; keep the cursor so it is re-read.
@@ -246,16 +251,21 @@ export async function run(params) {
       }
       if (outcome === 'retry') {
         // Order or journal read failed: keep going, but the cursor must not
-        // pass this order's entry (or it would never be read again) unless
-        // the entry is older than RETRY_HOLD_MAX_MS: then it is reported once
-        // and released, so one unreadable order can't stop the sync.
-        summary.retryOrders = [...(summary.retryOrders ?? []), queue[i].orderId];
-        const { ts } = queue[i];
-        if (!Number.isNaN(ts) && Date.now() - ts <= RETRY_HOLD_MAX_MS) {
-          if (firstRetryAt < 0) firstRetryAt = i;
-        } else {
-          released.push(i);
+        // pass this order's entry (or it would never be read again) until its
+        // reads have failed for RETRY_HOLD_MAX_MS (scheduled runs only): then
+        // it is reported once and released, so one unreadable order can't
+        // stop the sync. Its reads are still retried while it is in the window.
+        const { orderId } = queue[i];
+        summary.retryOrders = [...(summary.retryOrders ?? []), orderId];
+        if (!manual) {
+          readFailures[orderId] ??= { since: new Date().toISOString(), reportedAt: null };
         }
+        const failure = readFailures[orderId];
+        if (manual || Date.now() - Date.parse(failure.since) < RETRY_HOLD_MAX_MS) {
+          if (firstRetryAt < 0) firstRetryAt = i;
+        } else if (!failure.reportedAt) {
+          released.push(i);
+        } // else: released and reported earlier; don't hold, don't report again
         continue;
       }
       if (outcome === 'failed') {
@@ -277,12 +287,25 @@ export async function run(params) {
     if (released.length) {
       // Release only once the report is delivered: past the cursor these
       // orders are never read again. Otherwise keep holding and retry.
+      // At most one report per INCIDENT_REPEAT_MS: orders due in between
+      // keep holding the cursor and go out together in the next report.
+      const lastReport = Date.parse(state.releaseReportedAt);
+      const due = Number.isNaN(lastReport) || Date.now() - lastReport >= INCIDENT_REPEAT_MS;
       const ids = released.map((i) => queue[i].orderId);
-      if (await reportReleased(runCtx, ids)) {
+      if (due && await reportReleased(runCtx, ids)) {
         summary.releasedOrders = ids;
+        const at = new Date().toISOString();
+        state.releaseReportedAt = at;
+        for (const id of ids) readFailures[id].reportedAt = at;
       } else if (firstRetryAt < 0 || released[0] < firstRetryAt) {
         [firstRetryAt] = released;
       }
+    }
+    if (!manual) {
+      // Only orders still in the read window can fail again; forget the rest.
+      const inQueue = new Set(queue.map((q) => q.orderId));
+      for (const id of Object.keys(readFailures)) if (!inQueue.has(id)) delete readFailures[id];
+      state.readFailures = readFailures;
     }
 
     // ── 4. Cursor ──────────────────────────────────────────────────────
@@ -327,9 +350,10 @@ export async function run(params) {
         // Reads failed: visible in GET even when nothing else went wrong (an
         // expired orders token makes every order a retry and stops the cursor).
         state.status = 'error';
-        state.lastError = `Could not read ${summary.retryOrders.length} order(s) or their journals: ${summary.retryOrders.join(', ')}`;
+        state.lastError = `${READ_FAILURE_ERROR_PREFIX}${summary.retryOrders.length} order(s) or their journals: ${summary.retryOrders.join(', ')}`;
       } else {
         state.status = 'idle';
+        if (state.lastError?.startsWith(READ_FAILURE_ERROR_PREFIX)) state.lastError = null;
       }
       await trackIncident(runCtx, 'read_failures', summary.retryOrders?.length > 0, {
         error: `Order or order-journal reads have been failing for ebs-sync; affected orders are retried every run (cursor held up to ${RETRY_HOLD_MAX_MS / 3_600_000}h).`,
