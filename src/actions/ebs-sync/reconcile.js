@@ -6,6 +6,10 @@
  * never lands, the order is never synced and nothing reports it. This pass
  * asks the orders API directly instead.
  *
+ * Disabled unless EBS_RECONCILE_ENABLED is "true". Listing all orders needs
+ * a token that may list orders (today: admin role only); enabling is tracked
+ * in #126.
+ *
  * At most once per RECONCILE_INTERVAL_MS (scheduled runs only):
  *   1. List orders in state payment_completed whose latest snapshot is between
  *      RECONCILE_LOOKBACK_MS and RECONCILE_MIN_AGE_MS old, without syncedAt or
@@ -61,6 +65,11 @@ const blocksReconcile = (syncError) => Boolean(syncError) && !RETRYABLE_SYNC_ERR
 function reconcileState(state) {
   const r = state.reconcile || {};
   return { lastRunAt: r.lastRunAt ?? null, alerted: { ...(r.alerted || {}) } };
+}
+
+/** Whether reconciliation is switched on for this deployment. */
+export function isReconcileEnabled(params) {
+  return String(params.EBS_RECONCILE_ENABLED ?? '').trim().toLowerCase() === 'true';
 }
 
 /** Whether a reconciliation pass is due (none yet, or the last one is an interval old). */

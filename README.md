@@ -24,13 +24,13 @@ Synchronizes completed commerce orders to Oracle EBS. Runs on a 5-minute cron sc
 
 The cursor moves to the end of the queried window when every order was handled. If the 9.5-minute deadline stops a run, it moves only to the first order not yet handled; if an order fails after all retries, it stays put.
 
-**Reconciliation** (scheduled runs, at most hourly): lists `payment_completed` orders updated between 30 minutes and 24 hours ago that have no `syncedAt` or `syncError`, straight from the orders API. This finds orders whose entry never reached the global journal. At most 20 are checked per pass; if the cap or the deadline stops a pass, the next run continues it. For each order found:
+**Reconciliation** (scheduled runs, at most hourly; **disabled** until `EBS_RECONCILE_ENABLED` is `"true"`, see #126): lists `payment_completed` orders updated between 30 minutes and 24 hours ago that have no `syncedAt` or `syncError`, straight from the orders API. This finds orders whose entry never reached the global journal. At most 20 are checked per pass; if the cap or the deadline stops a pass, the next run continues it. For each order found:
 
 - its per-order journal has `payment_completed` from the last 6 hours: sent to EBS, then reported
 - no `payment_completed` entry: reported once, not sent, and checked again each pass (sent once the entry shows up)
 - completed more than 6 hours ago: reported once, not sent. EBS has no duplicate protection, so someone checks EBS first, then runs a manual backfill.
 
-Reports go to the operations log as `order-sync` events with `source: "ebs-sync-reconcile"`, a `reason` and an `error`, which raises an alert. The orders token needs `orders:read` and the admin role to list orders. If the list call fails, that is reported too (at most hourly).
+Reports go to the operations log as `order-sync` events with `source: "ebs-sync-reconcile"`, a `reason` and an `error`, which raises an alert. Listing a site's orders currently requires the admin role, which service tokens can't carry, so the pass stays off until the orders token can list orders (#126). If the list call fails, that is reported too (at most hourly).
 
 **Supported payment methods**: Credit card (Chase), PayPal, Apple Pay (Chase wallet), Affirm.
 
@@ -368,6 +368,7 @@ Production deployments use semantic-release to version and tag releases automati
 | `EBS_API_KEY` | Production EBS API key |
 | `EBS_API_KEY_STAGE` | Stage EBS API key |
 | `PROXY_TOKEN` | Bearer token for the static-IP proxy |
+| `EBS_RECONCILE_ENABLED` | `"true"` turns on hourly order reconciliation. Not wired in `app.config.yaml` yet, so it is off (#126). |
 
 ### recipe-notify package
 

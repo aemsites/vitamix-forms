@@ -24,7 +24,8 @@
  *   5. Checks a 9.5-minute deadline before each order
  *   6. Cursor (see nextCursor): completed → the query's `until`; max-retries →
  *      unchanged; deadline → the terminal entry of the first order not handled
- *   7. Scheduled runs only, at most hourly: reconciliation (reconcile.js) lists
+ *   7. Scheduled runs only, at most hourly, and only when EBS_RECONCILE_ENABLED
+ *      is "true" (off for now, see #126): reconciliation (reconcile.js) lists
  *      recently completed orders without syncedAt / syncError straight from the
  *      orders API, so orders missing from the global journal are still found;
  *      each one found is reported to the operations log
@@ -51,7 +52,9 @@ import {
 } from './state.js';
 import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
 import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
-import { reconcileOrders, isReconcileDue, RECONCILE_MIN_REMAINING_MS } from './reconcile.js';
+import {
+  reconcileOrders, isReconcileDue, isReconcileEnabled, RECONCILE_MIN_REMAINING_MS,
+} from './reconcile.js';
 import { syncOrderToEbs, isRetriableError } from './ebs.js';
 import { errorInfo } from '../../utils.js';
 
@@ -183,7 +186,9 @@ export async function run(params) {
     }
 
     // ── 5. Journal-independent reconciliation (scheduled runs, hourly) ─
-    if (manual) {
+    if (!isReconcileEnabled(params)) {
+      summary.reconcile = { skipped: 'disabled' };
+    } else if (manual) {
       summary.reconcile = { skipped: 'manual' };
     } else if (summary.haltReason === 'deadline' || Date.now() > deadlineAt - RECONCILE_MIN_REMAINING_MS) {
       summary.reconcile = { skipped: 'deadline' };

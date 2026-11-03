@@ -60,8 +60,11 @@ function at(ms) {
   jest.setSystemTime(ms);
 }
 
-async function scheduledRun() {
-  return (await main({ ...PARAMS })).body;
+/** Reconciliation ships disabled; most tests here exercise it switched on. */
+const ON = { EBS_RECONCILE_ENABLED: 'true' };
+
+async function scheduledRun(extra = ON) {
+  return (await main({ ...PARAMS, ...extra })).body;
 }
 
 /** Scheduled runs every 5 minutes in [from, to]. Returns the bodies. */
@@ -78,6 +81,7 @@ async function runEvery5Min(from, to) {
 async function manualRun(body) {
   const res = await main({
     ...PARAMS,
+    ...ON,
     SYNC_STATUS_TOKEN: 'secret',
     __ow_method: 'post',
     __ow_headers: { authorization: 'Bearer secret' },
@@ -103,6 +107,31 @@ beforeEach(() => {
 afterEach(() => {
   jest.useRealTimers();
   delete global.fetch;
+});
+
+describe('reconciliation switch', () => {
+  test('is off unless EBS_RECONCILE_ENABLED is "true": no listing, no reports', async () => {
+    api.addOrder({ id: 'synth-lost-off', completedAt: T0 - 2 * 60 * MIN, visibleAt: Infinity });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    for (const extra of [{}, { EBS_RECONCILE_ENABLED: '' }, { EBS_RECONCILE_ENABLED: 'false' }]) {
+      // eslint-disable-next-line no-await-in-loop
+      const body = await scheduledRun(extra);
+      expect(body.reconcile).toEqual({ skipped: 'disabled' });
+    }
+    expect(api.requests.some((r) => r.path === '/orders')).toBe(false);
+    expect(api.opsLog).toEqual([]);
+    expect(persisted().reconcile).toBeUndefined();
+  });
+
+  test('journal-pass fixes work with reconciliation off', async () => {
+    api.addOrder({ id: 'synth-late-off', completedAt: T0 + 14 * MIN, visibleAt: T0 + 32 * MIN });
+    for (let t = T0; t <= T0 + 60 * MIN; t += 5 * MIN) {
+      at(t);
+      // eslint-disable-next-line no-await-in-loop
+      await scheduledRun({});
+    }
+    expect(sent).toEqual(['synth-late-off']);
+  });
 });
 
 describe('delayed journal buckets', () => {
