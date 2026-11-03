@@ -18,6 +18,8 @@ const PROXY_URL = (org, site) => `https://lqmig3v5eb.execute-api.us-east-1.amazo
 export async function proxyFetch(ctx, url, opts) {
   const proxyUrl = PROXY_URL(ctx.env.ORG, ctx.env.SITE);
   console.log('proxy fetching:', opts.method ?? 'GET', url, '=>', proxyUrl);
+  // `signal` aborts our request to the proxy; it is not part of the envelope.
+  const { signal, ...rest } = opts ?? {};
   const resp = await fetch(proxyUrl, {
     method: 'POST',
     headers: {
@@ -26,8 +28,9 @@ export async function proxyFetch(ctx, url, opts) {
     },
     body: JSON.stringify({
       url,
-      ...(opts ?? {}),
+      ...rest,
     }),
+    ...(signal ? { signal } : {}),
   })
   if (!resp.ok) {
     // The proxy sets `x-upstream-status` to the status it got back from the target.

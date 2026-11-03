@@ -41,8 +41,11 @@ const getOrder = jest.fn(async (_p, id) => ({ id, state: 'payment_completed', cu
 const updateOrderCustom = jest.fn();
 const logOrderSync = jest.fn(async () => {});
 
+const listOrders = jest.fn(async () => []);
+
 jest.unstable_mockModule('../../src/actions/ebs-sync/commerce.js', () => ({
-  getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync,
+  getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync, listOrders,
+  OVERLAP_MS: 60 * 60 * 1000,
 }));
 
 const syncOrderToEbs = jest.fn(async () => ({ status: 200, xml: '<xml/>' }));

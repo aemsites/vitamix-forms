@@ -108,7 +108,7 @@ application:
               require-adobe-auth: false
               final: true
             limits:
-              timeout: 600000  # 10 minutes (ms) — must match DEADLINE_MS in sync.js
+              timeout: 600000  # 10 minutes (ms) — must match ACTION_TIMEOUT_MS in sync.js
               memory: 256
               concurrency: 1   # platform-level guard: only one active invocation per container
             inputs:

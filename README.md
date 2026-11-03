@@ -20,7 +20,21 @@ Returns the currently deployed version (`{ "version": "..." }`). Used by post-de
 
 Synchronizes completed commerce orders to Oracle EBS. Runs on a 5-minute cron schedule and is also available as an HTTP endpoint for status checks and manual triggers.
 
-**Scheduled mode** (every 5 min): Reads the global orders journal since the last cursor, filters to terminal events (`payment_completed` / `payment_cancelled`), and for each completed order builds a SOAP XML payload and POSTs it to EBS via a static-IP proxy. Cancelled orders are skipped. A 15-minute overlap is applied to journal queries to catch late-arriving entries.
+**Scheduled mode** (every 5 min): Reads the global orders journal since the last cursor, filters to terminal events (`payment_completed` / `payment_cancelled`), and for each completed order builds a SOAP XML payload and POSTs it to EBS via a static-IP proxy. Cancelled and already-synced orders are skipped. Each query re-reads 60 minutes before the cursor to catch journal entries that land late.
+
+The cursor moves to the end of the queried window when every order was handled. If the 9.5-minute deadline stops a run, it moves only to the first order not yet handled; if an order fails after all retries, it stays put. If reading an order or its journal fails, the other orders are still processed but the cursor stops at that order's entry, so it is read again once the API recovers. The run's `status` becomes `error` with the order ids in `lastError`.
+
+**Incident alerts:** if order reads keep failing (`read_failures`) or scheduled runs keep failing outright (`run_failing`, e.g. the journal API is down), an `order-sync` event with `source: "ebs-sync"` and an `error` is sent to the operations log, which alerts. It goes out once the problem has lasted 30 minutes (shorter blips stay quiet), then hourly while it lasts. Retrying continues the whole time, and the incident clears on the first run without the problem. GET shows open incidents under `incidents`.
+
+After an order's reads have failed for 4 hours (counted from the first failure), it is reported once to the operations log (`reason: "unreadable"`, which alerts; orders due within the same hour are batched into one report) and the cursor moves on. Its reads are still retried while it is in the read window. Send it later with a manual POST `{ "orderId" }`. Manual backfills never move past an unreadable order: `nextSince` stays on it. Each EBS request is aborted after 60 seconds (commerce API requests after 10), and no attempt starts unless there is time for it plus 60 seconds to record the result before the 10-minute action timeout; an order that misses that is left for the next run, like a deadline stop. After EBS accepts an order, `syncedAt` (or, if that patch fails, a pending update in state) is stored before anything else; if neither can be stored, the run stops sending (`haltReason: "state-unavailable"`), keeps the cursor and doesn't queue that order's inventory.
+
+**Reconciliation** (scheduled runs, at most hourly; **disabled** until `EBS_RECONCILE_ENABLED` is `"true"`, see #126): lists `payment_completed` orders updated between 70 minutes (the journal look-back plus two runs) and 24 hours ago that have no `syncedAt` or `syncError`, straight from the orders API. This finds orders whose entry never reached the global journal. It is skipped when the journal pass just failed. At most 20 are checked per pass, never-checked first, then least recently checked; if the cap or the deadline leaves never-checked orders, the next run continues the pass. For each order found:
+
+- its per-order journal has `payment_completed` from the last 6 hours: sent to EBS, then reported
+- no `payment_completed` entry: reported once, not sent, and checked again each pass (sent once the entry shows up)
+- completed more than 6 hours ago: reported once, not sent. EBS has no duplicate protection, so someone checks EBS first, then sends it with a manual POST `{ "orderId" }`.
+
+Reports go to the operations log as `order-sync` events with `source: "ebs-sync-reconcile"`, a `reason` and an `error`, which raises an alert. Listing a site's orders currently requires the admin role, which service tokens can't carry, so the pass stays off until the orders token can list orders (#126). If the list call fails, that is reported too (at most hourly).
 
 **Supported payment methods**: Credit card (Chase), PayPal, Apple Pay (Chase wallet), Affirm.
 
@@ -214,7 +228,7 @@ GET /ebs-sync/ebs-sync
 Authorization: Bearer <SYNC_STATUS_TOKEN>
 ```
 
-Returns JSON with current sync state: `since`, `lastProcessedOrderId`, `lastRun`, `status`, `processedCount`, `failedCount`, `lastError`.
+Returns JSON with current sync state: `since`, `lastProcessedOrderId`, `lastRun`, `status`, `processedCount`, `failedCount`, `lastError`, `lastManualRun` (summary of the last manual POST, including `nextSince`), `reconcile` (`lastRunAt`, `reportedOrderIds`). `status` and `lastError` describe scheduled runs only.
 
 ### EBS Sync Manual Trigger
 
@@ -226,11 +240,20 @@ Content-Type: application/json
 {
   "since": "<ISO 8601>",
   "until": "<ISO 8601>",   // optional upper bound
-  "duration": <minutes>     // optional, alternative to "until"
+  "duration": <minutes>,    // optional, alternative to "until"
+  "persistCursor": false     // optional, default false
 }
 ```
 
-Triggers a sync run starting from the given timestamp. `since` is required. Provide `until` or `duration` (not both) to cap the query window; omit both to scan up to the current time. The cursor advances normally after a successful run.
+Runs a backfill of the journal pass over the window (the 60-minute look-back before `since` still applies). `since` is required. Provide `until` or `duration` (not both) to cap the window; omit both to scan up to the current time. Manual runs never run reconciliation.
+
+- **Cursor:** the scheduled cursor is not changed unless `persistCursor` is `true`; then it is set to `nextSince`.
+- **`nextSince`** is how far the window was handled: `until` when complete, the first unhandled order's terminal entry when the deadline stopped the run, or `since` after a max-retries halt. POST again from `nextSince` to finish a long backfill. A long run can outlive the HTTP response, so the summary is also saved: read it from GET `lastManualRun` (check `finishedAt`).
+- **Duplicates:** orders already synced are skipped, but every other completed order in the window is sent to EBS, which has no duplicate protection. Check that the orders were not entered in EBS by hand.
+- **Lock:** if another run holds the lock, the response is `{ "skipped": true }` and nothing changes. Scheduled runs start at :00/:05 and usually finish within seconds, so POST between :X1 and :X4.
+- **Status:** a manual run doesn't change the scheduled `status` / `lastError`.
+
+**One order:** `{ "orderId": "<order id>" }` (no other fields) runs the same checks and send for that order without the global journal, for an order whose global journal entry is missing. The order's own journal needs its `payment_completed` entry, otherwise the order is skipped without any change. Synced orders, orders with a pending `syncedAt` update, and orders in state `payment_cancelled`, `cancelled` or `delivery_returned` are skipped too. An order with `syncError` is retried. The cursor is not changed.
 
 ### Recipe Notify Status
 
@@ -352,6 +375,7 @@ Production deployments use semantic-release to version and tag releases automati
 | `EBS_API_KEY` | Production EBS API key |
 | `EBS_API_KEY_STAGE` | Stage EBS API key |
 | `PROXY_TOKEN` | Bearer token for the static-IP proxy |
+| `EBS_RECONCILE_ENABLED` | `"true"` turns on hourly order reconciliation. Not wired in `app.config.yaml` yet, so it is off (#126). |
 
 ### recipe-notify package
 
