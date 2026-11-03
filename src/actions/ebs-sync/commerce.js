@@ -31,7 +31,8 @@ export const OVERLAP_MS = 60 * 60 * 1000;
  */
 export const COMMERCE_TIMEOUT_MS = 10_000;
 const timeout = () => AbortSignal.timeout(COMMERCE_TIMEOUT_MS);
-const JOURNAL_RANGE_TIMEOUT_MS = 60_000;
+/** Range reads (journal windows, the orders listing): many objects, read before any send. */
+const RANGE_READ_TIMEOUT_MS = 60_000;
 
 /**
  * Fetch all journal entries since the given ISO timestamp, chunking the
@@ -98,8 +99,7 @@ async function fetchJournalChunk(baseUrl, token, since, until, log) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
-    // Range reads touch many buckets; before any order is sent, so not part of the post-send budget.
-    signal: AbortSignal.timeout(JOURNAL_RANGE_TIMEOUT_MS),
+    signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -256,7 +256,7 @@ export async function listOrders(params, { since, until, state }) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
-    signal: timeout(),
+    signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),
   });
 
   if (!res.ok) {
