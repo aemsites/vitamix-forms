@@ -13,11 +13,30 @@
  *
  *   HTTP POST (web action) — manual trigger
  *     Requires:  Authorization: Bearer {SYNC_STATUS_TOKEN}
- *     Body:      { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes> }
- *     Runs the sync using the provided timestamp as the cursor start.
- *     Optionally cap the window with `until` (timestamp) or `duration` (minutes
- *     from since). Only one of until/duration may be provided; omit both to
- *     scan up to the current time. Cursor advances normally after a successful run.
+ *     Body:      { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes>,
+ *                  "persistCursor"?: <boolean> }
+ *     Backfill: runs the journal pass over [since, until] (the usual 60-min
+ *     look-back before `since` applies). Optionally cap the window with `until`
+ *     (timestamp) or `duration` (minutes from since); only one may be provided;
+ *     omit both to scan up to the current time.
+ *     The persisted (scheduled) cursor is NOT changed unless `persistCursor` is
+ *     true, in which case it is set to the response's `nextSince`. `nextSince`
+ *     is where the window was fully handled up to: `until` when complete, the
+ *     first unhandled order's terminal entry on the deadline, `since` on a
+ *     max-retries halt. POST again from `nextSince` to finish a long backfill.
+ *     Manual runs never run the reconciliation pass. Orders already synced are
+ *     skipped; anything else in the window IS sent to EBS, which has no
+ *     duplicate protection.
+ *
+ *     Body:      { "orderId": "<order id>" }
+ *     Single order: the journal pass's checks and send for one order, without
+ *     the global journal (for orders whose global journal entry is missing).
+ *     Needs a payment_completed entry in the order's own journal. Skips synced,
+ *     pending and cancelled orders; retries orders with custom.syncError.
+ *
+ *     Manual runs leave the scheduled status / lastError alone. Their summary is
+ *     also saved and shown by GET as `lastManualRun`, because the HTTP response
+ *     of a long run can time out before the run finishes.
  */
 
 import { run } from './sync.js';
@@ -73,6 +92,12 @@ async function handleStatusRequest(params) {
     processedCount: state.processedCount,
     failedCount: state.failedCount,
     lastError: state.lastError,
+    lastManualRun: state.lastManualRun ?? null,
+    incidents: state.incidents ?? {},
+    reconcile: {
+      lastRunAt: state.reconcile?.lastRunAt ?? null,
+      reportedOrderIds: Object.keys(state.reconcile?.alerted ?? {}),
+    },
     ebs: describeEbsConfig(params),
   });
 }
@@ -115,11 +140,14 @@ function describeEbsConfig(params) {
 /**
  * POST — manually trigger a sync run.
  * Body: { "since": "<ISO 8601>", "until"?: "<ISO 8601>", "duration"?: <minutes> }
+ *    or { "orderId": "<order id>" }
  *
  * `since` is required — overrides the persisted cursor for this run only.
  * `until`  — optional upper bound timestamp (defaults to now).
  * `duration` — optional window in minutes from `since` (e.g. 30 → since + 30 min).
  * Only one of `until` / `duration` may be provided.
+ * `persistCursor` — optional boolean (default false): save `nextSince` as the
+ * scheduled cursor. Without it the scheduled cursor is left untouched.
  */
 async function handleTriggerRequest(params) {
   const authErr = requireAuth(params);
@@ -129,6 +157,18 @@ async function handleTriggerRequest(params) {
   //   application/json → parsed and merged into params directly
   //   other / raw      → base64-encoded in __ow_body
   const body = parseBody(params);
+
+  if (body.orderId !== undefined && body.orderId !== null) {
+    const extra = ['since', 'until', 'duration', 'persistCursor']
+      .filter((k) => body[k] !== undefined && body[k] !== null);
+    if (extra.length) {
+      return jsonResponse(400, { error: `"orderId" can't be combined with ${extra.map((k) => `"${k}"`).join(', ')}` });
+    }
+    if (typeof body.orderId !== 'string' || !body.orderId.trim()) {
+      return jsonResponse(400, { error: '"orderId" must be a non-empty string' });
+    }
+    return run({ ...params, orderIdOverride: body.orderId.trim() });
+  }
 
   const { since } = body;
   if (!since || isNaN(Date.parse(since))) {
@@ -156,12 +196,19 @@ async function handleTriggerRequest(params) {
     untilOverride = new Date(new Date(since).getTime() + minutes * 60_000).toISOString();
   }
 
-  return run({ ...params, sinceOverride: since, untilOverride });
+  const { persistCursor = false } = body;
+  if (typeof persistCursor !== 'boolean') {
+    return jsonResponse(400, { error: '"persistCursor" must be a boolean' });
+  }
+
+  return run({
+    ...params, sinceOverride: since, untilOverride, persistCursor,
+  });
 }
 
 /** Extract body fields from params (auto-parsed JSON) or __ow_body (base64). */
 function parseBody(params) {
-  if (params.since) return params;
+  if (params.since || params.orderId) return params;
   if (!params.__ow_body) return {};
   try {
     return JSON.parse(Buffer.from(params.__ow_body, 'base64').toString('utf-8'));

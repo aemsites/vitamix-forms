@@ -1,16 +1,38 @@
 /**
  * Commerce API client for the EBS sync job.
  *
- * Wraps the four operations needed:
+ * Wraps the operations needed:
  *   1. Read the global orders journal — used to discover terminal events
  *      (payment_completed / payment_cancelled) and their orderIds
  *   2. Read the per-order journal for a specific order (complete entries)
  *   3. Fetch a single order by ID
  *   4. PATCH an order's custom data
+ *   5. List orders by state and time range (journal-independent reconciliation)
  */
 
 /** Journal API enforces a 12-hour max range. Stay safely under it. */
 const JOURNAL_CHUNK_HOURS = 11;
+
+/**
+ * How far before the cursor each journal query starts.
+ *
+ * Global journal buckets are written by an async pipeline and can land well
+ * after their entries' timestamps (18 min has been observed). An entry that
+ * lands after the cursor + overlap has moved past it is never seen, so keep
+ * this well above the observed latency. Already-synced orders in the overlap
+ * cost one order fetch each and are skipped.
+ */
+export const OVERLAP_MS = 60 * 60 * 1000;
+
+/**
+ * Every commerce API request is aborted after this long, so the time after an
+ * EBS send (syncedAt patch, operations log) is bounded; see
+ * AFTER_SEND_RESERVE_MS in sync.js.
+ */
+export const COMMERCE_TIMEOUT_MS = 10_000;
+const timeout = () => AbortSignal.timeout(COMMERCE_TIMEOUT_MS);
+/** Range reads (journal windows, the orders listing): many objects, read before any send. */
+const RANGE_READ_TIMEOUT_MS = 60_000;
 
 /**
  * Fetch all journal entries since the given ISO timestamp, chunking the
@@ -31,12 +53,6 @@ export async function getJournalEntries(params, since, log, until) {
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const baseUrl = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders/journal`;
 
-  // Look back 15 minutes before the cursor to catch late-arriving journal
-  // entries. The journal writer runs on its own ~10-minute cron, so entries
-  // can appear in the global index after the sync cursor has already advanced
-  // past their event timestamp. Already-synced orders are skipped cheaply via
-  // the custom.syncedAt check, so the overlap is harmless.
-  const OVERLAP_MS = 15 * 60 * 1000;
   const sinceDate = since
     ? new Date(new Date(since).getTime() - OVERLAP_MS)
     : new Date(Date.now() - 60 * 60 * 1000); // default: 1 hour ago
@@ -83,6 +99,7 @@ async function fetchJournalChunk(baseUrl, token, since, until, log) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${token}` },
+    signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),
   });
 
   if (!res.ok) {
@@ -113,6 +130,7 @@ export async function getOrder(params, orderId) {
 
   const res = await fetch(url, {
     headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+    signal: timeout(),
   });
 
   if (res.status === 404) return null;
@@ -144,6 +162,7 @@ export async function updateOrderCustom(params, orderId, custom) {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(custom),
+    signal: timeout(),
   });
 
   if (!res.ok) {
@@ -171,6 +190,7 @@ export async function logOrderSync(params, payload) {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
+    signal: timeout(),
   });
 
   if (!res.ok) {
@@ -202,6 +222,7 @@ export async function getOrderJournalEntries(params, orderId, since, until) {
 
   const res = await fetch(url.toString(), {
     headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+    signal: timeout(),
   });
 
   if (!res.ok) {
@@ -211,4 +232,38 @@ export async function getOrderJournalEntries(params, orderId, since, until) {
 
   const data = await res.json();
   return data.entries ?? [];
+}
+
+/**
+ * List orders in a given state whose latest snapshot was written in
+ * [since, until] (admin listing; the token needs `orders:read` and the admin
+ * role). Returns snapshot metadata only: `id`, `state`, `createdAt`,
+ * `updatedAt` and, when set, `syncedAt` / `syncError`.
+ *
+ * The endpoint returns the whole result in one response (no cursor), so
+ * callers must keep the range bounded.
+ *
+ * @param {object} params
+ * @param {{ since: string, until: string, state?: string }} query
+ * @returns {Promise<object[]>}
+ */
+export async function listOrders(params, { since, until, state }) {
+  const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
+  const url = new URL(`${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders`);
+  url.searchParams.set('since', since);
+  url.searchParams.set('until', until);
+  if (state) url.searchParams.set('state', state);
+
+  const res = await fetch(url.toString(), {
+    headers: { Authorization: `Bearer ${EDGE_COMMERCE_API_ORDERS_TOKEN}` },
+    signal: AbortSignal.timeout(RANGE_READ_TIMEOUT_MS),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => '');
+    throw new Error(`List orders API ${res.status}: ${body.slice(0, 200)}`);
+  }
+
+  const data = await res.json();
+  return Array.isArray(data.orders) ? data.orders : [];
 }
