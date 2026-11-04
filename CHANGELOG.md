@@ -1,3 +1,10 @@
+## [1.14.1](https://github.com/aemsites/vitamix-forms/compare/v1.14.0...v1.14.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **ebs-sync:** send coupon codes on every line item and one PromotionCode per coupon ([1fd2471](https://github.com/aemsites/vitamix-forms/commit/1fd2471c6d0df413b7b98ff4a5d3bd674767493f))
+
 # [1.14.0](https://github.com/aemsites/vitamix-forms/compare/v1.13.0...v1.14.0) (2026-11-04)
 
 
