@@ -128,6 +128,9 @@ application:
               # managed inventory: queue sold units for inventory-sync.
               # set "true" ONLY in the prod deploy env; unset in stage
               INVENTORY_SYNC_ENABLED: $INVENTORY_SYNC_ENABLED
+              # hourly reconciliation against the orders listing (needs orders:list
+              # on the orders token). "true" to enable; unset = off
+              EBS_RECONCILE_ENABLED: $EBS_RECONCILE_ENABLED
 
         triggers:
           ebs-sync-schedule:

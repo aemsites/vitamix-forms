@@ -99,6 +99,8 @@ jobs:
           EBS_API_KEY_STAGE: ${{ secrets.EBS_API_KEY_STAGE }}
           SYNC_STATUS_TOKEN: ${{ secrets.SYNC_STATUS_TOKEN_STAGE }}
           EDGE_COMMERCE_API_ORDERS_TOKEN: ${{ secrets.EDGE_COMMERCE_API_ORDERS_TOKEN_STAGE }}
+          # ebs-sync reconciliation: on when the secret is "true"; unset = off
+          EBS_RECONCILE_ENABLED: ${{ secrets.EBS_RECONCILE_ENABLED_STAGE }}
           EBS_JSON_BASE_URL: ${{ secrets.EBS_JSON_BASE_URL_STAGE }}
           EBS_JSON_BASE_URL_STAGE: ${{ secrets.EBS_JSON_BASE_URL_STAGE }}
           EBS_JSON_API_KEY: ${{ secrets.EBS_JSON_API_KEY_STAGE }}

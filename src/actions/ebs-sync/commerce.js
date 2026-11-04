@@ -235,19 +235,42 @@ export async function getOrderJournalEntries(params, orderId, since, until) {
 }
 
 /**
+ * Longest range listOrders accepts. The API doesn't validate since/until yet:
+ * a malformed or inverted range returns an empty 200, which would read as
+ * "nothing to reconcile", and a long one starts a read per day. Checked here
+ * until the API rejects these itself.
+ */
+export const LIST_ORDERS_MAX_RANGE_MS = 90 * 24 * 60 * 60 * 1000;
+
+/**
  * List orders in a given state whose latest snapshot was written in
- * [since, until] (admin listing; the token needs `orders:read` and the admin
- * role). Returns snapshot metadata only: `id`, `state`, `createdAt`,
- * `updatedAt` and, when set, `syncedAt` / `syncError`.
+ * [since, until] (the token needs `orders:list`). Returns snapshot metadata
+ * only: `id`, `state`, `createdAt`, `updatedAt` and, when set, `syncedAt` /
+ * `syncError`.
  *
  * The endpoint returns the whole result in one response (no cursor), so
- * callers must keep the range bounded.
+ * callers must keep the range bounded. It scans whole UTC creation days from
+ * `since`, so an order created before that day isn't returned.
+ *
+ * Throws on an invalid, inverted or too long range instead of calling the API.
  *
  * @param {object} params
  * @param {{ since: string, until: string, state?: string }} query
  * @returns {Promise<object[]>}
  */
 export async function listOrders(params, { since, until, state }) {
+  const sinceMs = Date.parse(since);
+  const untilMs = Date.parse(until);
+  if (Number.isNaN(sinceMs) || Number.isNaN(untilMs)) {
+    throw new Error(`List orders: invalid range since=${since} until=${until}`);
+  }
+  if (untilMs < sinceMs) {
+    throw new Error(`List orders: until (${until}) is before since (${since})`);
+  }
+  if (untilMs - sinceMs > LIST_ORDERS_MAX_RANGE_MS) {
+    throw new Error(`List orders: range ${since} – ${until} exceeds 90 days`);
+  }
+
   const { EDGE_COMMERCE_API_BASE, EDGE_COMMERCE_API_ORDERS_TOKEN, ORG, SITE } = params;
   const url = new URL(`${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/orders`);
   url.searchParams.set('since', since);
