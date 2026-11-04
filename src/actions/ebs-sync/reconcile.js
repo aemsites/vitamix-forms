@@ -6,9 +6,9 @@
  * never lands, the order is never synced and nothing reports it. This pass
  * asks the orders API directly instead.
  *
- * Disabled unless EBS_RECONCILE_ENABLED is "true". Listing all orders needs
- * a token that may list orders (today: admin role only); enabling is tracked
- * in #126.
+ * Disabled unless EBS_RECONCILE_ENABLED is "true" (set per deploy
+ * environment). Listing a site's orders needs `orders:list` on the orders
+ * token.
  *
  * At most once per RECONCILE_INTERVAL_MS (scheduled runs whose journal pass
  * didn't fail):

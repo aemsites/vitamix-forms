@@ -55,6 +55,7 @@ const {
 const {
   RECONCILE_MAX_ORDERS, RECONCILE_INTERVAL_MS, RECONCILE_MAX_AUTO_SYNC_AGE_MS, RECONCILE_MIN_AGE_MS,
 } = await import('../../src/actions/ebs-sync/reconcile.js');
+const { listOrders, LIST_ORDERS_MAX_RANGE_MS } = await import('../../src/actions/ebs-sync/commerce.js');
 
 const MIN = 60 * 1000;
 const T0 = Date.parse('2026-11-01T12:00:00.000Z');
@@ -1015,5 +1016,28 @@ describe('early incident alerts', () => {
     at(T0 + INCIDENT_ALERT_AFTER_MS + 5 * MIN);
     await scheduledRun({});
     expect(incidentAlerts('read_failures')).toHaveLength(1);
+  });
+});
+
+describe('orders listing range checks', () => {
+  const listCalls = () => api.requests.filter((r) => r.path === '/orders');
+
+  test('a valid range up to 90 days is listed', async () => {
+    api.addOrder({ id: 'synth-list', completedAt: T0 - 2 * 60 * MIN });
+    const orders = await listOrders(PARAMS, {
+      since: iso(T0 - LIST_ORDERS_MAX_RANGE_MS), until: iso(T0), state: 'payment_completed',
+    });
+    expect(orders.map((o) => o.id)).toEqual(['synth-list']);
+    expect(listCalls()).toHaveLength(1);
+  });
+
+  test.each([
+    ['an invalid since', 'not-a-date', iso(T0), /invalid range/],
+    ['an invalid until', iso(T0 - MIN), undefined, /invalid range/],
+    ['an inverted range', iso(T0), iso(T0 - MIN), /before since/],
+    ['a range over 90 days', iso(T0 - LIST_ORDERS_MAX_RANGE_MS - 1), iso(T0), /exceeds 90 days/],
+  ])('%s throws without calling the API', async (_name, since, until, message) => {
+    await expect(listOrders(PARAMS, { since, until })).rejects.toThrow(message);
+    expect(listCalls()).toEqual([]);
   });
 });
