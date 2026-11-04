@@ -38,7 +38,7 @@
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
  *   item.taxAmount               LineItem/Tax/@Amount       from item.taxAmount ('0.00' fallback)
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
- *   item.promotionCode           ns2:PromotionCode (item)   never emitted (gap — needs order schema)
+ *   applied coupon codes         ns2:PromotionCode (item)   every code on every line (Magento parity)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -737,6 +737,9 @@ function effectiveItemUnitPrice(item) {
 
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
+  // Magento stamped every applied coupon code on every line item (simple,
+  // bundle child and warranty), regardless of which lines it discounted.
+  const couponCodes = getAppliedCouponCodes(order);
 
   // Map warranty items by the product SKU they cover
   const warrantyBySku = new Map();
@@ -761,6 +764,7 @@ function buildLineItemsXml(order) {
       // parent line and stamped on every child line, mirroring the legacy
       // Magento sync. Warranty lines below intentionally omit it.
       const reasonCode = resolveVbndReasonCode(item);
+      const childPromotionCodes = reasonCode ? [reasonCode, ...couponCodes] : couponCodes;
       for (const child of item.bundleItems) {
         const hasWarranty = warrantyBySku.has(child.sku);
         const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
@@ -768,11 +772,11 @@ function buildLineItemsXml(order) {
         lines.push(buildLineItemXml(
           stripBundleSuffix(child.sku), child.quantity ?? 1,
           effectiveItemUnitPrice(child), child.taxAmount || '0.00', 'Each', serial,
-          reasonCode,
+          childPromotionCodes,
         ));
 
         if (hasWarranty) {
-          lines.push(buildWarrantyLineItemXml(warrantyBySku.get(child.sku), serial));
+          lines.push(buildWarrantyLineItemXml(warrantyBySku.get(child.sku), serial, couponCodes));
         }
       }
     } else {
@@ -783,11 +787,11 @@ function buildLineItemsXml(order) {
       lines.push(buildLineItemXml(
         item.sku || '', item.quantity ?? 1,
         effectiveItemUnitPrice(item), item.taxAmount || '0.00',
-        'Each', serial,
+        'Each', serial, couponCodes,
       ));
 
       if (hasWarranty) {
-        lines.push(buildWarrantyLineItemXml(warrantyBySku.get(item.sku), serial));
+        lines.push(buildWarrantyLineItemXml(warrantyBySku.get(item.sku), serial, couponCodes));
       }
     }
   }
@@ -804,17 +808,18 @@ function buildLineItemsXml(order) {
  * @param {string} tax - provisional tax amount.
  * @param {string} unitOfMeasure - `Each` or `Years`.
  * @param {string} serialNumber - warranty link serial, or `''`.
- * @param {string} [promotionCode] - VBND Discount Reason Code for virtual
- *   bundle child lines; omitted for simple products and warranty lines.
+ * @param {string[]} [promotionCodes] - one `<ns2:PromotionCode>` per entry:
+ *   the VBND Discount Reason Code (virtual bundle children only) followed by
+ *   the order's applied coupon codes.
  * @returns {string} the LineItem XML fragment.
  */
-function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, promotionCode = '') {
+function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, promotionCodes = []) {
   const serialEl = serialNumber
     ? `\n            <ns2:SerialNumber>${escapeXml(serialNumber)}</ns2:SerialNumber>`
     : '';
-  const promoEl = promotionCode
-    ? `\n            <ns2:PromotionCode>${escapeXml(promotionCode)}</ns2:PromotionCode>`
-    : '';
+  const promoEl = promotionCodes
+    .map((code) => `\n            <ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
+    .join('');
   return `<ns2:LineItem
             Sku="${escapeXml(sku)}"
             Quantity="${qty}"
@@ -835,14 +840,18 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
  *
  * A warranty uses only its own persisted allocations. Its linked product's
  * allocations must never change its price.
+ *
+ * @param {object} w warranty order line
+ * @param {string} serial warranty link serial
+ * @param {string[]} [couponCodes] applied coupon codes, one PromotionCode each
  */
-function buildWarrantyLineItemXml(w, serial) {
+function buildWarrantyLineItemXml(w, serial, couponCodes = []) {
   const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
   const coverageYears = Number(w.custom?.coverageYears) || 1;
   const quantity = coverageYears * lineQuantity(w);
   const unitPrice = unitSellingPrice(effectiveLineTotalCents(w), quantity);
   return buildLineItemXml(
-    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial,
+    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial, couponCodes,
   );
 }
 
@@ -911,13 +920,14 @@ function resolveSalesPersonId(order) {
 }
 
 /**
- * Emit a single order-level PromotionCode element carrying every applied coupon
- * code, comma-joined. Emits nothing when the order has no coupons.
+ * Emit one order-level PromotionCode element per applied coupon code, in the
+ * order they were applied (Magento parity). Emits nothing when the order has
+ * no coupons.
  */
 function buildPromotionsXml(order) {
-  const codes = getAppliedCouponCodes(order);
-  if (!codes.length) return '';
-  return `<ns2:PromotionCode>${escapeXml(codes.join(','))}</ns2:PromotionCode>`;
+  return getAppliedCouponCodes(order)
+    .map((code) => `<ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
+    .join('\n        ');
 }
 
 // ---------------------------------------------------------------------------
