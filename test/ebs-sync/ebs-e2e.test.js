@@ -881,9 +881,51 @@ describe('ebs-sync e2e', () => {
       return { ...order, ...overrides };
     };
 
-    test('joins multiple applied coupon codes into one comma-separated PromotionCode', async () => {
+    // Order-level elements sit between SalesPersonId/Message and the first LineItem.
+    const orderLevel = (xml) => xml.slice(0, xml.indexOf('<ns2:LineItem'));
+    const lineItems = (xml) => xml.match(/<ns2:LineItem\b[\s\S]*?<\/ns2:LineItem>/g);
+    const promotionCodes = (fragment) => [
+      ...fragment.matchAll(/<ns2:PromotionCode>([^<]*)<\/ns2:PromotionCode>/g),
+    ].map((m) => m[1]);
+
+    test('emits one order-level PromotionCode per applied coupon code', async () => {
       const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', 'IDME20'] }), journal);
-      expect(xml).toContain('<ns2:PromotionCode>SAVE10,IDME20</ns2:PromotionCode>');
+      expect(promotionCodes(orderLevel(xml))).toEqual(['SAVE10', 'IDME20']);
+    });
+
+    test('stamps every applied coupon code on every line item', async () => {
+      const order = orderWith({ couponCodes: ['SAVE10', 'IDME20'] });
+      order.items.push({ sku: 'other-sku', quantity: 1, price: { final: '50.00', currency: 'CAD' } });
+      const lines = lineItems(await buildXml(order, journal));
+      expect(lines).toHaveLength(2);
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual(['SAVE10', 'IDME20']));
+    });
+
+    test('stamps coupon codes on lines whether or not the coupon discounted them', async () => {
+      const order = orderWith({ couponCodes: ['SAVE10'] });
+      order.items[0].discounts = [{ id: 'coupon:SAVE10', amount: '10.00' }];
+      order.items.push({ sku: 'other-sku', quantity: 1, price: { final: '50.00', currency: 'CAD' } });
+      const lines = lineItems(await buildXml(order, journal));
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual(['SAVE10']));
+    });
+
+    test('stamps coupon codes after the VBND code on bundle children and on warranty lines', async () => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      delete order.estimates?.discounts;
+      order.couponCodes = ['WELCOME1'];
+      const bundleJournal = loadJournal('journal-pp-bundle-warranty.ndjson');
+      const lines = lineItems(await buildXml(order, bundleJournal));
+      const warranty = lines.filter((line) => /UnitOfMeasure="Years"/.test(line));
+      const children = lines.filter((line) => /UnitOfMeasure="Each"/.test(line));
+      expect(warranty.length).toBeGreaterThan(0);
+      expect(children.length).toBeGreaterThan(0);
+      warranty.forEach((line) => expect(promotionCodes(line)).toEqual(['WELCOME1']));
+      children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', 'WELCOME1']));
+    });
+
+    test('emits no line-level PromotionCode when the order has no coupons', async () => {
+      const lines = lineItems(await buildXml(orderWith({}), journal));
+      lines.forEach((line) => expect(line).not.toContain('<ns2:PromotionCode>'));
     });
 
     test('accepts a single coupon code string', async () => {
@@ -901,7 +943,7 @@ describe('ebs-sync e2e', () => {
       const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', '06-AFF1', '06-AFF2'] }), journal);
       expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
       // every applied code is still recorded as a promotion
-      expect(xml).toContain('<ns2:PromotionCode>SAVE10,06-AFF1,06-AFF2</ns2:PromotionCode>');
+      expect(promotionCodes(orderLevel(xml))).toEqual(['SAVE10', '06-AFF1', '06-AFF2']);
     });
 
     test('omits SalesPersonId when no code matches the CJ prefix', async () => {
