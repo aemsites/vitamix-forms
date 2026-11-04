@@ -25,7 +25,7 @@
  *   6. Cursor (see nextCursor): completed → the query's `until`; max-retries →
  *      unchanged; deadline → the terminal entry of the first order not handled
  *   7. Scheduled runs only, at most hourly, and only when EBS_RECONCILE_ENABLED
- *      is "true" (off for now, see #126): reconciliation (reconcile.js) lists
+ *      is "true" (set per deploy environment): reconciliation (reconcile.js) lists
  *      recently completed orders without syncedAt / syncError straight from the
  *      orders API, so orders missing from the global journal are still found;
  *      each one found is reported to the operations log

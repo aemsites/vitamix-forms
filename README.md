@@ -28,13 +28,24 @@ The cursor moves to the end of the queried window when every order was handled. 
 
 After an order's reads have failed for 4 hours (counted from the first failure), it is reported once to the operations log (`reason: "unreadable"`, which alerts; orders due within the same hour are batched into one report) and the cursor moves on. Its reads are still retried while it is in the read window. Send it later with a manual POST `{ "orderId" }`. Manual backfills never move past an unreadable order: `nextSince` stays on it. Each EBS request is aborted after 60 seconds (commerce API requests after 10), and no attempt starts unless there is time for it plus 60 seconds to record the result before the 10-minute action timeout; an order that misses that is left for the next run, like a deadline stop. After EBS accepts an order, `syncedAt` (or, if that patch fails, a pending update in state) is stored before anything else; if neither can be stored, the run stops sending (`haltReason: "state-unavailable"`), keeps the cursor and doesn't queue that order's inventory.
 
-**Reconciliation** (scheduled runs, at most hourly; **disabled** until `EBS_RECONCILE_ENABLED` is `"true"`, see #126): lists `payment_completed` orders updated between 70 minutes (the journal look-back plus two runs) and 24 hours ago that have no `syncedAt` or `syncError`, straight from the orders API. This finds orders whose entry never reached the global journal. It is skipped when the journal pass just failed. At most 20 are checked per pass, never-checked first, then least recently checked; if the cap or the deadline leaves never-checked orders, the next run continues the pass. For each order found:
+**Reconciliation** (scheduled runs, at most hourly, when `EBS_RECONCILE_ENABLED` is `"true"`; see [Enabling reconciliation](#enabling-reconciliation)): lists `payment_completed` orders updated between 70 minutes (the journal look-back plus two runs) and 24 hours ago that have no `syncedAt` or `syncError`, straight from the orders API. This finds orders whose entry never reached the global journal. It is skipped when the journal pass just failed. At most 20 are checked per pass, never-checked first, then least recently checked; if the cap or the deadline leaves never-checked orders, the next run continues the pass. For each order found:
 
 - its per-order journal has `payment_completed` from the last 6 hours: sent to EBS, then reported
 - no `payment_completed` entry: reported once, not sent, and checked again each pass (sent once the entry shows up)
 - completed more than 6 hours ago: reported once, not sent. EBS has no duplicate protection, so someone checks EBS first, then sends it with a manual POST `{ "orderId" }`.
 
-Reports go to the operations log as `order-sync` events with `source: "ebs-sync-reconcile"`, a `reason` and an `error`, which raises an alert. Listing a site's orders currently requires the admin role, which service tokens can't carry, so the pass stays off until the orders token can list orders (#126). If the list call fails, that is reported too (at most hourly).
+Reports go to the operations log as `order-sync` events with `source: "ebs-sync-reconcile"`, a `reason` and an `error`, which raises an alert. If the list call fails (for example, the token lacks `orders:list`), that is reported too (`reason: "list_failed"`, at most hourly). An invalid, inverted or over-90-day listing range is rejected before the call and reported the same way.
+
+#### Enabling reconciliation
+
+Per environment, stage first:
+
+1. The orders token (`EDGE_COMMERCE_API_ORDERS_TOKEN_STAGE` / `_PROD`) needs `orders:list` besides `orders:read`, `orders:custom:write` and `journal:orders:read`. Service-token permissions are fixed when the token is created, so create a new token, update the secret, redeploy, check the GET status, then revoke the old token.
+2. Before the first pass, list `payment_completed` orders from the last 24 hours without `syncedAt` / `syncError`. Those completed in the last 6 hours will be sent to EBS on the first pass; check EBS for any that were entered by hand.
+3. Set the `EBS_RECONCILE_ENABLED_STAGE` / `EBS_RECONCILE_ENABLED_PROD` secret to `"true"` and run the Stage / Production workflow manually.
+4. After the next scheduled run, the GET status shows `reconcile.lastRunAt`, and no `list_failed` report appears in the operations log.
+
+To turn it off, delete the secret (or set it to anything but `"true"`) and redeploy.
 
 **Supported payment methods**: Credit card (Chase), PayPal, Apple Pay (Chase wallet), Affirm.
 
@@ -375,7 +386,7 @@ Production deployments use semantic-release to version and tag releases automati
 | `EBS_API_KEY` | Production EBS API key |
 | `EBS_API_KEY_STAGE` | Stage EBS API key |
 | `PROXY_TOKEN` | Bearer token for the static-IP proxy |
-| `EBS_RECONCILE_ENABLED` | `"true"` turns on hourly order reconciliation. Not wired in `app.config.yaml` yet, so it is off (#126). |
+| `EBS_RECONCILE_ENABLED` | `"true"` turns on hourly order reconciliation; unset = off. Set from the `EBS_RECONCILE_ENABLED_STAGE` / `EBS_RECONCILE_ENABLED_PROD` secrets. |
 
 ### recipe-notify package
 
