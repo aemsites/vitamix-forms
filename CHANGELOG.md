@@ -1,3 +1,10 @@
+# [1.14.0](https://github.com/aemsites/vitamix-forms/compare/v1.13.0...v1.14.0) (2026-11-04)
+
+
+### Features
+
+* **ebs-sync:** wire EBS_RECONCILE_ENABLED into the deploy config ([eacfb02](https://github.com/aemsites/vitamix-forms/commit/eacfb02f87b0fecb62ae2368874c52a264a45ff9))
+
 # [1.13.0](https://github.com/aemsites/vitamix-forms/compare/v1.12.0...v1.13.0) (2026-11-03)
 
 
