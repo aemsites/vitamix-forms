@@ -1,6 +1,9 @@
 import { XMLParser } from 'fast-xml-parser';
 import { errorWithResponse } from '../../utils.js';
 
+// product sub-index holding the commercial catalog (own index + GMC feed)
+export const COMMERCIAL_SECTION = 'commercial';
+
 // Strip the `g:` namespace prefix so items expose clean keys (id, title, ...).
 // parseTagValue:false keeps every value a string — critical for identifiers like
 // GTIN where a leading zero must not be lost to numeric coercion.
@@ -42,13 +45,18 @@ function normalizeItem(raw) {
 /**
  * Fetch and parse the Google Merchant Center feed for a locale into a canonical
  * shape the provider serializers consume.
+ *
+ * `section` selects a product sub-index with its own feed (e.g. "commercial":
+ * `<locale>/products/commercial/merchant-center-feed.xml`). With `missingOk`, a
+ * 404 (a locale without that sub-index) yields an empty feed.
  * @param {{ env: { FEED_SITE_BASE: string }, log: Console }} ctx
  * @param {string} locale e.g. "us/en_us"
+ * @param {{ section?: string, missingOk?: boolean }} [opts]
  * @returns {Promise<{ channel: { title?: string, link?: string, description?: string }, items: Record<string, unknown>[] }>}
  */
-export async function fetchGmcFeed(ctx, locale) {
+export async function fetchGmcFeed(ctx, locale, { section, missingOk = false } = {}) {
   const base = ctx.env.FEED_SITE_BASE.replace(/\/$/, '');
-  const url = `${base}/${locale}/products/merchant-center-feed.xml`;
+  const url = `${base}/${locale}/products${section ? `/${section}` : ''}/merchant-center-feed.xml`;
   ctx.log.info(`fetching GMC feed: ${url}`);
 
   let resp;
@@ -63,6 +71,10 @@ export async function fetchGmcFeed(ctx, locale) {
       502,
       `failed to fetch source feed: ${reason}`,
     );
+  }
+  if (resp.status === 404 && missingOk) {
+    ctx.log.warn(`no GMC feed at ${url}; continuing without it`);
+    return { channel: {}, items: [] };
   }
   if (!resp.ok) {
     throw errorWithResponse(

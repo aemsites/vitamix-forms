@@ -98,14 +98,18 @@ export function unknownCategories(categories) {
  * With `required: true` a failed, empty or incomplete load throws a 502 instead,
  * for consumers whose output would be wrong without the full index (e.g. the
  * Bazaarvoice review families in a full, non-incremental feed).
+ *
+ * `section` loads a product sub-index (e.g. "commercial":
+ * `<locale>/products/commercial/index.json`). With `missingOk`, a missing (404)
+ * or empty index is an empty map rather than an error.
  * @param {{ env: { FEED_SITE_BASE: string }, log: Console }} ctx
  * @param {string} locale e.g. "us/en_us"
- * @param {{ required?: boolean }} [opts]
+ * @param {{ required?: boolean, section?: string, missingOk?: boolean }} [opts]
  * @returns {Promise<Map<string, Record<string, string>>>}
  */
-export async function loadProductIndex(ctx, locale, { required = false } = {}) {
+export async function loadProductIndex(ctx, locale, { required = false, section, missingOk = false } = {}) {
   const base = ctx.env.FEED_SITE_BASE.replace(/\/$/, '');
-  const url = `${base}/${locale}/products/index.json`;
+  const url = `${base}/${locale}/products${section ? `/${section}` : ''}/index.json`;
   const bySku = new Map();
   try {
     let offset = 0;
@@ -115,6 +119,10 @@ export async function loadProductIndex(ctx, locale, { required = false } = {}) {
       const resp = await fetch(`${url}?include=all&offset=${offset}&limit=${PAGE_SIZE}`, {
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
+      if (resp.status === 404 && missingOk && offset === 0) {
+        ctx.log.warn(`no product index at ${url}; continuing without it`);
+        return bySku;
+      }
       if (!resp.ok) throw new Error(`status ${resp.status}`);
       // eslint-disable-next-line no-await-in-loop
       const page = await resp.json();
@@ -125,7 +133,7 @@ export async function loadProductIndex(ctx, locale, { required = false } = {}) {
       if (!rows.length) break;
     } while (offset < total);
     if (offset < total) throw new Error(`incomplete: ${offset} of ${total} rows`);
-    if (!bySku.size) throw new Error('empty');
+    if (!bySku.size && !missingOk) throw new Error('empty');
     ctx.log.info(`loaded product index ${url}: ${bySku.size} skus`);
   } catch (err) {
     if (required) {
