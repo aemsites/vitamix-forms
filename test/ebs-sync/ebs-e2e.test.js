@@ -890,7 +890,7 @@ describe('ebs-sync e2e', () => {
 
     test('emits one order-level PromotionCode per applied coupon code', async () => {
       const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', 'IDME20'] }), journal);
-      expect(promotionCodes(orderLevel(xml))).toEqual(['SAVE10', 'IDME20']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['(SAVE10)', '(IDME20)']);
     });
 
     test('stamps every applied coupon code on every line item', async () => {
@@ -898,7 +898,7 @@ describe('ebs-sync e2e', () => {
       order.items.push({ sku: 'other-sku', quantity: 1, price: { final: '50.00', currency: 'CAD' } });
       const lines = lineItems(await buildXml(order, journal));
       expect(lines).toHaveLength(2);
-      lines.forEach((line) => expect(promotionCodes(line)).toEqual(['SAVE10', 'IDME20']));
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual(['(SAVE10)', '(IDME20)']));
     });
 
     test('stamps coupon codes on lines whether or not the coupon discounted them', async () => {
@@ -906,7 +906,7 @@ describe('ebs-sync e2e', () => {
       order.items[0].discounts = [{ id: 'coupon:SAVE10', amount: '10.00' }];
       order.items.push({ sku: 'other-sku', quantity: 1, price: { final: '50.00', currency: 'CAD' } });
       const lines = lineItems(await buildXml(order, journal));
-      lines.forEach((line) => expect(promotionCodes(line)).toEqual(['SAVE10']));
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual(['(SAVE10)']));
     });
 
     test('stamps coupon codes after the VBND code on bundle children and on warranty lines', async () => {
@@ -919,8 +919,8 @@ describe('ebs-sync e2e', () => {
       const children = lines.filter((line) => /UnitOfMeasure="Each"/.test(line));
       expect(warranty.length).toBeGreaterThan(0);
       expect(children.length).toBeGreaterThan(0);
-      warranty.forEach((line) => expect(promotionCodes(line)).toEqual(['WELCOME1']));
-      children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', 'WELCOME1']));
+      warranty.forEach((line) => expect(promotionCodes(line)).toEqual(['(WELCOME1)']));
+      children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', '(WELCOME1)']));
     });
 
     // ── VBND Discount Reason Code at the order header ───────────────────────
@@ -957,7 +957,7 @@ describe('ebs-sync e2e', () => {
 
     test('stamps the bundle VBND code on the header ahead of coupon codes', async () => {
       const xml = await buildXml(bundleOrder({ couponCodes: ['WELCOME1', 'SAVE10'] }), bundleJournal);
-      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', 'WELCOME1', 'SAVE10']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', '(WELCOME1)', '(SAVE10)']);
     });
 
     test('emits each bundle VBND code once on the header when a bundle line repeats', async () => {
@@ -978,7 +978,7 @@ describe('ebs-sync e2e', () => {
       const order = bundleOrder({ couponCodes: ['WELCOME1'] });
       order.items[0].path = '/ca/en_ca/products/some-unmapped-bundle';
       const xml = await buildXml(order, bundleJournal);
-      expect(promotionCodes(orderLevel(xml))).toEqual(['WELCOME1']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['(WELCOME1)']);
     });
 
     test('does not stamp a header VBND code for simple products', async () => {
@@ -1006,7 +1006,7 @@ describe('ebs-sync e2e', () => {
 
     test('accepts a single coupon code string', async () => {
       const xml = await buildXml(orderWith({ couponCode: 'SAVE10' }), journal);
-      expect(xml).toContain('<ns2:PromotionCode>SAVE10</ns2:PromotionCode>');
+      expect(xml).toContain('<ns2:PromotionCode>(SAVE10)</ns2:PromotionCode>');
     });
 
     test('emits no PromotionCode or SalesPersonId when there are no coupons', async () => {
@@ -1019,7 +1019,7 @@ describe('ebs-sync e2e', () => {
       const xml = await buildXml(orderWith({ couponCodes: ['SAVE10', '06-AFF1', '06-AFF2'] }), journal);
       expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
       // every applied code is still recorded as a promotion
-      expect(promotionCodes(orderLevel(xml))).toEqual(['SAVE10', '06-AFF1', '06-AFF2']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['(SAVE10)', '(06-AFF1)', '(06-AFF2)']);
     });
 
     test('omits SalesPersonId when no code matches the CJ prefix', async () => {
@@ -1034,7 +1034,7 @@ describe('ebs-sync e2e', () => {
         { id: 'free-shipping', amount: 0, freeShipping: true, source: 'pricing_rule' },
       ];
       const xml = await buildXml(order, journal);
-      expect(xml).toContain('<ns2:PromotionCode>06-LEGACY</ns2:PromotionCode>');
+      expect(xml).toContain('<ns2:PromotionCode>(06-LEGACY)</ns2:PromotionCode>');
       expect(xml).toContain('<ns2:SalesPersonId>06-LEGACY</ns2:SalesPersonId>');
     });
 
@@ -1045,7 +1045,7 @@ describe('ebs-sync e2e', () => {
       }), journal);
       expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
       // the affiliate code is not reported as an applied promotion
-      expect(xml).toContain('<ns2:PromotionCode>SAVE10</ns2:PromotionCode>');
+      expect(promotionCodes(xml)).toEqual(['(SAVE10)', '(SAVE10)']);
     });
 
     test('uses custom.affiliateCode when the order has no coupons', async () => {
@@ -1069,7 +1069,103 @@ describe('ebs-sync e2e', () => {
 
     test('XML-escapes coupon codes', async () => {
       const xml = await buildXml(orderWith({ couponCodes: ['A&B'] }), journal);
-      expect(xml).toContain('<ns2:PromotionCode>A&amp;B</ns2:PromotionCode>');
+      expect(xml).toContain('<ns2:PromotionCode>(A&amp;B)</ns2:PromotionCode>');
+    });
+
+    // ── Magento "{description}({code})" coupon format ────────────────────────
+    // Magento sent each coupon as its cart rule description followed by the
+    // code in parentheses, on the header and every line. The coupon type name
+    // stored on the order's coupon discount entry stands in for the description.
+
+    const couponDiscount = (code, name) => ({
+      id: `coupon:${code}`, name, amount: 25, source: 'coupon',
+    });
+
+    test('sends "{name}({code})" on the header and every line (Magento payload parity)', async () => {
+      // Real coupon type name from order om5290981272; this exact output was
+      // approved by the Vitamix EBS team.
+      const name = '#974 US 2026 MAIN Email Offer - $25 off orders over $200 - WELCOME, TEXT (SMS)';
+      const expected = `${name}(WELCOME431705)`;
+      const order = orderWith({
+        couponCodes: ['WELCOME431705'],
+        estimates: {
+          ...CC_APPROVED_ORDER.estimates,
+          discounts: [couponDiscount('WELCOME431705', name)],
+        },
+      });
+      order.items.push({ sku: 'other-sku', quantity: 1, price: { final: '50.00', currency: 'CAD' } });
+      const xml = await buildXml(order, journal);
+      expect(promotionCodes(orderLevel(xml))).toEqual([expected]);
+      const lines = lineItems(xml);
+      expect(lines).toHaveLength(2);
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual([expected]));
+    });
+
+    test('names each of several coupons, in the order applied', async () => {
+      const order = orderWith({
+        couponCodes: ['SAVE10', 'IDME20'],
+        estimates: {
+          ...CC_APPROVED_ORDER.estimates,
+          discounts: [couponDiscount('IDME20', 'ID.me 20%'), couponDiscount('SAVE10', '$10 Off')],
+        },
+      });
+      const xml = await buildXml(order, journal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['$10 Off(SAVE10)', 'ID.me 20%(IDME20)']);
+    });
+
+    test('names a coupon derived from estimates.discounts alone', async () => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      order.estimates.discounts = [
+        couponDiscount('06-LEGACY', 'Affiliate 10%'),
+        { id: 'free-shipping', name: 'Free Shipping', amount: 0, freeShipping: true, source: 'pricing_rule' },
+      ];
+      const xml = await buildXml(order, journal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['Affiliate 10%(06-LEGACY)']);
+      // SalesPersonId keeps the bare code
+      expect(xml).toContain('<ns2:SalesPersonId>06-LEGACY</ns2:SalesPersonId>');
+    });
+
+    test('falls back to "({code})" when the coupon has no or a blank name', async () => {
+      const order = orderWith({
+        couponCodes: ['SAVE10', 'IDME20'],
+        estimates: {
+          ...CC_APPROVED_ORDER.estimates,
+          discounts: [couponDiscount('SAVE10', '   '), { id: 'coupon:IDME20', amount: 5, source: 'coupon' }],
+        },
+      });
+      const xml = await buildXml(order, journal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['(SAVE10)', '(IDME20)']);
+    });
+
+    test('trims the coupon name and XML-escapes it', async () => {
+      const order = orderWith({
+        couponCodes: ['BOGO'],
+        estimates: {
+          ...CC_APPROVED_ORDER.estimates,
+          discounts: [couponDiscount('BOGO', '  Buy 1 & Get <1>  ')],
+        },
+      });
+      const xml = await buildXml(order, journal);
+      expect(xml).toContain('<ns2:PromotionCode>Buy 1 &amp; Get &lt;1&gt;(BOGO)</ns2:PromotionCode>');
+    });
+
+    test('names the coupon after the VBND code on bundle children and on warranty lines', async () => {
+      const order = bundleOrder({
+        couponCodes: ['WELCOME1'],
+        estimates: {
+          ...PP_BUNDLE_WARRANTY_ORDER.estimates,
+          discounts: [couponDiscount('WELCOME1', '$25 Off $200')],
+        },
+      });
+      const xml = await buildXml(order, bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', '$25 Off $200(WELCOME1)']);
+      const lines = lineItems(xml);
+      const warranty = lines.filter((line) => /UnitOfMeasure="Years"/.test(line));
+      const children = lines.filter((line) => /UnitOfMeasure="Each"/.test(line));
+      expect(warranty.length).toBeGreaterThan(0);
+      expect(children.length).toBeGreaterThan(0);
+      warranty.forEach((line) => expect(promotionCodes(line)).toEqual(['$25 Off $200(WELCOME1)']));
+      children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', '$25 Off $200(WELCOME1)']));
     });
   });
 
