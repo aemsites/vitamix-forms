@@ -55,7 +55,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  * @typedef {{
  *   provider: string,
  *   enabled?: boolean,
- *   enabledBy?: string,
+ *   scheduleEnabledBy?: string,
  *   host: string,
  *   port: number,
  *   remoteDir: string,
@@ -76,10 +76,9 @@ export const SFTP_CONNECT_RETRIES = 1;
  *
  * `enabled` gates every real push in the environment. `scheduled` controls
  * whether the nightly alarm pushes; when false, only manual runs push.
- * A target's `enabledBy` names an env var that must be "true" for the target
- * to push (scheduled or manual), so it can be switched on or off per
- * environment with a secret + redeploy instead of a code change. A dryRun
- * ignores it.
+ * A target's `scheduleEnabledBy` names an env var that must be "true" for
+ * the nightly alarm to push that target, so its schedule can be switched on or
+ * off with a secret + redeploy instead of a code change. Manual runs ignore it.
  */
 
 /**
@@ -110,9 +109,9 @@ const CJ_SFTP = {
 /**
  * Bazaarvoice product feed. Staging and production are separate SFTP hosts
  * (and accounts); everything else is shared.
- * - Off unless BV_PUSH_ENABLED is "true" in the environment (GitHub secrets
- *   BV_PUSH_ENABLED_STAGE / _PROD), so prod can be switched on at the cutover
- *   from the previous export without a code change.
+ * - Prod's nightly push is off unless BV_SCHEDULE_ENABLED is "true" (GitHub
+ *   secret BV_SCHEDULE_ENABLED_PROD), so it can be switched on at the cutover
+ *   from the previous export without a code change. Manual runs always push.
  * - Files go in `/import-inbox`; BV imports each file as the full catalog for
  *   its locale (the feed is non-incremental).
  * - File names match what BV already receives, one file per locale. `ca/fr_ca`
@@ -127,7 +126,6 @@ const CJ_SFTP = {
  */
 const BV_SFTP = {
   provider: 'bazaarvoice',
-  enabledBy: 'BV_PUSH_ENABLED',
   port: 22,
   remoteDir: '/import-inbox',
   credentials: 'BV', // BV_SFTP_USERNAME / BV_SFTP_PASSWORD
@@ -169,14 +167,15 @@ export const CONFIG = {
     },
   },
   prod: {
-    // Every prod target is gated on its own switch (CJ isn't configured yet:
-    // it waits for the live registrations + credentials).
+    // CJ isn't configured yet: it waits for the live registrations + credentials.
     enabled: true,
     scheduled: true, // nightly at 1 AM America/New_York
     targets: {
-      // Bazaarvoice production; pushes nightly once BV_PUSH_ENABLED is "true"
+      // Bazaarvoice production: manual runs push; the nightly run pushes only
+      // once BV_SCHEDULE_ENABLED is "true"
       bazaarvoice: {
         ...BV_SFTP,
+        scheduleEnabledBy: 'BV_SCHEDULE_ENABLED',
         host: 'sftp.bazaarvoice.com',
         hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
       },
@@ -193,15 +192,15 @@ export function resolveEnvironment(namespace = process.env.__OW_NAMESPACE) {
 }
 
 /**
- * Whether a target's env-var switch (`enabledBy`) is on. Targets without one
- * are always on.
+ * Whether the nightly alarm may push a target: its `scheduleEnabledBy` env var
+ * is "true", or it has none.
  * @param {TargetConfig} target
  * @param {Record<string, unknown>} params
  * @returns {boolean}
  */
-export function isTargetSwitchedOn(target, params = {}) {
-  if (!target.enabledBy) return true;
-  return String(params[target.enabledBy] ?? '').trim().toLowerCase() === 'true';
+export function isScheduleEnabled(target, params = {}) {
+  if (!target.scheduleEnabledBy) return true;
+  return String(params[target.scheduleEnabledBy] ?? '').trim().toLowerCase() === 'true';
 }
 
 /**

@@ -17,7 +17,7 @@ import { Core } from '@adobe/aio-sdk';
 import { buildProviderFeed, resolveFeedEnv } from '../feeds/build.js';
 import {
   CONFIG, MIN_ITEMS, SCHEDULE_TIMEZONE, SCHEDULE_HOUR, resolveEnvironment, resolveCredentials,
-  isTargetSwitchedOn,
+  isScheduleEnabled,
 } from './config.js';
 import { validateFeed } from './validate.js';
 import * as sftp from './sftp.js';
@@ -87,7 +87,7 @@ export function isScheduledHour(date, timeZone = SCHEDULE_TIMEZONE, hour = SCHED
  *   target?: string,
  *   locale?: string,
  *   isOn?: (target: import('./config.js').TargetConfig) => boolean,
- * }} filters `isOn` drops targets whose env-var switch is off
+ * }} filters `isOn` drops targets that shouldn't run (e.g. schedule off)
  */
 export function listJobs(envConfig, { target: onlyTarget, locale: onlyLocale, isOn = () => true } = {}) {
   const jobs = [];
@@ -160,18 +160,18 @@ export async function run(params, options = {}) {
     }
   }
 
-  // Targets switched off by their env var (`enabledBy`); a dryRun still
-  // builds and validates them.
-  const isOn = (target) => dryRun || isTargetSwitchedOn(target, params);
-  const switchedOff = Object.entries(envConfig.targets || {})
-    .filter(([key, t]) => t.enabled !== false && (!options.target || options.target === key) && !isOn(t))
-    .map(([key, t]) => `${key} (${t.enabledBy} is not "true")`);
-  if (switchedOff.length) log.info(`switched off: ${switchedOff.join(', ')}`);
+  // The nightly run skips targets whose schedule switch (`scheduleEnabledBy`)
+  // is off; manual runs push every target.
+  const isOn = (target) => !options.scheduled || isScheduleEnabled(target, params);
+  const scheduleOff = Object.entries(envConfig.targets || {})
+    .filter(([, t]) => t.enabled !== false && !isOn(t))
+    .map(([key, t]) => `${key} (${t.scheduleEnabledBy} is not "true")`);
+  if (scheduleOff.length) log.info(`schedule off: ${scheduleOff.join(', ')}`);
 
   const jobs = listJobs(envConfig, { target: options.target, locale: options.locale, isOn });
-  if (!jobs.length && switchedOff.length && listJobs(envConfig, options).length) {
+  if (!jobs.length && scheduleOff.length) {
     return {
-      skipped: true, reason: 'target-switched-off', environment, switchedOff,
+      skipped: true, reason: 'target-schedule-disabled', environment, scheduleOff,
     };
   }
   if (!jobs.length && (options.target || options.locale)) {
@@ -263,7 +263,7 @@ export async function run(params, options = {}) {
     dryRun,
     force,
     results,
-    ...(switchedOff.length ? { switchedOff } : {}),
+    ...(scheduleOff.length ? { scheduleOff } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(alert ? { alert } : {}),
   };

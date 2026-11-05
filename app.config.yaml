@@ -287,9 +287,9 @@ application:
               # CJ SFTP ("POST to CJ SFTP") credentials, per environment
               CJ_SFTP_USERNAME: $CJ_SFTP_USERNAME
               CJ_SFTP_PASSWORD: $CJ_SFTP_PASSWORD
-              # Bazaarvoice: "true" turns the push on (unset = off); SFTP
-              # credentials, per environment
-              BV_PUSH_ENABLED: $BV_PUSH_ENABLED
+              # Bazaarvoice: "true" lets the nightly run push (unset = manual
+              # runs only); SFTP credentials, per environment
+              BV_SCHEDULE_ENABLED: $BV_SCHEDULE_ENABLED
               BV_SFTP_USERNAME: $BV_SFTP_USERNAME
               BV_SFTP_PASSWORD: $BV_SFTP_PASSWORD
 
