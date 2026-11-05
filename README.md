@@ -175,7 +175,13 @@ environment: the on/off switch, targets (host, port, remote directory), and the
 locale → file name map. The environment comes from the runtime namespace
 (`60038-161ivoryjackal-stage` → stage, `60038-161ivoryjackal` → prod; any other
 namespace does nothing). Only secrets and per-target schedule switches
-(`BV_SCHEDULE_ENABLED`) are env vars (see below).
+(`CJ_SCHEDULE_ENABLED`, `BV_SCHEDULE_ENABLED`) are env vars (see below).
+
+**Schedule switches:** the nightly run pushes a target only when its switch
+is `"true"` (GitHub secrets `CJ_SCHEDULE_ENABLED_PROD` /
+`BV_SCHEDULE_ENABLED_PROD`; change + redeploy). Otherwise it skips the target
+(`scheduleOff` in the result; `reason: 'target-schedule-disabled'` when
+nothing else runs). Manual runs always push. Stage has no schedule at all.
 
 | Environment | Status | Schedule | Targets |
 |---|---|---|---|
@@ -226,11 +232,7 @@ CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
 
 Bazaarvoice specifics (stage: `sftp-stg.bazaarvoice.com:22`, manual runs only;
 prod: `sftp.bazaarvoice.com:22`, nightly):
-- **Schedule switch (prod):** the nightly run pushes Bazaarvoice only when
-  `BV_SCHEDULE_ENABLED` is `"true"` (GitHub secret `BV_SCHEDULE_ENABLED_PROD`;
-  change + redeploy). Otherwise the nightly run skips it (`scheduleOff` in the
-  result; `reason: 'target-schedule-disabled'` when nothing else runs). Manual
-  runs always push. Stage has no schedule at all.
+- **Schedule switch:** `BV_SCHEDULE_ENABLED` (see above).
 - Files go in `/import-inbox`, one full (non-incremental) product feed per
   locale. `ca/fr_ca` isn't pushed. The MX file is named `productfeed-en_MX.xml`
   but its locale fields are `es_MX`.
@@ -469,6 +471,7 @@ secrets only:
 
 | Variable | Description | Default |
 |---|---|---|
+| `CJ_SCHEDULE_ENABLED` | `"true"` lets the nightly run push CJ (prod; GitHub secret `CJ_SCHEDULE_ENABLED_PROD`). Manual runs don't need it. | unset — manual runs only |
 | `CJ_SFTP_USERNAME` / `CJ_SFTP_PASSWORD` | CJ SFTP credentials for this environment (GitHub secrets `CJ_SFTP_*_STAGE` / `_PROD`) | unset — CJ uploads fail and alert |
 | `BV_SCHEDULE_ENABLED` | `"true"` lets the nightly run push Bazaarvoice (prod; GitHub secret `BV_SCHEDULE_ENABLED_PROD`). Manual runs don't need it. | unset — manual runs only |
 | `BV_SFTP_USERNAME` / `BV_SFTP_PASSWORD` | Bazaarvoice SFTP credentials for this environment (GitHub secrets `BV_SFTP_*_STAGE` / `_PROD`) | unset — Bazaarvoice uploads fail and alert |

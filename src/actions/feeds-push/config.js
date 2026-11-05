@@ -94,9 +94,13 @@ export const SFTP_CONNECT_RETRIES = 1;
  * - Upload to a temp name, then rename to the registered name once complete,
  *   so CJ never ingests a partial file. CJ confirmed (2026-10) that renaming
  *   on its SFTP is supported; only the final name must match the registration.
+ * - The nightly run pushes CJ only when CJ_SCHEDULE_ENABLED is "true" (GitHub
+ *   secret CJ_SCHEDULE_ENABLED_PROD); manual runs always push. Stage never
+ *   runs on the schedule.
  */
 const CJ_SFTP = {
   provider: 'cj',
+  scheduleEnabledBy: 'CJ_SCHEDULE_ENABLED',
   host: 'datatransfer.cj.com',
   port: 22,
   remoteDir: '/',
@@ -109,9 +113,10 @@ const CJ_SFTP = {
 /**
  * Bazaarvoice product feed. Staging and production are separate SFTP hosts
  * (and accounts); everything else is shared.
- * - Prod's nightly push is off unless BV_SCHEDULE_ENABLED is "true" (GitHub
- *   secret BV_SCHEDULE_ENABLED_PROD), so it can be switched on at the cutover
+ * - The nightly run pushes BV only when BV_SCHEDULE_ENABLED is "true" (GitHub
+ *   secret BV_SCHEDULE_ENABLED_PROD), so prod can be switched on at the cutover
  *   from the previous export without a code change. Manual runs always push.
+ *   Stage never runs on the schedule.
  * - Files go in `/import-inbox`; BV imports each file as the full catalog for
  *   its locale (the feed is non-incremental).
  * - File names match what BV already receives, one file per locale. `ca/fr_ca`
@@ -126,6 +131,7 @@ const CJ_SFTP = {
  */
 const BV_SFTP = {
   provider: 'bazaarvoice',
+  scheduleEnabledBy: 'BV_SCHEDULE_ENABLED',
   port: 22,
   remoteDir: '/import-inbox',
   credentials: 'BV', // BV_SFTP_USERNAME / BV_SFTP_PASSWORD
@@ -175,7 +181,6 @@ export const CONFIG = {
       // once BV_SCHEDULE_ENABLED is "true"
       bazaarvoice: {
         ...BV_SFTP,
-        scheduleEnabledBy: 'BV_SCHEDULE_ENABLED',
         host: 'sftp.bazaarvoice.com',
         hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
       },

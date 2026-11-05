@@ -143,7 +143,9 @@ jobs:
           INVENTORY_SYNC_ENABLED: ${{ secrets.INVENTORY_SYNC_ENABLED_PROD }}
           EDGE_COMMERCE_API_CATALOG_TOKEN: ${{ secrets.EDGE_COMMERCE_API_CATALOG_TOKEN_PROD }}
           # feeds-push — CJ has no prod target yet (src/actions/feeds-push/config.js);
-          # add CJ_SFTP_USERNAME/PASSWORD from *_PROD secrets when it does.
+          # add CJ_SFTP_USERNAME/PASSWORD from *_PROD secrets when it does. Its
+          # nightly push also needs the CJ_SCHEDULE_ENABLED_PROD secret "true".
+          CJ_SCHEDULE_ENABLED: ${{ secrets.CJ_SCHEDULE_ENABLED_PROD }}
           # Bazaarvoice: the nightly run pushes only when the
           # BV_SCHEDULE_ENABLED_PROD secret is "true"; unset = manual runs only.
           BV_SCHEDULE_ENABLED: ${{ secrets.BV_SCHEDULE_ENABLED_PROD }}

@@ -230,9 +230,10 @@ describe('config', () => {
     expect(CONFIG.prod.targets.cj).toBeUndefined();
   });
 
-  test('Bazaarvoice: staging SFTP on stage, production SFTP on prod; only prod\'s schedule is switched', () => {
+  test('Bazaarvoice: staging SFTP on stage, production SFTP on prod', () => {
     const shared = {
       provider: 'bazaarvoice',
+      scheduleEnabledBy: 'BV_SCHEDULE_ENABLED',
       port: 22,
       remoteDir: '/import-inbox',
       credentials: 'BV',
@@ -251,13 +252,19 @@ describe('config', () => {
     });
     expect(CONFIG.prod.targets.bazaarvoice).toEqual({
       ...shared,
-      scheduleEnabledBy: 'BV_SCHEDULE_ENABLED',
       host: 'sftp.bazaarvoice.com',
       hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
     });
     expect(CONFIG.prod.enabled).toBe(true);
-    // every prod target needs its schedule switched on explicitly
-    for (const target of Object.values(CONFIG.prod.targets)) expect(target.scheduleEnabledBy).toBeTruthy();
+  });
+
+  test('every target\'s nightly push has its own switch', () => {
+    expect(CONFIG.stage.targets.cj.scheduleEnabledBy).toBe('CJ_SCHEDULE_ENABLED');
+    for (const env of Object.values(NAMESPACES)) {
+      for (const target of Object.values(CONFIG[env].targets)) {
+        expect(target.scheduleEnabledBy).toMatch(/^[A-Z]+_SCHEDULE_ENABLED$/);
+      }
+    }
   });
 
   test('isScheduleEnabled: only "true" turns a switched schedule on', () => {
@@ -790,13 +797,13 @@ describe('run — Bazaarvoice schedule switch', () => {
     expect(sftp.connects.map((c) => c.host)).toEqual(['sftp.bazaarvoice.com']);
   });
 
-  test('switch off: the nightly run still pushes other targets and lists the skipped one', async () => {
+  test('one switch off: the nightly run still pushes switched-on targets and lists the skipped one', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp();
     const config = smallConfig();
     config.stage.scheduled = true;
-    config.stage.targets.bazaarvoice = { ...bvConfig().stage.targets.bazaarvoice, scheduleEnabledBy: 'BV_SCHEDULE_ENABLED' };
-    const res = await run(SECRETS, {
+    config.stage.targets.bazaarvoice = bvConfig().stage.targets.bazaarvoice;
+    const res = await run({ ...SECRETS, CJ_SCHEDULE_ENABLED: 'true' }, {
       namespace: STAGE_NS, config, scheduled: true, now: new Date('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
     });
     expect(res.ok).toBe(true);
@@ -1038,10 +1045,10 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
     expect(spy).not.toHaveBeenCalled();
   });
 
-  test('a scheduled run at 1 AM ET pushes', async () => {
+  test('a scheduled run at 1 AM ET pushes (schedule switch on)', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(2) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, {
+    const res = await run({ ...SECRETS, CJ_SCHEDULE_ENABLED: 'true' }, {
       namespace: STAGE_NS,
       config: smallConfig(),
       scheduled: true,
