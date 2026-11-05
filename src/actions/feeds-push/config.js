@@ -171,10 +171,22 @@ export const CONFIG = {
     },
   },
   prod: {
-    // CJ isn't configured yet: it waits for the live registrations + credentials.
     enabled: true,
     scheduled: true, // nightly at 1 AM America/New_York
     targets: {
+      // CJ live feeds: manual runs push; the nightly run pushes only once
+      // CJ_SCHEDULE_ENABLED is "true". Same CJ account and SFTP server as the
+      // stage test feeds, so the file names are what keep the two apart.
+      cj: {
+        ...CJ_SFTP,
+        credentials: 'CJ', // CJ_SFTP_USERNAME / CJ_SFTP_PASSWORD
+        locales: {
+          // CJ live feed "Vitamix Shopping Feed" (feed 222147, ad 13669970)
+          'us/en_us': { file: 'Shopping-Feed-US.xml', minItems: 100 },
+          // CJ live feed "Shopping Feed - CA" (feed 222149, ad 13669974)
+          'ca/en_us': { file: 'Shopping-Feed-CA.xml', minItems: 85 },
+        },
+      },
       // Bazaarvoice production: manual runs push; the nightly run pushes only
       // once BV_SCHEDULE_ENABLED is "true"
       bazaarvoice: {

@@ -186,7 +186,7 @@ nothing else runs). Manual runs always push. Stage has no schedule at all.
 | Environment | Status | Schedule | Targets |
 |---|---|---|---|
 | stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml`. Bazaarvoice **staging**: `us/en_us` → `/import-inbox/productfeed-en_US.xml`, `ca/en_us` → `/import-inbox/productfeed-en_CA.xml`, `mx/es_mx` → `/import-inbox/productfeed-en_MX.xml` |
-| prod | enabled | nightly 1 AM ET, per-target switch | Bazaarvoice **production**, same files as stage; manual runs push, the nightly run only when `BV_SCHEDULE_ENABLED` is `"true"` (CJ: not yet) |
+| prod | enabled | nightly 1 AM ET, per-target switch | CJ **live** feeds: `Vitamix Shopping Feed` (222147) `us/en_us` → `/Shopping-Feed-US.xml`; `Shopping Feed - CA` (222149) `ca/en_us` → `/Shopping-Feed-CA.xml`; nightly only when `CJ_SCHEDULE_ENABLED` is `"true"`. Bazaarvoice **production**, same files as stage; nightly only when `BV_SCHEDULE_ENABLED` is `"true"`. Manual runs push both. |
 
 The alarm is defined once in `app.config.yaml`, so it fires in every
 environment. When an environment has `scheduled: false`, a scheduled run
@@ -195,7 +195,7 @@ push.
 
 Per run, for each target × locale: build → validate → upload. A failure in one
 never stops the others. Validation blocks an upload when the feed is empty or
-malformed, has fewer items than the feed's `minItems` floor (CJ US: 100;
+malformed, has fewer items than the feed's `minItems` floor (CJ US 100, CA 85;
 Bazaarvoice US 115, CA 100, MX 6), fails a provider's structural checks
 (Bazaarvoice below), or
 (the **shrink guard**) has fewer than 50% of the items of the last successful
@@ -221,6 +221,9 @@ CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
   The result's `rename` field shows which method ran.
 - The file name must exactly match the CJ feed registration. Each locale is a
   separate registration (country/currency/language are fixed per feed).
+- Stage (test feeds) and prod (live feeds) use the same CJ account, SFTP
+  server and credentials; only the file names differ. Don't point stage at a
+  live file name: CJ would import it into the live feed.
 - CJ confirms receipt and processing **by email** to the registration's
   notification addresses.
 - CJ's server only offers the legacy `ssh-dss` host key; the target enables it
