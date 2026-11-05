@@ -35,18 +35,20 @@ const GENERIC_CATEGORIES = new Set([
 ]);
 
 /**
- * Bazaarvoice locale of each feed locale, as in the legacy BV exports (one file
- * per locale, all for the same BV client). Every product and category carries
- * its values under this locale too (<Names>, <ProductPageUrls>, …), so a
- * product listed in several locale files keeps a name and URL per locale
- * instead of each file overwriting the last. Feed locales not listed here get
- * the base fields only.
+ * Bazaarvoice locale of a feed locale: the language, then the country of the
+ * first path segment ("ca/en_us" -> "en_CA", "mx/es_mx" -> "es_MX"). This is the
+ * locale the site's PDPs load Bazaarvoice with (the "Language Code"
+ * placeholder). Each locale's file goes to the same BV client, so every
+ * product and category also carries its values under this locale
+ * (<Names>, <ProductPageUrls>, …): a product listed in several locale files
+ * keeps a name and URL per locale instead of each file overwriting the last.
+ * @param {string} locale e.g. "us/en_us"
+ * @returns {string | undefined} e.g. "en_US"
  */
-export const BV_LOCALES = {
-  'us/en_us': 'en_US',
-  'ca/en_us': 'en_CA',
-  'mx/es_mx': 'en_MX',
-};
+export function bvLocale(locale) {
+  const m = /^([a-z]{2})\/([a-z]{2})_[a-z]{2}$/.exec(String(locale ?? ''));
+  return m ? `${m[2]}_${m[1].toUpperCase()}` : undefined;
+}
 
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
@@ -327,7 +329,7 @@ export default {
     const indexOf = (item) => (isCommercialItem(item) ? commercialFirst : shopFirst);
     const siteBase = String(ctx.env.FEED_SITE_BASE || '').replace(/\/$/, '');
     const extractDate = new Date().toISOString();
-    const bvLocale = BV_LOCALES[locale];
+    const feedBvLocale = bvLocale(locale);
 
     const productCategories = feed.items.map((item) => resolveCategory(item, data, indexOf(item)));
     // Only the categories this feed uses, with their ancestors: other stores'
@@ -340,9 +342,9 @@ export default {
     }
     const categoriesXml = [...used]
       .sort((x, y) => Number(x) - Number(y) || x.localeCompare(y))
-      .map((id) => categoryXml(id, data.categories[id], siteBase, locale, data.categories, bvLocale)).join('\n');
+      .map((id) => categoryXml(id, data.categories[id], siteBase, locale, data.categories, feedBvLocale)).join('\n');
     const productsXml = feed.items
-      .map((item, i) => productXml(item, productCategories[i], indexOf(item), bvLocale)).join('\n');
+      .map((item, i) => productXml(item, productCategories[i], indexOf(item), feedBvLocale)).join('\n');
 
     const uncategorized = feed.items.filter((_, i) => !productCategories[i]).map((it) => it.id);
     if (uncategorized.length) {

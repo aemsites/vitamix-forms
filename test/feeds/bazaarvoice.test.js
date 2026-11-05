@@ -4,7 +4,7 @@ import {
 import { XMLParser } from 'fast-xml-parser';
 import { main } from '../../src/actions/feeds/index.js';
 import {
-  familyValues, pickCategory, parseCategorySheet, categoryPath,
+  familyValues, pickCategory, parseCategorySheet, categoryPath, bvLocale,
 } from '../../src/actions/feeds/providers/bazaarvoice.js';
 
 const GMC = `<?xml version="1.0" encoding="UTF-8"?>
@@ -233,7 +233,8 @@ describe('bazaarvoice locale fields', () => {
   test.each([
     ['us/en_us', 'en_US'],
     ['ca/en_us', 'en_CA'],
-    ['mx/es_mx', 'en_MX'],
+    ['ca/fr_ca', 'fr_CA'],
+    ['mx/es_mx', 'es_MX'],
   ])('%s carries its values under %s', async (locale, bvLocale) => {
     mockFetch();
     const res = await GET({ locale });
@@ -263,12 +264,13 @@ describe('bazaarvoice locale fields', () => {
     expect(variant.Names.Name['@_locale']).toBe('en_US');
   });
 
-  test('a locale without a BV locale gets the base fields only', async () => {
-    mockFetch();
-    const res = await GET({ locale: 'ca/fr_ca' });
-    expect(res.statusCode).toBe(200);
-    expect(res.body).not.toContain('locale=');
-    expect(res.body).not.toContain('<Names>');
+  test('bvLocale', () => {
+    expect(bvLocale('us/en_us')).toBe('en_US');
+    expect(bvLocale('mx/es_mx')).toBe('es_MX');
+    // the country comes from the first segment, not the language variant
+    expect(bvLocale('ca/en_us')).toBe('en_CA');
+    expect(bvLocale('us')).toBeUndefined();
+    expect(bvLocale(undefined)).toBeUndefined();
   });
 });
 
