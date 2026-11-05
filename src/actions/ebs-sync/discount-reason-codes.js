@@ -81,6 +81,11 @@ export const VBND_REASON_CODES = {
 
   // Propel 510 + Simply Entertaining Cookbook (VBNDP510SEC)
   'propel-510-plus-simply-entertaining-cookbook|071394-VB': 'VBND16',
+
+  // VX3 + 24-ounce Tumbler (US only). Created natively in Edge, so there is no
+  // Magento rule; codes were assigned by the sales team.
+  'vx3-plus-24-ounce-tumbler|075886-04-VB': 'VBND19', // Black
+  'vx3-plus-24-ounce-tumbler|075924-04-VB': 'VBND19.1', // White
 };
 
 /**

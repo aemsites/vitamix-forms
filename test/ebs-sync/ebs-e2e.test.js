@@ -923,6 +923,82 @@ describe('ebs-sync e2e', () => {
       children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', 'WELCOME1']));
     });
 
+    // ── VBND Discount Reason Code at the order header ───────────────────────
+    // Magento stamped the same promotion list on the order header and on every
+    // line, so the VBND code of a virtual bundle must appear at both levels.
+
+    const bundleJournal = loadJournal('journal-pp-bundle-warranty.ndjson');
+    const bundleOrder = (overrides = {}) => {
+      const order = structuredClone(PP_BUNDLE_WARRANTY_ORDER);
+      delete order.estimates?.discounts;
+      return { ...order, ...overrides };
+    };
+    // A second virtual bundle (VX3 + 24-ounce Tumbler, black) for multi-bundle carts.
+    const vx3Bundle = (sku = '075886-04-VB') => ({
+      sku,
+      path: '/us/en_us/products/vx3-plus-24-ounce-tumbler',
+      quantity: 1,
+      name: 'VX3 + 24-ounce Tumbler',
+      price: { final: '519.95', currency: 'USD' },
+      bundleItems: [
+        {
+          sku, name: 'VX3', quantity: 1, price: { final: '490.56', currency: 'USD' }, taxAmount: '36.54',
+        },
+        {
+          sku: '069836-VB', name: '24-ounce Tumbler', quantity: 1, price: { final: '29.39', currency: 'USD' }, taxAmount: '2.19',
+        },
+      ],
+    });
+
+    test('stamps the bundle VBND code on the order header when there are no coupons', async () => {
+      const xml = await buildXml(bundleOrder(), bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10']);
+    });
+
+    test('stamps the bundle VBND code on the header ahead of coupon codes', async () => {
+      const xml = await buildXml(bundleOrder({ couponCodes: ['WELCOME1', 'SAVE10'] }), bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', 'WELCOME1', 'SAVE10']);
+    });
+
+    test('emits each bundle VBND code once on the header when a bundle line repeats', async () => {
+      const order = bundleOrder();
+      order.items.splice(1, 0, structuredClone(order.items[0]));
+      const xml = await buildXml(order, bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10']);
+    });
+
+    test('lists a VBND code per distinct bundle on the header, in line order', async () => {
+      const order = bundleOrder();
+      order.items.splice(1, 0, vx3Bundle());
+      const xml = await buildXml(order, bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', 'VBND19']);
+    });
+
+    test('omits the header VBND code for a bundle with no mapped code', async () => {
+      const order = bundleOrder({ couponCodes: ['WELCOME1'] });
+      order.items[0].path = '/ca/en_ca/products/some-unmapped-bundle';
+      const xml = await buildXml(order, bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['WELCOME1']);
+    });
+
+    test('does not stamp a header VBND code for simple products', async () => {
+      const xml = await buildXml(orderWith({}), journal);
+      expect(promotionCodes(orderLevel(xml))).toEqual([]);
+    });
+
+    test.each([
+      ['black', '075886-04-VB', 'VBND19'],
+      ['white', '075924-04-VB', 'VBND19.1'],
+    ])('stamps the VX3 + 24-ounce Tumbler %s VBND code on the header and both bundle lines', async (_color, sku, code) => {
+      const order = bundleOrder();
+      order.items = [vx3Bundle(sku)];
+      const xml = await buildXml(order, bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual([code]);
+      const lines = lineItems(xml);
+      expect(lines).toHaveLength(2);
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual([code]));
+    });
+
     test('emits no line-level PromotionCode when the order has no coupons', async () => {
       const lines = lineItems(await buildXml(orderWith({}), journal));
       lines.forEach((line) => expect(line).not.toContain('<ns2:PromotionCode>'));

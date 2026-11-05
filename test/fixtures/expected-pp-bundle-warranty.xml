@@ -118,7 +118,7 @@
         <ns2:Tax Amount="132.20" Provisional="true" />
         <ns2:Message></ns2:Message>
         
-        
+        <ns2:PromotionCode>VBND10</ns2:PromotionCode>
         <ns2:Charge Type="Shipping" Value="0.00" />
         <ns2:LineItem
             Sku="061724-04"

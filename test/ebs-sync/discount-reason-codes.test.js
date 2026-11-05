@@ -67,6 +67,17 @@ describe('resolveVbndReasonCode', () => {
     expect(ca).toBe('VBND10.2');
   });
 
+  test('resolves the VX3 + 24-ounce Tumbler variants', () => {
+    expect(resolveVbndReasonCode({
+      path: '/us/en_us/products/vx3-plus-24-ounce-tumbler',
+      sku: '075886-04-VB',
+    })).toBe('VBND19');
+    expect(resolveVbndReasonCode({
+      path: '/us/en_us/products/vx3-plus-24-ounce-tumbler',
+      sku: '075924-04-VB',
+    })).toBe('VBND19.1');
+  });
+
   test('returns empty string for an unmapped variant', () => {
     expect(resolveVbndReasonCode({
       path: '/us/en_us/products/ascent-x5-smartprep-kitchen-system',
