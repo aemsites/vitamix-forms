@@ -237,7 +237,7 @@ describe('config', () => {
       port: 22,
       remoteDir: '/import-inbox',
       credentials: 'BV',
-      // not confirmed that BV ignores temp files and imports a renamed file
+      // direct upload under the final name, no temp file + rename
       atomicUpload: false,
       locales: {
         'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },

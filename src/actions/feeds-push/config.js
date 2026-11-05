@@ -123,9 +123,8 @@ const CJ_SFTP = {
  *   isn't pushed. The MX file keeps its existing name; its content is in the
  *   es_MX locale.
  * - Floors are ~60% of the current item count (2026-11: US 194, CA 167, MX 10).
- * - Upload directly under the final name: it's not yet confirmed that BV
- *   ignores `.part` files and imports a file renamed into place. Switch to
- *   `atomicUpload: true` once it is.
+ * - Upload directly under the final name (no temp file + rename). The files
+ *   are small and BV imports the inbox on its own schedule, not on arrival.
  * - Each host offers only an RSA host key, pinned below; seen by both
  *   ssh-keyscan and ssh2 on first connection (2026-11-05).
  */
