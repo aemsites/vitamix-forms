@@ -14,420 +14,361 @@
         "externalId": "28",
         "parentExternalId": "",
         "name": "Commercial",
-        "url_us": "https://www.vitamix.com/us/en_us/commercial",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/commercial"
+        "path": "/commercial"
       },
       {
         "externalId": "29",
         "parentExternalId": "28",
         "name": "Products",
-        "url_us": "https://www.vitamix.com/us/en_us/commercial/products",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/commercial/products"
+        "path": "/commercial/products"
       },
       {
         "externalId": "55",
         "parentExternalId": "",
         "name": "Shop",
-        "url_us": "https://www.vitamix.com/us/en_us/shop",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop"
+        "path": "/shop"
       },
       {
         "externalId": "58",
         "parentExternalId": "55",
         "name": "Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/accessories"
+        "path": "/shop/accessories"
       },
       {
         "externalId": "61",
         "parentExternalId": "55",
         "name": "Ascent Series Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/ascent-series-accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/ascent-series-accessories"
+        "path": "/shop/accessories?compatibility=Ascent%20Series"
       },
       {
         "externalId": "64",
         "parentExternalId": "55",
         "name": "All Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/blenders"
-      },
-      {
-        "externalId": "67",
-        "parentExternalId": "55",
-        "name": "Blending Cups and Bowls",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/blending-cups-and-bowls",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/blending-cups-and-bowls"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "70",
         "parentExternalId": "55",
         "name": "Certified Reconditioned Series",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/certified-reconditioned-series",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/certified-reconditioned-series"
+        "path": "/shop/certified-reconditioned-series"
       },
       {
         "externalId": "73",
         "parentExternalId": "55",
         "name": "Legacy Series Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/classic-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/classic-blenders"
+        "path": "/shop/classic-blenders"
       },
       {
         "externalId": "76",
         "parentExternalId": "55",
         "name": "Legacy Series Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/classic-series-accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/classic-series-accessories"
+        "path": "/shop/accessories?compatibility=Legacy%20Series"
       },
       {
         "externalId": "79",
         "parentExternalId": "55",
         "name": "Compact Food Recycling",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/compact-food-recycling",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/compact-food-recycling"
+        "path": "/shop"
       },
       {
         "externalId": "82",
         "parentExternalId": "55",
         "name": "Blender Containers",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/containers",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/containers"
+        "path": "/shop/accessories?productType=Container"
       },
       {
         "externalId": "85",
         "parentExternalId": "55",
         "name": "Cookbooks",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/cookbooks",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/cookbooks"
+        "path": "/shop/accessories?productType=Cookbook"
       },
       {
         "externalId": "88",
         "parentExternalId": "55",
         "name": "Corporate Wellness Program",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/corporate-accounts",
-        "url_ca": ""
+        "path": "/shop"
       },
       {
         "externalId": "91",
         "parentExternalId": "55",
         "name": "C-Series: Classic Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/c-series-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/c-series-blenders"
+        "path": "/shop/classic-blenders"
       },
       {
         "externalId": "94",
         "parentExternalId": "55",
         "name": "Explorian Series",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/explorian-series-accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/explorian-series-accessories"
+        "path": "/shop/accessories?compatibility=Explorian%20Series"
       },
       {
         "externalId": "97",
         "parentExternalId": "55",
         "name": "G-Series: Next Generation Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/g-series-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/g-series-blenders"
+        "path": "/shop/classic-blenders"
       },
       {
         "externalId": "100",
         "parentExternalId": "55",
         "name": "Kitchen Tools",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/kitchen-tools",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/kitchen-tools"
+        "path": "/shop/accessories?productType=Kitchen%20Tool"
       },
       {
         "externalId": "106",
         "parentExternalId": "55",
         "name": "All Collections",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/shop-collections",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/shop-collections"
+        "path": "/shop"
       },
       {
         "externalId": "109",
         "parentExternalId": "55",
         "name": "Ascent Series Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/smart-system-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/smart-system-blenders"
+        "path": "/shop/blenders?series=Ascent%20Series"
       },
       {
         "externalId": "112",
         "parentExternalId": "55",
         "name": "Smoothie Cups",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/smoothie-cups",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/smoothie-cups"
+        "path": "/shop/accessories?productType=Smoothie%20Cup"
       },
       {
         "externalId": "115",
         "parentExternalId": "55",
         "name": "Space Saving Blenders Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/space-saving-accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/space-saving-accessories"
+        "path": "/shop/accessories"
       },
       {
         "externalId": "118",
         "parentExternalId": "55",
         "name": "Space Saving Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/space-saving-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/space-saving-blenders"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "121",
         "parentExternalId": "55",
         "name": "Tampers",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/tampers",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/tampers"
+        "path": "/shop/accessories?productType=Tamper"
       },
       {
         "externalId": "127",
         "parentExternalId": "55",
         "name": "Beverage Blenders",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "130",
         "parentExternalId": "127",
         "name": "BarBoss",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/beverage-blenders/barboss",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/barboss"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "136",
         "parentExternalId": "127",
         "name": "Blending Station",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/blending-station"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "142",
         "parentExternalId": "55",
         "name": "Immersion Blender",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/immersion-blending",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/immersion-blending"
+        "path": "/shop/immersion-blending"
       },
       {
         "externalId": "145",
         "parentExternalId": "55",
         "name": "Frozen Treat Mixers",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/frozen-treat-mixers"
+        "path": "/commercial/products?applications=Frozen%20Treats"
       },
       {
         "externalId": "148",
         "parentExternalId": "145",
-        "name": "Mix&#039;n Machine",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/frozen-treat-mixers/mix-n-machine"
+        "name": "Mix'n Machine",
+        "path": "/commercial/products?applications=Frozen%20Treats"
       },
       {
         "externalId": "151",
         "parentExternalId": "55",
         "name": "Certified Reconditioned Collection",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/certified-reconditioned-collection"
+        "path": "/shop/certified-reconditioned-series"
       },
       {
         "externalId": "154",
         "parentExternalId": "127",
         "name": "Drink Machine",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/drink-machine"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "157",
         "parentExternalId": "55",
         "name": "Container Rinsers",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/container-rinsers"
+        "path": "/commercial/products?productType=Commercial%20Accessory"
       },
       {
         "externalId": "160",
         "parentExternalId": "157",
         "name": "Rinse-O-Matic",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/container-rinsers/rinse-o-matic-1",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/container-rinsers/rinse-o-matic-1"
+        "path": "/commercial/products?productType=Commercial%20Accessory"
       },
       {
         "externalId": "163",
         "parentExternalId": "127",
         "name": "The Quiet One",
-        "url_us": "https://www.vitamix.com/us/en_us/",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "169",
         "parentExternalId": "55",
         "name": "Food Preparation",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/food-preparation"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "172",
         "parentExternalId": "169",
         "name": "Vita-Prep",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/food-preparation/vita-prep",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/food-preparation/vita-prep"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "175",
         "parentExternalId": "127",
         "name": "Venturist Series",
-        "url_us": "",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/beverage-blenders/venturist-series"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "178",
         "parentExternalId": "169",
         "name": "Vitamix-XL",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/food-preparation/vitamix-xl",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/food-preparation/vitamix-xl"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "191",
         "parentExternalId": "55",
         "name": "In Home Trial",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/in-home-trial",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/in-home-trial"
+        "path": "/shop"
       },
       {
         "externalId": "194",
         "parentExternalId": "29",
         "name": "Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/commercial/products/accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/commercial/products/accessories"
+        "path": "/commercial/products?productType=Commercial%20Accessory"
       },
       {
         "externalId": "197",
         "parentExternalId": "29",
         "name": "Frozen-Treat-Mixers",
-        "url_us": "https://www.vitamix.com/us/en_us/commercial/products/frozen-treat-mixers",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/commercial/products/frozen-treat-mixers"
+        "path": "/commercial/products?applications=Frozen%20Treats"
       },
       {
         "externalId": "200",
         "parentExternalId": "29",
         "name": "Food-Preparation",
-        "url_us": "https://www.vitamix.com/us/en_us/commercial/products/food-preparation",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/commercial/products/food-preparation"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "201",
         "parentExternalId": "55",
         "name": "Food Processing",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/food-processing",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/food-processing"
+        "path": "/shop/food-processing"
       },
       {
         "externalId": "208",
         "parentExternalId": "55",
         "name": "Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/allblenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/allblenders"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "228",
         "parentExternalId": "55",
         "name": "Shop Now!",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/sale",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/sale"
+        "path": "/shop/sale"
       },
       {
         "externalId": "229",
         "parentExternalId": "",
         "name": "Sale SKUs (Sale Exclusion Products)",
-        "url_us": "https://www.vitamix.com/us/en_us/sale-skus",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/sale-skus"
+        "path": "/shop/sale"
       },
       {
         "externalId": "232",
         "parentExternalId": "55",
         "name": "Kitchen Systems",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/kitchen-systems",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/kitchen-systems"
+        "path": "/shop/blenders?collections=Kitchen%20Systems%20%26%20Bundles"
       },
       {
         "externalId": "237",
         "parentExternalId": "55",
         "name": "Propel Series Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/propel-series-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/propel-series-blenders"
+        "path": "/shop/propel-series-blenders"
       },
       {
         "externalId": "239",
         "parentExternalId": "58",
         "name": "Immersion Blender Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/accessories/immersion-blender-accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/accessories/immersion-blender-accessories"
+        "path": "/shop/accessories?productType=Immersion%20Blending"
       },
       {
         "externalId": "245",
         "parentExternalId": "58",
         "name": "Food Processor Accessories",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/accessories/food-processor-accessories",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/accessories/food-processor-accessories"
+        "path": "/shop/accessories?productType=Food%20Processing"
       },
       {
         "externalId": "254",
         "parentExternalId": "55",
         "name": "Full Size Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/full-size-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/full-size-blenders"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "257",
         "parentExternalId": "55",
         "name": "Employee Sale Exclusions",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/employee-sale-exclusions",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/employee-sale-exclusions"
+        "path": "/shop"
       },
       {
         "externalId": "260",
         "parentExternalId": "55",
         "name": "Why Buy Direct",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/why-buy-direct",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/why-buy-direct"
+        "path": "/shop/why-buy-direct"
       },
       {
         "externalId": "272",
         "parentExternalId": "55",
         "name": "Explorian Series Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/explorian-series-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/explorian-series-blenders"
+        "path": "/shop/explorian-series-blenders"
       },
       {
         "externalId": "273",
         "parentExternalId": "55",
         "name": "Ascent X Series Blenders",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/ascent-x-series-blenders",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/ascent-x-series-blenders"
+        "path": "/shop/ascent-x-series-blenders"
       },
       {
         "externalId": "278",
         "parentExternalId": "55",
         "name": "Eligible Employee Discount",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/eligible-discount-employee",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/eligible-discount-employee"
+        "path": "/shop"
       },
       {
         "externalId": "281",
         "parentExternalId": "55",
         "name": "Available Products",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/availableproducts",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/availableproducts"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "284",
         "parentExternalId": "76",
         "name": "Legacy Series",
-        "url_us": "https://www.vitamix.com/us/en_us/shop/classic-series-accessories/legacy-series",
-        "url_ca": "https://www.vitamix.com/ca/fr_ca/shop/classic-series-accessories/legacy-series"
+        "path": "/shop/accessories?compatibility=Legacy%20Series"
+      },
+      {
+        "externalId": "287",
+        "parentExternalId": "55",
+        "name": "Personal Blending",
+        "path": "/shop/personal-blending"
       }
     ]
   },
   "products": {
-    "total": 295,
-    "limit": 295,
+    "total": 360,
+    "limit": 360,
     "offset": 0,
     "data": [
       {
@@ -465,6 +406,146 @@
       {
         "sku": "66707",
         "categoryExternalId": "97"
+      },
+      {
+        "sku": "VBNDVX1",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075764",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "075917",
+        "categoryExternalId": "208"
+      },
+      {
+        "sku": "Certified_bv32_Reconditioned_bv32_Alta_bv32_Pro",
+        "categoryExternalId": "208"
+      },
+      {
+        "sku": "075958",
+        "categoryExternalId": "208"
+      },
+      {
+        "sku": "075760",
+        "categoryExternalId": "200"
+      },
+      {
+        "sku": "075761",
+        "categoryExternalId": "194"
+      },
+      {
+        "sku": "075763",
+        "categoryExternalId": "194"
+      },
+      {
+        "sku": "075762",
+        "categoryExternalId": "194"
+      },
+      {
+        "sku": "075755",
+        "categoryExternalId": "82"
+      },
+      {
+        "sku": "075756",
+        "categoryExternalId": "287"
+      },
+      {
+        "sku": "075754-40",
+        "categoryExternalId": "205"
+      },
+      {
+        "sku": "Nano",
+        "categoryExternalId": "287"
+      },
+      {
+        "sku": "075753-30",
+        "categoryExternalId": "287"
+      },
+      {
+        "sku": "075870-30",
+        "categoryExternalId": "287"
+      },
+      {
+        "sku": "VX3",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075886-04",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075924-04",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075832-04-01",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075843",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "Certified_bv32_Reconditioned_bv32_Ascent_bv32_X2",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "075998",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "075999",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "076001",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "076000",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "Certified_bv32_Reconditioned_bv32_Ascent_bv32_X4",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "076003",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "076004",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "076005",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "076002",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "sku-3-year-limited-warranty",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "VBNDP510SEC",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "076047",
+        "categoryExternalId": "94"
+      },
+      {
+        "sku": "076046",
+        "categoryExternalId": "94"
+      },
+      {
+        "sku": "076048",
+        "categoryExternalId": "94"
       },
       {
         "sku": "VBND5200LB",
@@ -560,7 +641,7 @@
       },
       {
         "sku": "VBND5200SS",
-        "categoryExternalId": "257"
+        "categoryExternalId": "208"
       },
       {
         "sku": "X5_bv32_with_bv32_Stainless_bv32_Steel_bv32_Container",
@@ -569,6 +650,18 @@
       {
         "sku": "075845",
         "categoryExternalId": "273"
+      },
+      {
+        "sku": "VX1",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075804-04",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075769",
+        "categoryExternalId": "55"
       },
       {
         "sku": "073055",
@@ -623,7 +716,7 @@
         "categoryExternalId": "273"
       },
       {
-        "sku": "074095-04",
+        "sku": "074095",
         "categoryExternalId": "273"
       },
       {
@@ -675,10 +768,6 @@
         "categoryExternalId": "273"
       },
       {
-        "sku": "VBNDE310",
-        "categoryExternalId": "272"
-      },
-      {
         "sku": "VBNDP750",
         "categoryExternalId": "272"
       },
@@ -696,7 +785,7 @@
       },
       {
         "sku": "VBNDIBCB",
-        "categoryExternalId": "257"
+        "categoryExternalId": "228"
       },
       {
         "sku": "071511",
@@ -947,14 +1036,6 @@
         "categoryExternalId": "254"
       },
       {
-        "sku": "064146",
-        "categoryExternalId": "94"
-      },
-      {
-        "sku": "064147",
-        "categoryExternalId": "94"
-      },
-      {
         "sku": "sku-10-year-standard-warranty",
         "categoryExternalId": "55"
       },
@@ -988,7 +1069,7 @@
       },
       {
         "sku": "066193-04",
-        "categoryExternalId": "85"
+        "categoryExternalId": "205"
       },
       {
         "sku": "069811",
@@ -1331,6 +1412,18 @@
         "categoryExternalId": "109"
       },
       {
+        "sku": "065948",
+        "categoryExternalId": "109"
+      },
+      {
+        "sku": "065946",
+        "categoryExternalId": "109"
+      },
+      {
+        "sku": "065949",
+        "categoryExternalId": "109"
+      },
+      {
         "sku": "Creations_bv32_II",
         "categoryExternalId": "55"
       },
@@ -1371,10 +1464,6 @@
         "categoryExternalId": "109"
       },
       {
-        "sku": "069833",
-        "categoryExternalId": "100"
-      },
-      {
         "sku": "066192-04",
         "categoryExternalId": "82"
       },
@@ -1404,6 +1493,22 @@
       },
       {
         "sku": "A2500",
+        "categoryExternalId": "64"
+      },
+      {
+        "sku": "061007",
+        "categoryExternalId": "64"
+      },
+      {
+        "sku": "062068",
+        "categoryExternalId": "64"
+      },
+      {
+        "sku": "062067",
+        "categoryExternalId": "64"
+      },
+      {
+        "sku": "062069",
         "categoryExternalId": "64"
       },
       {
@@ -1495,28 +1600,56 @@
         "categoryExternalId": "73"
       },
       {
-        "sku": "VBNDX5SS",
+        "sku": "VBNDAX5DSPKS",
         "categoryExternalId": "273"
       },
       {
-        "sku": "075804-04",
-        "categoryExternalId": "254"
+        "sku": "VBND2SIB",
+        "categoryExternalId": "228"
       },
       {
-        "sku": "075769",
+        "sku": "VBNDP750SS",
+        "categoryExternalId": "272"
+      },
+      {
+        "sku": "VBNDDCC",
+        "categoryExternalId": "82"
+      },
+      {
+        "sku": "076010",
         "categoryExternalId": "55"
       },
       {
-        "sku": "VX1",
-        "categoryExternalId": "254"
-      },
-      {
-        "sku": "075764",
+        "sku": "076045",
         "categoryExternalId": "55"
       },
       {
-        "sku": "VBNDVX1",
-        "categoryExternalId": "257"
+        "sku": "MaxExtract",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "Certified_bv32_Reconditioned_bv32_VX1",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "076085",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "Propel_bv32_510_bv32__bv43__bv32_Personal_bv32_Cup_bv32_Adapter",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "Ion",
+        "categoryExternalId": "287"
+      },
+      {
+        "sku": "VBNDVX1-CA",
+        "categoryExternalId": "254"
+      },
+      {
+        "sku": "075861-04",
+        "categoryExternalId": "254"
       },
       {
         "sku": "067991",
@@ -1587,6 +1720,10 @@
         "categoryExternalId": "91"
       },
       {
+        "sku": "069833",
+        "categoryExternalId": "100"
+      },
+      {
         "sku": "064207",
         "categoryExternalId": "254"
       },
@@ -1603,12 +1740,76 @@
         "categoryExternalId": "91"
       },
       {
-        "sku": "075861-04",
+        "sku": "075728",
+        "categoryExternalId": "273"
+      },
+      {
+        "sku": "075828-04",
         "categoryExternalId": "254"
       },
       {
-        "sku": "VBNDVX1-CA",
+        "sku": "063853",
+        "categoryExternalId": "205"
+      },
+      {
+        "sku": "063885",
+        "categoryExternalId": "205"
+      },
+      {
+        "sku": "068631",
+        "categoryExternalId": "82"
+      },
+      {
+        "sku": "073111",
+        "categoryExternalId": "223"
+      },
+      {
+        "sku": "062845",
+        "categoryExternalId": "82"
+      },
+      {
+        "sku": "062449",
         "categoryExternalId": "254"
+      },
+      {
+        "sku": "015130",
+        "categoryExternalId": "85"
+      },
+      {
+        "sku": "065735",
+        "categoryExternalId": "223"
+      },
+      {
+        "sku": "064147",
+        "categoryExternalId": "94"
+      },
+      {
+        "sku": "Total_bv32_Nutrition_bv32_Center_bv32_Super",
+        "categoryExternalId": "91"
+      },
+      {
+        "sku": "056909",
+        "categoryExternalId": "91"
+      },
+      {
+        "sku": "056910",
+        "categoryExternalId": "91"
+      },
+      {
+        "sku": "056904",
+        "categoryExternalId": "91"
+      },
+      {
+        "sku": "056404-3897",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "056405-3898",
+        "categoryExternalId": "55"
+      },
+      {
+        "sku": "056406-3899",
+        "categoryExternalId": "55"
       }
     ]
   }

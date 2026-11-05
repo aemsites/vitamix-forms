@@ -3,7 +3,9 @@ import {
 } from '@jest/globals';
 import { XMLParser } from 'fast-xml-parser';
 import { main } from '../../src/actions/feeds/index.js';
-import { familyValues } from '../../src/actions/feeds/providers/bazaarvoice.js';
+import {
+  familyValues, pickCategory, parseCategorySheet, categoryPath,
+} from '../../src/actions/feeds/providers/bazaarvoice.js';
 
 const GMC = `<?xml version="1.0" encoding="UTF-8"?>
 <rss xmlns:g="http://base.google.com/ns/1.0" version="2.0">
@@ -84,19 +86,29 @@ const INDEX = {
 
 /**
  * Mock the fetches: the category sheet (JSON), the product index (JSON) and the
- * GMC feed (XML).
+ * GMC feed (XML). The commercial sub-index (index + feed) is missing (404)
+ * unless `commercial` gives its status, index and feed.
  */
-function mockFetch({ sheetOk = true, indexOk = true, index = INDEX } = {}) {
+function mockFetch({
+  sheetOk = true, indexOk = true, index = INDEX, sheet = SHEET, gmc = GMC,
+  commercial = { status: 404 },
+} = {}) {
   return jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
     if (String(url).includes('bv-categories')) {
-      return { ok: sheetOk, status: sheetOk ? 200 : 500, json: async () => SHEET };
+      return { ok: sheetOk, status: sheetOk ? 200 : 500, json: async () => sheet };
+    }
+    if (String(url).includes('/products/commercial/')) {
+      const ok = commercial.status === 200;
+      return String(url).includes('index.json')
+        ? { ok, status: commercial.status, json: async () => commercial.index }
+        : { ok, status: commercial.status, text: async () => commercial.gmc };
     }
     if (String(url).includes('/products/index.json')) {
       const body = typeof index === 'function' ? index(new URL(url)) : index;
       const ok = indexOk && !!body;
       return { ok, status: ok ? 200 : 503, json: async () => body };
     }
-    return { ok: true, status: 200, text: async () => GMC };
+    return { ok: true, status: 200, text: async () => gmc };
   });
 }
 
@@ -171,11 +183,17 @@ describe('bazaarvoice provider', () => {
     expect(attrValues(nocat, 'BV_FE_FAMILY')).toEqual(['NOCAT']);
   });
 
-  test('uses the ca category url for a ca locale', async () => {
+  test('builds category urls for the requested locale', async () => {
     mockFetch();
-    const res = await GET({ locale: 'ca/en_us' });
-    expect(res.body).toContain('https://www.vitamix.com/ca/fr_ca/shop/blenders');
-    expect(res.body).not.toContain('/us/en_us/shop/blenders');
+    for (const locale of ['ca/en_us', 'ca/fr_ca', 'mx/es_mx']) {
+      // eslint-disable-next-line no-await-in-loop
+      const res = await GET({ locale });
+      const cats = asArray(parser.parse(res.body).Feed.Categories.Category);
+      expect(cats.find((c) => c.ExternalId === '91').CategoryPageUrl)
+        .toBe(`https://www.vitamix.com/${locale}/shop/blenders`);
+      expect(cats.find((c) => c.ExternalId === '55').CategoryPageUrl)
+        .toBe(`https://www.vitamix.com/${locale}/shop`);
+    }
   });
 
   test('returns 502 when the product index is unavailable', async () => {
@@ -205,6 +223,178 @@ describe('bazaarvoice provider', () => {
     mockFetch({ sheetOk: false });
     const res = await GET({ locale: 'us/en_us' });
     expect(res.statusCode).toBe(502);
+  });
+});
+
+const GMC_ITEM = (id, link, extra = '') => `
+  <item>
+    <g:id>${id}</g:id>
+    <g:title>Vitamix ${id}</g:title>
+    <g:description>About ${id}</g:description>
+    <g:link>${link}</g:link>
+    <g:image_link>https://www.vitamix.com/img/${id}.jpg</g:image_link>
+    <g:availability>in_stock</g:availability>
+    <g:price>9.95 USD</g:price>${extra}
+  </item>`;
+const gmcOf = (...items) => `<?xml version="1.0" encoding="UTF-8"?>
+<rss xmlns:g="http://base.google.com/ns/1.0" version="2.0"><channel>${items.join('')}</channel></rss>`;
+
+// path-based sheet (current schema) with a shop and a commercial tree
+const TREE_SHEET = {
+  categories: {
+    data: [
+      { externalId: '28', name: 'Commercial', path: '/commercial' },
+      { externalId: '29', parentExternalId: '28', name: 'Products', path: '/commercial/products' },
+      { externalId: '194', parentExternalId: '29', name: 'Accessories', path: '/commercial/products/accessories' },
+      { externalId: '55', name: 'Shop', path: '/shop' },
+      { externalId: '58', parentExternalId: '55', name: 'Accessories', path: '/shop/accessories' },
+      { externalId: '64', parentExternalId: '55', name: 'All Blenders', path: '/shop/blenders' },
+      { externalId: '287', parentExternalId: '55', name: 'Personal Blending', path: '/shop/personal-blending' },
+      { externalId: '148', parentExternalId: '145', name: 'Mix&#039;n Machine', path: '/shop/frozen-treat-mixers/mix-n-machine' },
+      { externalId: '145', parentExternalId: '55', name: 'Frozen Treat Mixers', path: '/shop/frozen-treat-mixers' },
+      { externalId: '300', parentExternalId: '55', name: 'Unused', path: '/shop/unused' },
+    ],
+  },
+  products: {
+    data: [
+      { sku: 'MAPPED', categoryExternalId: '58' },
+      { sku: 'DANGLING', categoryExternalId: '223' },
+    ],
+  },
+};
+
+describe('bazaarvoice categories', () => {
+  const US = 'https://www.vitamix.com/us/en_us/products';
+  const gmc = gmcOf(
+    GMC_ITEM('MAPPED', `${US}/mapped`),
+    GMC_ITEM('DANGLING', `${US}/dangling`),
+    GMC_ITEM('NANO-1', `${US}/nano`, '<g:item_group_id>Nano</g:item_group_id><g:color>Black</g:color>'),
+    GMC_ITEM('NONE', `${US}/none`),
+  );
+  const index = {
+    total: 6,
+    data: [
+      { sku: 'MAPPED', categories: 'Personal Blending' },
+      { sku: 'DANGLING', categories: 'Shop,Accessories' },
+      { sku: 'Nano', categories: 'All Blenders,Personal Blending' },
+      { sku: 'NANO-1', parentSku: 'Nano' },
+      { sku: 'NONE', categories: '' },
+      // stale main-index row of a product that moved to the commercial catalog
+      { sku: 'QUIET', categories: 'Shop' },
+    ],
+  };
+
+  const categoryOf = (body) => Object.fromEntries(
+    asArray(parser.parse(body).Feed.Products.Product)
+      .map((p) => [p.ExternalId, p.CategoryExternalId]),
+  );
+
+  test('sheet first, then the product categories', async () => {
+    mockFetch({ sheet: TREE_SHEET, gmc, index });
+    const res = await GET({ locale: 'us/en_us' });
+    expect(res.statusCode).toBe(200);
+    expect(categoryOf(res.body)).toEqual({
+      MAPPED: '58', // the sheet wins over the product's own categories
+      DANGLING: '58', // sheet id not defined: falls back, skipping "Shop"
+      'NANO-1': '287', // the parent's categories, the generic one skipped
+      NONE: undefined,
+    });
+  });
+
+  test('emits only the categories in use, with their ancestors', async () => {
+    mockFetch({ sheet: TREE_SHEET, gmc, index });
+    const res = await GET({ locale: 'mx/es_mx' });
+    const cats = asArray(parser.parse(res.body).Feed.Categories.Category);
+    expect(cats.map((c) => c.ExternalId)).toEqual(['55', '58', '287']);
+    expect(cats.find((c) => c.ExternalId === '287').CategoryPageUrl)
+      .toBe('https://www.vitamix.com/mx/es_mx/shop/personal-blending');
+  });
+
+  test('includes commercial products, with their reviewsId and category', async () => {
+    const C = 'https://www.vitamix.com/us/en_us/products/commercial';
+    mockFetch({
+      sheet: TREE_SHEET,
+      gmc,
+      index,
+      commercial: {
+        status: 200,
+        // MAPPED is in both feeds: the main feed's row wins
+        gmc: gmcOf(GMC_ITEM('QUIET', `${C}/quiet`), GMC_ITEM('MAPPED', `${C}/dup`)),
+        index: { total: 1, data: [{ sku: 'QUIET', reviewsId: 'quiet', categories: 'Commercial,Accessories' }] },
+      },
+    });
+    const res = await GET({ locale: 'us/en_us' });
+    expect(res.statusCode).toBe(200);
+    const prods = asArray(parser.parse(res.body).Feed.Products.Product);
+    expect(prods.map((p) => p.ExternalId)).toEqual(['MAPPED', 'DANGLING', 'NANO-1', 'NONE', 'QUIET']);
+    expect(prods.find((p) => p.ExternalId === 'MAPPED').ProductPageUrl).toBe(`${US}/mapped`);
+    const quiet = prods.find((p) => p.ExternalId === 'QUIET');
+    // its commercial index row wins over the stale main one; "Accessories"
+    // resolves to the commercial category for a commercial product
+    expect(quiet.CategoryExternalId).toBe('194');
+    expect(attrValues(quiet, 'BV_FE_FAMILY')).toEqual(['quiet', 'QUIET']);
+    const cats = asArray(parser.parse(res.body).Feed.Categories.Category).map((c) => c.ExternalId);
+    expect(cats).toEqual(expect.arrayContaining(['28', '29', '194']));
+  });
+
+  test('returns 502 when the commercial feed fails (other than missing)', async () => {
+    mockFetch({ commercial: { status: 500 } });
+    const res = await GET({ locale: 'us/en_us' });
+    expect(res.statusCode).toBe(502);
+  });
+
+  test('other providers ignore the commercial catalog', async () => {
+    const spy = mockFetch();
+    const res = await main({
+      __ow_method: 'GET', LOG_LEVEL: 'error', provider: 'meta', locale: 'us/en_us',
+    });
+    expect(res.statusCode).toBe(200);
+    expect(spy.mock.calls.some(([url]) => String(url).includes('/commercial/'))).toBe(false);
+  });
+});
+
+describe('parseCategorySheet', () => {
+  test('derives the path from legacy url columns and decodes names', () => {
+    const data = parseCategorySheet({
+      categories: {
+        data: [
+          { externalId: '91', name: 'Mix&#039;n Machine', url_ca: 'https://www.vitamix.com/ca/fr_ca/shop/blenders' },
+          { externalId: '55', name: 'Shop', path: '/shop', url_us: 'https://www.vitamix.com/us/en_us/other' },
+        ],
+      },
+      products: { data: [{ sku: 'A', categoryExternalId: 91 }] },
+    });
+    expect(data.categories['91']).toEqual({ name: "Mix'n Machine", parent: undefined, path: '/shop/blenders' });
+    expect(data.categories['55'].path).toBe('/shop');
+    expect(data.productCategory).toEqual({ A: '91' });
+    expect(data.byName.get("mix'n machine")).toEqual(['91']);
+  });
+
+  test('categoryPath strips the locale prefix', () => {
+    expect(categoryPath('https://www.vitamix.com/us/en_us/shop/blenders')).toBe('/shop/blenders');
+    expect(categoryPath('https://www.vitamix.com/us/en_us/')).toBe('/');
+    expect(categoryPath('not a url')).toBeUndefined();
+  });
+});
+
+describe('pickCategory', () => {
+  const data = parseCategorySheet(TREE_SHEET);
+
+  test('prefers specific, then deeper, then the product order', () => {
+    expect(pickCategory(['All Blenders', 'Personal Blending'], data, false)).toBe('287');
+    expect(pickCategory(['Frozen Treat Mixers', "Mix'n Machine"], data, false)).toBe('148');
+    expect(pickCategory(['Personal Blending', 'Accessories'], data, false)).toBe('287');
+  });
+
+  test('falls back to a generic category, or nothing', () => {
+    expect(pickCategory(['Shop', 'All Blenders'], data, false)).toBe('64');
+    expect(pickCategory(['Unknown'], data, false)).toBeUndefined();
+    expect(pickCategory([], data, false)).toBeUndefined();
+  });
+
+  test('resolves a shared name by catalog', () => {
+    expect(pickCategory(['Accessories'], data, false)).toBe('58');
+    expect(pickCategory(['Accessories'], data, true)).toBe('194');
   });
 });
 

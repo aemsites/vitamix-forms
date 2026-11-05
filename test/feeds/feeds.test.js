@@ -274,6 +274,8 @@ describe('feeds action', () => {
     const INDEX = { total: 1, data: [{ sku: '064584' }] };
     jest.spyOn(global, 'fetch').mockImplementation(async (url) => {
       if (String(url).includes('bv-categories')) return { ok: true, status: 200, json: async () => SHEET };
+      // no commercial sub-index for this locale
+      if (String(url).includes('/products/commercial/')) return { ok: false, status: 404 };
       if (String(url).includes('/products/index.json')) return { ok: true, status: 200, json: async () => INDEX };
       return { ok: true, status: 200, text: async () => SAMPLE_FEED };
     });

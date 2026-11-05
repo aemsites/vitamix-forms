@@ -114,18 +114,29 @@ Supported providers:
   (empty unless the source sets it), matching the legacy Magento feed.
 - **`cj`** — Commission Junction. Bare `<feed>` root, non-namespaced, Google-spec
   `availability` (`in_stock`); replaces the current SFTP drop.
-- **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Loads the category taxonomy
-  from a published DA sheet (`BV_CATEGORY_SHEET_URL`) and maps GMC identifiers
-  (`gtin`→`UPC`). Each product gets two `BV_FE_FAMILY` values, as in the legacy
-  feed: the parent's `reviewsId` from the product index (the PDP's BV product
-  id, which groups related products such as a blender and its bundles) and the
-  variant group (`item_group_id`, or the product's own id). Without a
-  `reviewsId` only the variant group is sent. Like the category sheet, the
-  index is required: the feed is a full (non-incremental) feed, so it returns 502
-  rather than serving products without their families. A
-  variant missing from the category sheet inherits its parent's category (the
-  sheet was lifted from the legacy feed, which listed configurable parents).
-  `raw=true` serves the previous, unprepared Bazaarvoice feed.
+- **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Unlike the other
+  providers it also includes the commercial catalog (its own product index and
+  GMC feed under `<locale>/products/commercial/`), as the legacy feed did; a
+  locale without one (404) is skipped, any other failure returns 502. Maps GMC
+  identifiers (`gtin`→`UPC`). Each product gets two `BV_FE_FAMILY` values, as
+  in the legacy feed: the parent's `reviewsId` from the product index (the PDP's
+  BV product id, which groups related products such as a blender and its
+  bundles) and the variant group (`item_group_id`, or the product's own id).
+  Without a `reviewsId` only the variant group is sent. The index is required:
+  the feed is a full (non-incremental) feed, so it returns 502 rather than
+  serving products without their families.
+  - **Categories** come from a published DA sheet (`BV_CATEGORY_SHEET_URL`,
+    built by `dev/extract-bv-categories.mjs` from legacy BV exports):
+    `categories` (`externalId`, `parentExternalId`, `name`, `path`; older sheets
+    with `url_us`/`url_ca` still work) and `products` (`sku` →
+    `categoryExternalId`). A product's category is the sheet's (its own, else
+    its variant group's), else one picked from its categories in the product
+    index (its own, else its parent's): matched to the sheet by name, skipping
+    broad ones ("Shop", "All Blenders", promo categories…) when a more specific
+    one exists, then the deepest. Only the categories in use (and their
+    ancestors) are sent, with page URLs for the requested locale
+    (`<site>/<locale><path>`).
+  - `raw=true` serves the previous, unprepared Bazaarvoice feed.
 - **`openai`** — OpenAI commerce "ads" feed (**CSV, US-only**, UTF-8 with BOM so
   spreadsheet tools detect the encoding). Columns match the sample
   (`docs/vitamix-openai-ads-feed-SAMPLE.csv`), mapped ~1:1 from GMC with a few
