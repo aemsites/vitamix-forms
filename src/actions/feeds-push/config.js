@@ -102,6 +102,23 @@ const CJ_SFTP = {
   idPattern: /^[A-Za-z0-9_-]+$/,
 };
 
+/**
+ * Bazaarvoice product feed, staging SFTP (the production SFTP is a different
+ * host). Settings shared by every environment live here; host goes per env.
+ * - Files go in `/import-inbox`; BV imports each file as the full catalog for
+ *   its locale (the feed is non-incremental).
+ * - File names match what BV already receives, one file per locale.
+ * - Upload directly under the final name: it's not yet confirmed that BV
+ *   ignores `.part` files and imports a file renamed into place. Switch to
+ *   `atomicUpload: true` once it is.
+ */
+const BV_SFTP = {
+  provider: 'bazaarvoice',
+  port: 22,
+  remoteDir: '/import-inbox',
+  atomicUpload: false,
+};
+
 /** @type {Record<string, EnvConfig>} */
 export const CONFIG = {
   stage: {
@@ -121,6 +138,22 @@ export const CONFIG = {
           // CJ test feed "Vitamix_CA_Edge_Test" (feed 323619, ad 17374929), test
           // mode. Same CJ account and SFTP credentials as US.
           'ca/en_us': { file: 'vitamix_ca_edge.xml', minItems: 85 },
+        },
+      },
+      bazaarvoice: {
+        ...BV_SFTP,
+        host: 'sftp-stg.bazaarvoice.com',
+        // RSA host key, the only one the server offers; seen by both
+        // ssh-keyscan and ssh2 on first connection (2026-11-05).
+        hostFingerprints: ['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI'],
+        credentials: 'BV', // BV_SFTP_USERNAME / BV_SFTP_PASSWORD
+        // Floors are ~60% of the current item count (2026-11: US 194, CA 167,
+        // MX 10). `ca/fr_ca` isn't pushed. The MX file keeps its existing name;
+        // its content is in the es_MX locale.
+        locales: {
+          'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
+          'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
+          'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
         },
       },
     },

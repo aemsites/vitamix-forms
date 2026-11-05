@@ -327,7 +327,7 @@ async function pushOne(ctx, job, {
 
   const previous = previousCounts[countKey(targetKey, locale)]?.count ?? null;
   const { problems, warnings } = validateFeed(built, {
-    idPattern: target.idPattern, previousCount: previous, force, minItems: job.minItems,
+    provider: target.provider, idPattern: target.idPattern, previousCount: previous, force, minItems: job.minItems,
   });
   if (warnings.length) result.warnings = warnings;
   if (problems.length) {

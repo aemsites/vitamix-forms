@@ -17,7 +17,7 @@ const { main } = await import('../../src/actions/feeds-push/index.js');
 const {
   CONFIG, NAMESPACES, resolveEnvironment, resolveCredentials,
 } = await import('../../src/actions/feeds-push/config.js');
-const { validateFeed } = await import('../../src/actions/feeds-push/validate.js');
+const { validateFeed, checkBazaarvoice } = await import('../../src/actions/feeds-push/validate.js');
 const sftpModule = await import('../../src/actions/feeds-push/sftp.js');
 const { parseRecipients, buildAlert } = await import('../../src/actions/feeds-push/alert.js');
 const { PROVIDERS } = await import('../../src/actions/feeds/providers/index.js');
@@ -37,18 +37,33 @@ ${Array.from({ length: n }, (_, i) => `<item>
 </item>`).join('\n')}
 </channel></rss>`;
 
-/** Route fetch: merchant-center feed per locale, email API. */
+/** Bazaarvoice category sheet: every test product is a blender. */
+const BV_SHEET = {
+  categories: { data: [{ externalId: '91', name: 'Blenders', path: '/shop/blenders' }] },
+  products: { data: [{ sku: 'SKU0', categoryExternalId: '91' }] },
+};
+
+/**
+ * Route fetch: merchant-center feed per locale, the Bazaarvoice category sheet
+ * and product index, email API. Commercial sub-indexes are missing (404).
+ */
 function mockFetch({ feeds = {}, emailOk = true } = {}) {
   const emails = [];
   const spy = jest.spyOn(global, 'fetch').mockImplementation(async (url, init) => {
     const u = String(url);
+    if (u.includes('bv-categories')) {
+      return { ok: true, status: 200, json: async () => BV_SHEET };
+    }
+    if (/\/products\/index\.json/.test(u)) {
+      return { ok: true, status: 200, json: async () => ({ total: 1, data: [{ sku: 'SKU0', reviewsId: 'r0' }] }) };
+    }
     if (u.includes('/emails')) {
       emails.push(JSON.parse(init.body));
       return { ok: emailOk, status: emailOk ? 200 : 500, headers: { get: () => null } };
     }
     const m = u.match(/vitamix\.com\/([a-z]{2}\/[a-z]{2}_[a-z]{2})\/products\/merchant-center-feed\.xml/);
     const feed = m && feeds[m[1]];
-    if (feed === undefined) return { ok: false, status: 404, text: async () => '' };
+    if (feed == null) return { ok: false, status: 404, text: async () => '' };
     if (feed instanceof Error) throw feed;
     return { ok: true, status: 200, text: async () => feed };
   });
@@ -122,6 +137,8 @@ const SECRETS = {
   LOG_LEVEL: 'error',
   CJ_SFTP_USERNAME: 'cj-user',
   CJ_SFTP_PASSWORD: 'cj-pass',
+  BV_SFTP_USERNAME: 'bv-user',
+  BV_SFTP_PASSWORD: 'bv-pass',
   ALERT_FEED_FAIL_EMAILS: 'a@example.com, b@example.com',
   EMAIL_TOKEN: 'email-token',
 };
@@ -138,6 +155,21 @@ const smallConfig = () => ({
       cj: {
         ...CONFIG.stage.targets.cj,
         locales: { 'us/en_us': { ...CONFIG.stage.targets.cj.locales['us/en_us'], minItems: 1 } },
+      },
+    },
+  },
+});
+
+/** The real stage Bazaarvoice target alone, with small item floors. */
+const bvConfig = () => ({
+  ...CONFIG,
+  stage: {
+    enabled: true,
+    targets: {
+      bazaarvoice: {
+        ...CONFIG.stage.targets.bazaarvoice,
+        locales: Object.fromEntries(Object.entries(CONFIG.stage.targets.bazaarvoice.locales)
+          .map(([locale, l]) => [locale, { ...l, minItems: 1 }])),
       },
     },
   },
@@ -198,8 +230,31 @@ describe('config', () => {
     expect(CONFIG.prod.scheduled).toBe(true);
   });
 
+  test('stage pushes the Bazaarvoice feeds to the staging SFTP; prod has no Bazaarvoice target', () => {
+    const bv = CONFIG.stage.targets.bazaarvoice;
+    expect(bv).toMatchObject({
+      provider: 'bazaarvoice',
+      host: 'sftp-stg.bazaarvoice.com',
+      port: 22,
+      remoteDir: '/import-inbox',
+      credentials: 'BV',
+      // not confirmed that BV ignores temp files and imports a renamed file
+      atomicUpload: false,
+    });
+    expect(bv.hostFingerprints).toEqual(['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI']);
+    expect(bv.locales).toEqual({
+      'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
+      'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
+      'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
+    });
+    expect(CONFIG.prod.targets.bazaarvoice).toBeUndefined();
+  });
+
   test('resolveCredentials treats empty and unsubstituted vars as missing', () => {
     expect(resolveCredentials(SECRETS, 'CJ')).toEqual({ username: 'cj-user', password: 'cj-pass' });
+    expect(resolveCredentials(SECRETS, 'BV')).toEqual({ username: 'bv-user', password: 'bv-pass' });
+    expect(resolveCredentials({ BV_SFTP_USERNAME: '$BV_SFTP_USERNAME', BV_SFTP_PASSWORD: '$BV_SFTP_PASSWORD' }, 'BV'))
+      .toBeNull();
     expect(resolveCredentials({ CJ_SFTP_USERNAME: 'u' }, 'CJ')).toBeNull();
     expect(resolveCredentials({ CJ_SFTP_USERNAME: 'u', CJ_SFTP_PASSWORD: '' }, 'CJ')).toBeNull();
     expect(resolveCredentials({ CJ_SFTP_USERNAME: '$CJ_SFTP_USERNAME', CJ_SFTP_PASSWORD: 'p' }, 'CJ')).toBeNull();
@@ -596,6 +651,150 @@ describe('validateFeed', () => {
   });
 });
 
+describe('run — Bazaarvoice', () => {
+  const opts = (sftp, extra = {}) => ({
+    namespace: STAGE_NS, config: bvConfig(), sftpDeps: { createClient: sftp.createClient }, ...extra,
+  });
+
+  test('uploads each locale directly to /import-inbox with the staging credentials', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(3), 'ca/en_us': sourceFeed(2), 'mx/es_mx': sourceFeed(1) } });
+    const sftp = mockSftp({ files: new Map([['/import-inbox/productfeed-en_US.xml', '<old/>']]) });
+    const res = await run(SECRETS, opts(sftp));
+
+    expect(res.ok).toBe(true);
+    expect(res.results.map((r) => [r.locale, r.status, r.itemCount, r.remotePath])).toEqual([
+      ['us/en_us', 'uploaded', 3, '/import-inbox/productfeed-en_US.xml'],
+      ['ca/en_us', 'uploaded', 2, '/import-inbox/productfeed-en_CA.xml'],
+      ['mx/es_mx', 'uploaded', 1, '/import-inbox/productfeed-en_MX.xml'],
+    ]);
+    expect(sftp.connects).toEqual([expect.objectContaining({
+      host: 'sftp-stg.bazaarvoice.com', port: 22, username: 'bv-user', password: 'bv-pass', hostHash: 'sha256',
+    })]);
+    // no temp file + rename: written straight to the final names
+    expect(sftp.ops).toEqual([
+      ['put', '/import-inbox/productfeed-en_US.xml'],
+      ['put', '/import-inbox/productfeed-en_CA.xml'],
+      ['put', '/import-inbox/productfeed-en_MX.xml'],
+    ]);
+    const us = sftp.files.get('/import-inbox/productfeed-en_US.xml');
+    expect(us).toMatch(/<Feed xmlns="http:\/\/www\.bazaarvoice\.com\/xs\/PRR\/ProductFeed\/14\.7"/);
+    expect(us).toContain('<Name locale="en_US">');
+    expect(sftp.files.get('/import-inbox/productfeed-en_MX.xml')).toContain('<Name locale="es_MX">');
+    const counts = JSON.parse(store.get('feeds-push.counts'));
+    expect(counts['bazaarvoice|mx/es_mx'].count).toBe(1);
+  });
+
+  test('missing BV credentials fail every Bazaarvoice locale without connecting', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+    const sftp = mockSftp();
+    const noBv = { ...SECRETS, BV_SFTP_USERNAME: '', BV_SFTP_PASSWORD: '' };
+    const res = await run(noBv, opts(sftp, { locale: 'us/en_us' }));
+    expect(res.results[0]).toMatchObject({
+      status: 'failed', step: 'config', error: 'missing BV_SFTP_USERNAME / BV_SFTP_PASSWORD',
+    });
+    expect(sftp.connects).toHaveLength(0);
+  });
+
+  test('a product without an image blocks that locale\'s upload', async () => {
+    const noImage = sourceFeed(2).replace('<g:image_link>https://www.vitamix.com/img/1.jpg</g:image_link>', '');
+    mockFetch({ feeds: { 'us/en_us': noImage } });
+    const sftp = mockSftp();
+    const res = await run(SECRETS, opts(sftp, { locale: 'us/en_us' }));
+    expect(res.results[0]).toMatchObject({ status: 'failed', step: 'validate' });
+    expect(res.results[0].error).toMatch(/1 products missing ImageUrl: SKU1/);
+    expect(sftp.connects).toHaveLength(0);
+  });
+
+  test('the real floors block small feeds even without a baseline', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(114), 'ca/en_us': sourceFeed(100), 'mx/es_mx': sourceFeed(5) } });
+    const res = await run(SECRETS, { namespace: STAGE_NS, target: 'bazaarvoice', dryRun: true });
+    expect(res.results.map((r) => [r.locale, r.status, r.error])).toEqual([
+      ['us/en_us', 'failed', 'only 114 items (minimum 115)'],
+      ['ca/en_us', 'validated', undefined],
+      ['mx/es_mx', 'failed', 'only 5 items (minimum 6)'],
+    ]);
+  });
+});
+
+describe('Bazaarvoice validation', () => {
+  const NS = 'http://www.bazaarvoice.com/xs/PRR/ProductFeed/14.7';
+  const product = (id, fields = {}) => {
+    const f = {
+      Name: `Product ${id}`,
+      ProductPageUrl: `https://www.example.com/p/${id}`,
+      ImageUrl: `https://www.example.com/i/${id}.jpg`,
+      CategoryExternalId: '91',
+      ...fields,
+    };
+    return `<Product><ExternalId>${id}</ExternalId>${Object.entries(f)
+      .filter(([, v]) => v !== undefined)
+      .map(([k, v]) => `<${k}><![CDATA[${v}]]></${k}>`).join('')}</Product>`;
+  };
+  const feed = (products, {
+    ns = NS, incremental = 'false', categories = '<Category><ExternalId>55</ExternalId><Name>Shop</Name></Category>'
+      + '<Category><ExternalId>91</ExternalId><ParentExternalId>55</ParentExternalId><Name>Blenders</Name></Category>',
+  } = {}) => `<?xml version="1.0" encoding="UTF-8"?><Feed xmlns="${ns}" name="x" incremental="${incremental}">`
+    + `<Categories>${categories}</Categories><Products>${products.join('')}</Products></Feed>`;
+  const built = (body, itemCount) => ({ body, contentType: 'application/xml', itemCount });
+  const check = (body, itemCount) => validateFeed(built(body, itemCount), { provider: 'bazaarvoice' }).problems;
+
+  test('passes a good feed, including a single product and no categories', () => {
+    expect(check(feed([product('A'), product('B')]), 2)).toEqual([]);
+    expect(check(feed([product('A', { CategoryExternalId: undefined })], { categories: '' }), 1)).toEqual([]);
+  });
+
+  test('requires the BV root, namespace and a full feed', () => {
+    expect(check('<?xml version="1.0"?><feed><item/></feed>', 1)).toEqual(['missing <Feed> root element']);
+    expect(check(feed([product('A')], { ns: 'urn:other' }), 1)[0]).toMatch(/namespace is "urn:other"/);
+    expect(check(feed([product('A')], { incremental: 'true' }), 1))
+      .toEqual(['<Feed> must be a full feed (incremental="false")']);
+  });
+
+  test('the product count must match the built item count', () => {
+    expect(check(feed([product('A')]), 2)).toEqual(['1 <Product> elements, expected 2']);
+  });
+
+  test('requires ExternalId, Name, ProductPageUrl and ImageUrl', () => {
+    const problems = check(feed([
+      product('A', { Name: '' }),
+      product('B', { ImageUrl: undefined, ProductPageUrl: ' ' }),
+      '<Product><Name>x</Name><ProductPageUrl>https://e.com/x</ProductPageUrl><ImageUrl>https://e.com/x.jpg</ImageUrl></Product>',
+    ]), 3);
+    expect(problems).toEqual([
+      '1 products missing Name: A',
+      '1 products missing ProductPageUrl: B',
+      '1 products missing ImageUrl: B',
+      '1 products missing ExternalId: #3',
+    ]);
+  });
+
+  test('rejects bad ids, URLs and dangling category references', () => {
+    expect(check(feed([product('A'), product('A')]), 2)).toEqual(['duplicate product ExternalIds: A']);
+    expect(check(feed([product('A/1')]), 1)).toEqual(['product ExternalIds containing "/": A/1']);
+    expect(check(feed([product('A', { ImageUrl: '/i/a.jpg' })]), 1)).toEqual(['invalid product URLs: A ImageUrl']);
+    expect(check(feed([product('A', { CategoryExternalId: '99' })]), 1))
+      .toEqual(['products referencing an undefined category: A→99']);
+    expect(check(feed([product('A')], {
+      categories: '<Category><ExternalId>91</ExternalId><ParentExternalId>7</ParentExternalId><Name>B</Name></Category>'
+        + '<Category><ExternalId>91</ExternalId><Name>B</Name></Category>',
+    }), 1)).toEqual(['duplicate category ExternalIds: 91', 'categories with an undefined parent: 91→7']);
+  });
+
+  test('lists at most five offending ids', () => {
+    const ids = ['A', 'B', 'C', 'D', 'E', 'F'];
+    expect(check(feed(ids.map((id) => product(id, { Name: '' }))), 6))
+      .toEqual(['6 products missing Name: A, B, C, D, E, …']);
+  });
+
+  test('only runs for the bazaarvoice provider and on well-formed XML', () => {
+    const notBv = '<?xml version="1.0"?><feed><item><id>a</id></item></feed>';
+    expect(validateFeed(built(notBv, 1), { provider: 'cj' }).problems).toEqual([]);
+    expect(validateFeed(built('<Feed><Products>', 1), { provider: 'bazaarvoice' }).problems)
+      .toEqual([expect.stringMatching(/^invalid XML/)]);
+    expect(checkBazaarvoice(feed([product('A')]), 1)).toEqual([]);
+  });
+});
+
 describe('alert', () => {
   test('parseRecipients', () => {
     expect(parseRecipients(' a@x.com, ,b@x.com ')).toEqual(['a@x.com', 'b@x.com']);
@@ -665,6 +864,19 @@ describe('sftp host key pinning', () => {
       { host: 'datatransfer.cj.com', port: 22, hostFingerprints: [CJ_FP] },
       { log, createClient: clientSeeing(other), retries: 0 },
     )).rejects.toThrow(`host key mismatch for datatransfer.cj.com: got ${sftpModule.fingerprint(other)}, expected one of ${CJ_FP}`);
+  });
+
+  test('accepts the pinned Bazaarvoice staging key', async () => {
+    const [bvFp] = CONFIG.stage.targets.bazaarvoice.hostFingerprints;
+    const bvHashHex = Buffer.from(bvFp.replace(/^SHA256:/, ''), 'base64').toString('hex');
+    await expect(sftpModule.connect(
+      { host: 'sftp-stg.bazaarvoice.com', port: 22, hostFingerprints: [bvFp] },
+      { log, createClient: clientSeeing(bvHashHex), retries: 0 },
+    )).resolves.toBeDefined();
+    await expect(sftpModule.connect(
+      { host: 'sftp-stg.bazaarvoice.com', port: 22, hostFingerprints: [bvFp] },
+      { log, createClient: clientSeeing(cjHashHex), retries: 0 },
+    )).rejects.toThrow(/host key mismatch for sftp-stg\.bazaarvoice\.com/);
   });
 
   test('does not verify when no fingerprints are configured', async () => {
@@ -743,7 +955,9 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
   });
 
   test('stage (scheduled: false): the alarm no-ops even at 1 AM ET; manual runs still push', async () => {
-    const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(120), 'ca/en_us': sourceFeed(100) } });
+    const { spy } = mockFetch({
+      feeds: { 'us/en_us': sourceFeed(120), 'ca/en_us': sourceFeed(100), 'mx/es_mx': sourceFeed(8) },
+    });
     const sftp = mockSftp();
     const scheduled = await run(SECRETS, {
       namespace: STAGE_NS, scheduled: true, now: at('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
@@ -753,8 +967,16 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
 
     const manual = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
     expect(manual.ok).toBe(true);
-    expect(sftp.uploads.map((u) => u.path)).toEqual(['/vitamix_us_edge.xml', '/vitamix_ca_edge.xml']);
-    expect(sftp.connects).toHaveLength(1); // one shared CJ connection
+    expect(sftp.uploads.map((u) => u.path)).toEqual([
+      '/vitamix_us_edge.xml',
+      '/vitamix_ca_edge.xml',
+      '/import-inbox/productfeed-en_US.xml',
+      '/import-inbox/productfeed-en_CA.xml',
+      '/import-inbox/productfeed-en_MX.xml',
+    ]);
+    // one shared connection per target
+    expect(sftp.connects.map((c) => [c.host, c.username]))
+      .toEqual([['datatransfer.cj.com', 'cj-user'], ['sftp-stg.bazaarvoice.com', 'bv-user']]);
   });
 
   test('main: a bare invoke is treated as scheduled; manual params bypass the check', async () => {

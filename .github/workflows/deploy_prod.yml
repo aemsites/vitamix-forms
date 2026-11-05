@@ -143,5 +143,6 @@ jobs:
           INVENTORY_SYNC_ENABLED: ${{ secrets.INVENTORY_SYNC_ENABLED_PROD }}
           EDGE_COMMERCE_API_CATALOG_TOKEN: ${{ secrets.EDGE_COMMERCE_API_CATALOG_TOKEN_PROD }}
           # feeds-push — off in prod (src/actions/feeds-push/config.js). Add
-          # CJ_SFTP_USERNAME/PASSWORD from *_PROD secrets when prod is enabled.
+          # CJ_SFTP_USERNAME/PASSWORD and BV_SFTP_USERNAME/PASSWORD from *_PROD
+          # secrets when prod is enabled.
           ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}
