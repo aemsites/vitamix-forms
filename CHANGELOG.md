@@ -1,3 +1,17 @@
+# [1.17.0](https://github.com/aemsites/vitamix-forms/compare/v1.16.0...v1.17.0) (2026-11-05)
+
+
+### Bug Fixes
+
+* **feeds-push:** BV_SCHEDULE_ENABLED gates only the nightly Bazaarvoice push ([b68a473](https://github.com/aemsites/vitamix-forms/commit/b68a47394f58c2c7c44c84b5ef110d07560b2137))
+
+
+### Features
+
+* **feeds-push:** BV_PUSH_ENABLED switch and nightly Bazaarvoice push on prod ([d6ffc61](https://github.com/aemsites/vitamix-forms/commit/d6ffc6138a0c881c7938681fa5591ed1c0ebc23e))
+* **feeds-push:** CJ_SCHEDULE_ENABLED gates the nightly CJ push ([71701a6](https://github.com/aemsites/vitamix-forms/commit/71701a6b6a4d46542da244aaefc2e744f8617408))
+* **feeds-push:** push the Bazaarvoice product feed to the staging SFTP ([838c47c](https://github.com/aemsites/vitamix-forms/commit/838c47c3456b1dcf27876859984ed96ceb260e31))
+
 # [1.16.0](https://github.com/aemsites/vitamix-forms/compare/v1.15.0...v1.16.0) (2026-11-05)
 
 
