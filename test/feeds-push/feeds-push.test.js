@@ -216,7 +216,7 @@ describe('config', () => {
     }
   });
 
-  test('stage pushes the CJ US and CA test feeds on demand only; prod has no CJ target', () => {
+  test('stage pushes the CJ US and CA test feeds on demand only', () => {
     expect(CONFIG.stage.enabled).toBe(true);
     expect(CONFIG.stage.scheduled).toBe(false);
     const { locales } = CONFIG.stage.targets.cj;
@@ -226,8 +226,30 @@ describe('config', () => {
     // same CJ account → shared credentials, no per-locale override
     expect(locales['ca/en_us'].credentials).toBeUndefined();
     expect(CONFIG.stage.targets.cj.remoteDir).toBe('/');
+  });
+
+  test('prod pushes the CJ US and CA live feeds, behind the CJ schedule switch', () => {
+    const { cj } = CONFIG.prod.targets;
     expect(CONFIG.prod.scheduled).toBe(true);
-    expect(CONFIG.prod.targets.cj).toBeUndefined();
+    expect(cj).toMatchObject({
+      provider: 'cj',
+      scheduleEnabledBy: 'CJ_SCHEDULE_ENABLED',
+      host: 'datatransfer.cj.com',
+      port: 22,
+      remoteDir: '/',
+      credentials: 'CJ',
+      atomicUpload: true,
+    });
+    expect(cj.locales).toEqual({
+      'us/en_us': { file: 'Shopping-Feed-US.xml', minItems: 100 },
+      'ca/en_us': { file: 'Shopping-Feed-CA.xml', minItems: 85 },
+    });
+    // same CJ account and SFTP root as stage: the file names must never overlap,
+    // or one environment would overwrite the other's feed
+    const stageFiles = Object.values(CONFIG.stage.targets.cj.locales).map((l) => l.file);
+    for (const { file } of Object.values(cj.locales)) {
+      expect(stageFiles).not.toContain(file);
+    }
   });
 
   test('Bazaarvoice: staging SFTP on stage, production SFTP on prod', () => {
@@ -338,7 +360,7 @@ describe('run — gating', () => {
     expect(sftp.connects).toHaveLength(0);
   });
 
-  test('prod without BV_SCHEDULE_ENABLED: the 1 AM run builds and uploads nothing', async () => {
+  test('prod without the schedule switches: the 1 AM run builds and uploads nothing', async () => {
     const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(200) } });
     const sftp = mockSftp();
     const res = await run(SECRETS, {
@@ -348,7 +370,10 @@ describe('run — gating', () => {
       skipped: true,
       reason: 'target-schedule-disabled',
       environment: 'prod',
-      scheduleOff: ['bazaarvoice (BV_SCHEDULE_ENABLED is not "true")'],
+      scheduleOff: [
+        'cj (CJ_SCHEDULE_ENABLED is not "true")',
+        'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+      ],
     });
     expect(spy).not.toHaveBeenCalled();
     expect(sftp.connects).toHaveLength(0);
@@ -367,12 +392,27 @@ describe('run — gating', () => {
     const res = await run(on, { ...opts, now: new Date('2026-07-01T05:00:03Z') });
     expect(res.ok).toBe(true);
     expect(res.environment).toBe('prod');
-    expect(res.scheduleOff).toBeUndefined();
+    expect(res.scheduleOff).toEqual(['cj (CJ_SCHEDULE_ENABLED is not "true")']);
     expect(sftp.connects.map((c) => c.host)).toEqual(['sftp.bazaarvoice.com']);
     expect(sftp.uploads.map((u) => u.path)).toEqual([
       '/import-inbox/productfeed-en_US.xml',
       '/import-inbox/productfeed-en_CA.xml',
       '/import-inbox/productfeed-en_MX.xml',
+    ]);
+  });
+
+  test('prod with CJ_SCHEDULE_ENABLED: the 1 AM run pushes the CJ live feeds', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(120), 'ca/en_us': sourceFeed(100) } });
+    const sftp = mockSftp();
+    const res = await run({ ...SECRETS, CJ_SCHEDULE_ENABLED: 'true' }, {
+      namespace: PROD_NS, scheduled: true, now: new Date('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
+    });
+    expect(res.ok).toBe(true);
+    expect(res.scheduleOff).toEqual(['bazaarvoice (BV_SCHEDULE_ENABLED is not "true")']);
+    expect(sftp.connects.map((c) => [c.host, c.username])).toEqual([['datatransfer.cj.com', 'cj-user']]);
+    expect(res.results.map((r) => [r.locale, r.status, r.remotePath])).toEqual([
+      ['us/en_us', 'uploaded', '/Shopping-Feed-US.xml'],
+      ['ca/en_us', 'uploaded', '/Shopping-Feed-CA.xml'],
     ]);
   });
 
