@@ -1,3 +1,10 @@
+# [1.18.0](https://github.com/aemsites/vitamix-forms/compare/v1.17.2...v1.18.0) (2026-11-05)
+
+
+### Features
+
+* **feeds-push:** add CJ live feeds to prod ([ff61649](https://github.com/aemsites/vitamix-forms/commit/ff61649da8eb4b3aa5660c10b4c73092a28e6344))
+
 ## [1.17.2](https://github.com/aemsites/vitamix-forms/compare/v1.17.1...v1.17.2) (2026-11-05)
 
 
