@@ -920,12 +920,32 @@ function resolveSalesPersonId(order) {
 }
 
 /**
- * Emit one order-level PromotionCode element per applied coupon code, in the
- * order they were applied (Magento parity). Emits nothing when the order has
- * no coupons.
+ * Collect the VBND Discount Reason Codes of the order's virtual bundles, in
+ * line order and de-duplicated (two lines of one bundle share a code). Bundles
+ * with no mapped code contribute nothing.
+ *
+ * @param {object} order - the stored order.
+ * @returns {string[]}
+ */
+function getBundleReasonCodes(order) {
+  const codes = [];
+  for (const item of (order.items || [])) {
+    if (item.custom?.linkedTo || !item.bundleItems?.length) continue;
+    const code = resolveVbndReasonCode(item);
+    if (code && !codes.includes(code)) codes.push(code);
+  }
+  return codes;
+}
+
+/**
+ * Emit the order-level PromotionCode elements: the VBND code of each virtual
+ * bundle first, then one element per applied coupon code, in the order they
+ * were applied (Magento parity). Matches the ordering used on bundle child
+ * lines. Emits nothing when the order has neither bundles with a code nor
+ * coupons.
  */
 function buildPromotionsXml(order) {
-  return getAppliedCouponCodes(order)
+  return [...getBundleReasonCodes(order), ...getAppliedCouponCodes(order)]
     .map((code) => `<ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
     .join('\n        ');
 }
