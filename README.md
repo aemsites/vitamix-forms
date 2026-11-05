@@ -236,9 +236,8 @@ prod: `sftp.bazaarvoice.com:22`, nightly):
 - Files go in `/import-inbox`, one full (non-incremental) product feed per
   locale. `ca/fr_ca` isn't pushed. The MX file is named `productfeed-en_MX.xml`
   but its locale fields are `es_MX`.
-- **Direct upload** (`atomicUpload: false`): written straight to the final name
-  until it's confirmed that Bazaarvoice ignores `.part` files and imports a file
-  renamed into place.
+- **Direct upload** (`atomicUpload: false`): written straight to the final
+  name, with no temp file or rename.
 - Each host's RSA key is **pinned** (`hostFingerprints` in `config.js`).
 - Validation, on top of the generic checks: root `<Feed>` in the BV 14.7
   namespace with `incremental="false"`; `<Product>` count equals the item count;
