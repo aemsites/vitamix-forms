@@ -1,3 +1,10 @@
+## [1.17.2](https://github.com/aemsites/vitamix-forms/compare/v1.17.1...v1.17.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ebs-sync:** send coupon name with code in PromotionCode ([b9c95c2](https://github.com/aemsites/vitamix-forms/commit/b9c95c29edb0235e257b74f30c18fe5a7e483ded))
+
 ## [1.17.1](https://github.com/aemsites/vitamix-forms/compare/v1.17.0...v1.17.1) (2026-11-05)
 
 
