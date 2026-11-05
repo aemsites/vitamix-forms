@@ -174,12 +174,13 @@ uploaded file is exactly what the feed URL serves.
 environment: the on/off switch, targets (host, port, remote directory), and the
 locale → file name map. The environment comes from the runtime namespace
 (`60038-161ivoryjackal-stage` → stage, `60038-161ivoryjackal` → prod; any other
-namespace does nothing). Only secrets are env vars (see below).
+namespace does nothing). Only secrets and per-target switches
+(`BV_PUSH_ENABLED`) are env vars (see below).
 
 | Environment | Status | Schedule | Targets |
 |---|---|---|---|
 | stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml`. Bazaarvoice **staging**: `us/en_us` → `/import-inbox/productfeed-en_US.xml`, `ca/en_us` → `/import-inbox/productfeed-en_CA.xml`, `mx/es_mx` → `/import-inbox/productfeed-en_MX.xml` |
-| prod | **disabled** | nightly 1 AM ET (once enabled) | — |
+| prod | enabled (each target has its own switch) | nightly 1 AM ET | Bazaarvoice **production**, same files as stage, only when `BV_PUSH_ENABLED` is `"true"` (CJ: not yet) |
 
 The alarm is defined once in `app.config.yaml`, so it fires in every
 environment. When an environment has `scheduled: false`, a scheduled run
@@ -223,15 +224,19 @@ CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
 - All CJ SFTP subscriptions on an account share one password — resetting it in
   CJ breaks every SFTP subscription on that account.
 
-Bazaarvoice specifics (staging SFTP `sftp-stg.bazaarvoice.com:22`; prod will
-use the production SFTP):
+Bazaarvoice specifics (stage: `sftp-stg.bazaarvoice.com:22`, manual runs only;
+prod: `sftp.bazaarvoice.com:22`, nightly):
+- **Switch:** the target pushes only when `BV_PUSH_ENABLED` is `"true"` (GitHub
+  secrets `BV_PUSH_ENABLED_STAGE` / `_PROD`; change + redeploy). Otherwise a
+  run skips it (`switchedOff` in the result; `reason: 'target-switched-off'`
+  when nothing else runs). A `dryRun` still builds and validates it.
 - Files go in `/import-inbox`, one full (non-incremental) product feed per
   locale. `ca/fr_ca` isn't pushed. The MX file is named `productfeed-en_MX.xml`
   but its locale fields are `es_MX`.
 - **Direct upload** (`atomicUpload: false`): written straight to the final name
   until it's confirmed that Bazaarvoice ignores `.part` files and imports a file
   renamed into place.
-- The host key (RSA) is **pinned** (`hostFingerprints` in `config.js`).
+- Each host's RSA key is **pinned** (`hostFingerprints` in `config.js`).
 - Validation, on top of the generic checks: root `<Feed>` in the BV 14.7
   namespace with `incremental="false"`; `<Product>` count equals the item count;
   every product has `ExternalId` (no `/`), `Name`, `ProductPageUrl` and
@@ -464,7 +469,8 @@ secrets only:
 | Variable | Description | Default |
 |---|---|---|
 | `CJ_SFTP_USERNAME` / `CJ_SFTP_PASSWORD` | CJ SFTP credentials for this environment (GitHub secrets `CJ_SFTP_*_STAGE` / `_PROD`) | unset — CJ uploads fail and alert |
-| `BV_SFTP_USERNAME` / `BV_SFTP_PASSWORD` | Bazaarvoice SFTP credentials for this environment (GitHub secrets `BV_SFTP_*_STAGE` / `_PROD`; prod not mapped yet) | unset — Bazaarvoice uploads fail and alert |
+| `BV_PUSH_ENABLED` | `"true"` turns the Bazaarvoice push on (GitHub secrets `BV_PUSH_ENABLED_STAGE` / `_PROD`) | unset — Bazaarvoice is skipped |
+| `BV_SFTP_USERNAME` / `BV_SFTP_PASSWORD` | Bazaarvoice SFTP credentials for this environment (GitHub secrets `BV_SFTP_*_STAGE` / `_PROD`) | unset — Bazaarvoice uploads fail and alert (when switched on) |
 | `ALERT_FEED_FAIL_EMAILS` | Comma-separated alert recipients for any failed feed push | unset (log only) |
 | `EMAIL_TOKEN` | Productbus token used to send the alert | — |
 

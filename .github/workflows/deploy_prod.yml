@@ -142,7 +142,11 @@ jobs:
           # rollout is a secret toggle + redeploy rather than a code change.
           INVENTORY_SYNC_ENABLED: ${{ secrets.INVENTORY_SYNC_ENABLED_PROD }}
           EDGE_COMMERCE_API_CATALOG_TOKEN: ${{ secrets.EDGE_COMMERCE_API_CATALOG_TOKEN_PROD }}
-          # feeds-push — off in prod (src/actions/feeds-push/config.js). Add
-          # CJ_SFTP_USERNAME/PASSWORD and BV_SFTP_USERNAME/PASSWORD from *_PROD
-          # secrets when prod is enabled.
+          # feeds-push — CJ has no prod target yet (src/actions/feeds-push/config.js);
+          # add CJ_SFTP_USERNAME/PASSWORD from *_PROD secrets when it does.
+          # Bazaarvoice pushes nightly only when the BV_PUSH_ENABLED_PROD secret
+          # is "true"; unset = off.
+          BV_PUSH_ENABLED: ${{ secrets.BV_PUSH_ENABLED_PROD }}
+          BV_SFTP_USERNAME: ${{ secrets.BV_SFTP_USERNAME_PROD }}
+          BV_SFTP_PASSWORD: ${{ secrets.BV_SFTP_PASSWORD_PROD }}
           ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}

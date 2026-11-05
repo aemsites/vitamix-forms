@@ -126,7 +126,9 @@ jobs:
           # feeds-push — CJ test feed SFTP credentials; targets/files live in code
           CJ_SFTP_USERNAME: ${{ secrets.CJ_SFTP_USERNAME_STAGE }}
           CJ_SFTP_PASSWORD: ${{ secrets.CJ_SFTP_PASSWORD_STAGE }}
-          # feeds-push — Bazaarvoice staging SFTP credentials
+          # feeds-push — Bazaarvoice staging SFTP. Pushes (manual runs only on
+          # stage) only when the BV_PUSH_ENABLED_STAGE secret is "true".
+          BV_PUSH_ENABLED: ${{ secrets.BV_PUSH_ENABLED_STAGE }}
           BV_SFTP_USERNAME: ${{ secrets.BV_SFTP_USERNAME_STAGE }}
           BV_SFTP_PASSWORD: ${{ secrets.BV_SFTP_PASSWORD_STAGE }}
           ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}

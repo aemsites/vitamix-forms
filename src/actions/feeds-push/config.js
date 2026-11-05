@@ -55,6 +55,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  * @typedef {{
  *   provider: string,
  *   enabled?: boolean,
+ *   enabledBy?: string,
  *   host: string,
  *   port: number,
  *   remoteDir: string,
@@ -75,6 +76,10 @@ export const SFTP_CONNECT_RETRIES = 1;
  *
  * `enabled` gates every real push in the environment. `scheduled` controls
  * whether the nightly alarm pushes; when false, only manual runs push.
+ * A target's `enabledBy` names an env var that must be "true" for the target
+ * to push (scheduled or manual), so it can be switched on or off per
+ * environment with a secret + redeploy instead of a code change. A dryRun
+ * ignores it.
  */
 
 /**
@@ -103,20 +108,35 @@ const CJ_SFTP = {
 };
 
 /**
- * Bazaarvoice product feed, staging SFTP (the production SFTP is a different
- * host). Settings shared by every environment live here; host goes per env.
+ * Bazaarvoice product feed. Staging and production are separate SFTP hosts
+ * (and accounts); everything else is shared.
+ * - Off unless BV_PUSH_ENABLED is "true" in the environment (GitHub secrets
+ *   BV_PUSH_ENABLED_STAGE / _PROD), so prod can be switched on at the cutover
+ *   from the previous export without a code change.
  * - Files go in `/import-inbox`; BV imports each file as the full catalog for
  *   its locale (the feed is non-incremental).
- * - File names match what BV already receives, one file per locale.
+ * - File names match what BV already receives, one file per locale. `ca/fr_ca`
+ *   isn't pushed. The MX file keeps its existing name; its content is in the
+ *   es_MX locale.
+ * - Floors are ~60% of the current item count (2026-11: US 194, CA 167, MX 10).
  * - Upload directly under the final name: it's not yet confirmed that BV
  *   ignores `.part` files and imports a file renamed into place. Switch to
  *   `atomicUpload: true` once it is.
+ * - Each host offers only an RSA host key, pinned below; seen by both
+ *   ssh-keyscan and ssh2 on first connection (2026-11-05).
  */
 const BV_SFTP = {
   provider: 'bazaarvoice',
+  enabledBy: 'BV_PUSH_ENABLED',
   port: 22,
   remoteDir: '/import-inbox',
+  credentials: 'BV', // BV_SFTP_USERNAME / BV_SFTP_PASSWORD
   atomicUpload: false,
+  locales: {
+    'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
+    'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
+    'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
+  },
 };
 
 /** @type {Record<string, EnvConfig>} */
@@ -140,29 +160,27 @@ export const CONFIG = {
           'ca/en_us': { file: 'vitamix_ca_edge.xml', minItems: 85 },
         },
       },
+      // Bazaarvoice staging; manual runs only, like everything on stage
       bazaarvoice: {
         ...BV_SFTP,
         host: 'sftp-stg.bazaarvoice.com',
-        // RSA host key, the only one the server offers; seen by both
-        // ssh-keyscan and ssh2 on first connection (2026-11-05).
         hostFingerprints: ['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI'],
-        credentials: 'BV', // BV_SFTP_USERNAME / BV_SFTP_PASSWORD
-        // Floors are ~60% of the current item count (2026-11: US 194, CA 167,
-        // MX 10). `ca/fr_ca` isn't pushed. The MX file keeps its existing name;
-        // its content is in the es_MX locale.
-        locales: {
-          'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
-          'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
-          'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
-        },
       },
     },
   },
   prod: {
-    // Off until the live CJ registrations + credentials exist.
-    enabled: false,
-    scheduled: true, // nightly at 1 AM America/New_York once enabled
-    targets: {},
+    // Every prod target is gated on its own switch (CJ isn't configured yet:
+    // it waits for the live registrations + credentials).
+    enabled: true,
+    scheduled: true, // nightly at 1 AM America/New_York
+    targets: {
+      // Bazaarvoice production; pushes nightly once BV_PUSH_ENABLED is "true"
+      bazaarvoice: {
+        ...BV_SFTP,
+        host: 'sftp.bazaarvoice.com',
+        hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
+      },
+    },
   },
 };
 
@@ -172,6 +190,18 @@ export const CONFIG = {
  */
 export function resolveEnvironment(namespace = process.env.__OW_NAMESPACE) {
   return (namespace && NAMESPACES[namespace]) || null;
+}
+
+/**
+ * Whether a target's env-var switch (`enabledBy`) is on. Targets without one
+ * are always on.
+ * @param {TargetConfig} target
+ * @param {Record<string, unknown>} params
+ * @returns {boolean}
+ */
+export function isTargetSwitchedOn(target, params = {}) {
+  if (!target.enabledBy) return true;
+  return String(params[target.enabledBy] ?? '').trim().toLowerCase() === 'true';
 }
 
 /**

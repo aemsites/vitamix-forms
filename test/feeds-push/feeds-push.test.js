@@ -15,7 +15,7 @@ const {
 } = await import('../../src/actions/feeds-push/run.js');
 const { main } = await import('../../src/actions/feeds-push/index.js');
 const {
-  CONFIG, NAMESPACES, resolveEnvironment, resolveCredentials,
+  CONFIG, NAMESPACES, resolveEnvironment, resolveCredentials, isTargetSwitchedOn,
 } = await import('../../src/actions/feeds-push/config.js');
 const { validateFeed, checkBazaarvoice } = await import('../../src/actions/feeds-push/validate.js');
 const sftpModule = await import('../../src/actions/feeds-push/sftp.js');
@@ -139,6 +139,7 @@ const SECRETS = {
   CJ_SFTP_PASSWORD: 'cj-pass',
   BV_SFTP_USERNAME: 'bv-user',
   BV_SFTP_PASSWORD: 'bv-pass',
+  BV_PUSH_ENABLED: 'true',
   ALERT_FEED_FAIL_EMAILS: 'a@example.com, b@example.com',
   EMAIL_TOKEN: 'email-token',
 };
@@ -216,7 +217,7 @@ describe('config', () => {
     }
   });
 
-  test('stage pushes the CJ US and CA test feeds on demand only; prod is off', () => {
+  test('stage pushes the CJ US and CA test feeds on demand only; prod has no CJ target', () => {
     expect(CONFIG.stage.enabled).toBe(true);
     expect(CONFIG.stage.scheduled).toBe(false);
     const { locales } = CONFIG.stage.targets.cj;
@@ -226,28 +227,49 @@ describe('config', () => {
     // same CJ account → shared credentials, no per-locale override
     expect(locales['ca/en_us'].credentials).toBeUndefined();
     expect(CONFIG.stage.targets.cj.remoteDir).toBe('/');
-    expect(CONFIG.prod.enabled).toBe(false);
     expect(CONFIG.prod.scheduled).toBe(true);
+    expect(CONFIG.prod.targets.cj).toBeUndefined();
   });
 
-  test('stage pushes the Bazaarvoice feeds to the staging SFTP; prod has no Bazaarvoice target', () => {
-    const bv = CONFIG.stage.targets.bazaarvoice;
-    expect(bv).toMatchObject({
+  test('Bazaarvoice: staging SFTP on stage, production SFTP on prod, both behind BV_PUSH_ENABLED', () => {
+    const shared = {
       provider: 'bazaarvoice',
-      host: 'sftp-stg.bazaarvoice.com',
+      enabledBy: 'BV_PUSH_ENABLED',
       port: 22,
       remoteDir: '/import-inbox',
       credentials: 'BV',
       // not confirmed that BV ignores temp files and imports a renamed file
       atomicUpload: false,
+      locales: {
+        'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
+        'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
+        'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
+      },
+    };
+    expect(CONFIG.stage.targets.bazaarvoice).toEqual({
+      ...shared,
+      host: 'sftp-stg.bazaarvoice.com',
+      hostFingerprints: ['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI'],
     });
-    expect(bv.hostFingerprints).toEqual(['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI']);
-    expect(bv.locales).toEqual({
-      'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
-      'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
-      'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
+    expect(CONFIG.prod.targets.bazaarvoice).toEqual({
+      ...shared,
+      host: 'sftp.bazaarvoice.com',
+      hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
     });
-    expect(CONFIG.prod.targets.bazaarvoice).toBeUndefined();
+    // prod runs only what its switches allow
+    expect(CONFIG.prod.enabled).toBe(true);
+    for (const target of Object.values(CONFIG.prod.targets)) expect(target.enabledBy).toBeTruthy();
+  });
+
+  test('isTargetSwitchedOn: only "true" turns a gated target on', () => {
+    const t = { enabledBy: 'X_ENABLED' };
+    expect(isTargetSwitchedOn({}, {})).toBe(true);
+    expect(isTargetSwitchedOn(t, { X_ENABLED: 'true' })).toBe(true);
+    expect(isTargetSwitchedOn(t, { X_ENABLED: ' TRUE ' })).toBe(true);
+    expect(isTargetSwitchedOn(t, { X_ENABLED: true })).toBe(true);
+    for (const v of [undefined, '', 'false', '1', '$X_ENABLED']) {
+      expect(isTargetSwitchedOn(t, { X_ENABLED: v })).toBe(false);
+    }
   });
 
   test('resolveCredentials treats empty and unsubstituted vars as missing', () => {
@@ -299,13 +321,51 @@ describe('run — gating', () => {
     expect(spy).not.toHaveBeenCalled();
   });
 
-  test('prod is disabled: nothing is built or uploaded', async () => {
+  test('a disabled environment builds and uploads nothing', async () => {
     const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: PROD_NS, sftpDeps: { createClient: sftp.createClient } });
-    expect(res).toEqual({ skipped: true, reason: 'disabled', environment: 'prod' });
+    const config = smallConfig();
+    config.stage.enabled = false;
+    const res = await run(SECRETS, { namespace: STAGE_NS, config, sftpDeps: { createClient: sftp.createClient } });
+    expect(res).toEqual({ skipped: true, reason: 'disabled', environment: 'stage' });
     expect(spy).not.toHaveBeenCalled();
     expect(sftp.connects).toHaveLength(0);
+  });
+
+  test('prod without BV_PUSH_ENABLED: the 1 AM run builds and uploads nothing', async () => {
+    const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(200) } });
+    const sftp = mockSftp();
+    const res = await run({ ...SECRETS, BV_PUSH_ENABLED: '' }, {
+      namespace: PROD_NS, scheduled: true, now: new Date('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
+    });
+    expect(res).toEqual({
+      skipped: true,
+      reason: 'target-switched-off',
+      environment: 'prod',
+      switchedOff: ['bazaarvoice (BV_PUSH_ENABLED is not "true")'],
+    });
+    expect(spy).not.toHaveBeenCalled();
+    expect(sftp.connects).toHaveLength(0);
+  });
+
+  test('prod with BV_PUSH_ENABLED: the 1 AM run pushes Bazaarvoice to the production SFTP', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(120), 'ca/en_us': sourceFeed(100), 'mx/es_mx': sourceFeed(6) } });
+    const sftp = mockSftp();
+    const opts = { namespace: PROD_NS, scheduled: true, sftpDeps: { createClient: sftp.createClient } };
+    // outside 1 AM ET: nothing
+    expect(await run(SECRETS, { ...opts, now: new Date('2026-07-01T15:00:00Z') }))
+      .toMatchObject({ skipped: true, reason: 'outside-schedule' });
+    expect(sftp.connects).toHaveLength(0);
+
+    const res = await run(SECRETS, { ...opts, now: new Date('2026-07-01T05:00:03Z') });
+    expect(res.ok).toBe(true);
+    expect(res.environment).toBe('prod');
+    expect(sftp.connects.map((c) => c.host)).toEqual(['sftp.bazaarvoice.com']);
+    expect(sftp.uploads.map((u) => u.path)).toEqual([
+      '/import-inbox/productfeed-en_US.xml',
+      '/import-inbox/productfeed-en_CA.xml',
+      '/import-inbox/productfeed-en_MX.xml',
+    ]);
   });
 
   test('a disabled environment with a dryRun builds and validates without SFTP', async () => {
@@ -713,6 +773,42 @@ describe('run — Bazaarvoice', () => {
       ['ca/en_us', 'validated', undefined],
       ['mx/es_mx', 'failed', 'only 5 items (minimum 6)'],
     ]);
+  });
+});
+
+describe('run — BV_PUSH_ENABLED switch', () => {
+  const OFF = { ...SECRETS, BV_PUSH_ENABLED: '' };
+
+  test('off on stage: a manual Bazaarvoice run skips it', async () => {
+    const { spy } = mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+    const sftp = mockSftp();
+    const res = await run(OFF, {
+      namespace: STAGE_NS, config: bvConfig(), target: 'bazaarvoice', sftpDeps: { createClient: sftp.createClient },
+    });
+    expect(res).toMatchObject({ skipped: true, reason: 'target-switched-off' });
+    expect(spy).not.toHaveBeenCalled();
+    expect(sftp.connects).toHaveLength(0);
+  });
+
+  test('off: other targets still push and the result lists what was switched off', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+    const sftp = mockSftp();
+    const config = smallConfig();
+    config.stage.targets.bazaarvoice = bvConfig().stage.targets.bazaarvoice;
+    const res = await run(OFF, { namespace: STAGE_NS, config, sftpDeps: { createClient: sftp.createClient } });
+    expect(res.ok).toBe(true);
+    expect(res.results.map((r) => r.target)).toEqual(['cj']);
+    expect(res.switchedOff).toEqual(['bazaarvoice (BV_PUSH_ENABLED is not "true")']);
+    expect(sftp.connects.map((c) => c.host)).toEqual(['datatransfer.cj.com']);
+  });
+
+  test('a dryRun builds and validates a switched-off target', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+    const res = await run(OFF, {
+      namespace: STAGE_NS, config: bvConfig(), locale: 'us/en_us', dryRun: true,
+    });
+    expect(res.results).toEqual([expect.objectContaining({ target: 'bazaarvoice', status: 'validated' })]);
+    expect(res.switchedOff).toBeUndefined();
   });
 });
 
