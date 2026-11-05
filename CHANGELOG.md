@@ -1,3 +1,11 @@
+# [1.16.0](https://github.com/aemsites/vitamix-forms/compare/v1.15.0...v1.16.0) (2026-11-05)
+
+
+### Features
+
+* **feeds:** add bazaarvoice locale fields per feed locale ([a932666](https://github.com/aemsites/vitamix-forms/commit/a932666347df40f53263bd85abda746a4eb9a3cc))
+* **feeds:** derive the bazaarvoice locale from the feed locale ([b4030de](https://github.com/aemsites/vitamix-forms/commit/b4030ded3be30f2be5843e2cdeae39abf8d99f17))
+
 # [1.15.0](https://github.com/aemsites/vitamix-forms/compare/v1.14.1...v1.15.0) (2026-11-05)
 
 
