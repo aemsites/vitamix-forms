@@ -7,7 +7,7 @@
  * pushed is exactly what the feed URL serves.
  */
 
-import { fetchGmcFeed } from './source.js';
+import { COMMERCIAL_SECTION, fetchGmcFeed } from './source.js';
 import { prepareFeed } from './prepare.js';
 import { buildFeed } from './serialize.js';
 import { PROVIDERS } from './providers/index.js';
@@ -40,6 +40,26 @@ export function resolveFeedEnv(params) {
 }
 
 /**
+ * Fetch the source feed for a provider. Commercial products have their own
+ * product index and GMC feed (`<locale>/products/commercial/`); providers with
+ * `includeCommercial` (bazaarvoice, as in the legacy feed) get them appended.
+ * Ids already in the main feed keep the main feed's row.
+ * @param {{ env: ReturnType<typeof resolveFeedEnv>, log: any }} ctx
+ * @param {{ includeCommercial?: boolean }} serializer
+ * @param {string} locale
+ */
+async function fetchSource(ctx, serializer, locale) {
+  if (!serializer.includeCommercial) return fetchGmcFeed(ctx, locale);
+  const [main, commercial] = await Promise.all([
+    fetchGmcFeed(ctx, locale),
+    fetchGmcFeed(ctx, locale, { section: COMMERCIAL_SECTION, missingOk: true }),
+  ]);
+  const ids = new Set(main.items.map((it) => String(it.id)));
+  const extra = commercial.items.filter((it) => !ids.has(String(it.id)));
+  return { ...main, items: [...main.items, ...extra] };
+}
+
+/**
  * Build one provider's feed for a locale.
  *
  * Throws on failure (errors from the source fetch carry `err.response` with an
@@ -59,7 +79,7 @@ export async function buildProviderFeed(ctx, provider, locale, { raw = false } =
   // A provider may pin its locale (e.g. openai is US-only).
   const effectiveLocale = serializer.locale || locale;
 
-  const source = await fetchGmcFeed(ctx, effectiveLocale);
+  const source = await fetchSource(ctx, serializer, effectiveLocale);
   // Shared catalog cleanup (product selection, titles, descriptions), unless
   // the unprepared source feed was requested.
   const feed = raw ? source : await prepareFeed(ctx, source, effectiveLocale);
