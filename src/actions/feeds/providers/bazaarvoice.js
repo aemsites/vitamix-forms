@@ -22,7 +22,7 @@ import { COMMERCIAL_SECTION } from '../source.js';
  */
 
 const DEFAULT_SHEET_URL = 'https://main--vitamix--aemsites.aem.live/config/feeds/bv-categories.json';
-const BV_NAMESPACE = 'http://www.bazaarvoice.com/xs/PRR/ProductFeed/14.7';
+export const BV_NAMESPACE = 'http://www.bazaarvoice.com/xs/PRR/ProductFeed/14.7';
 
 /**
  * Categories too broad (or promotional) to describe a product. A product's own
