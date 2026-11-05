@@ -1,3 +1,15 @@
+# [1.15.0](https://github.com/aemsites/vitamix-forms/compare/v1.14.1...v1.15.0) (2026-11-05)
+
+
+### Bug Fixes
+
+* **feeds:** map bazaarvoice category pages without an Edge page to live pages ([6192a19](https://github.com/aemsites/vitamix-forms/commit/6192a1992997cb654b4ca37fe279f2ad6d2c494e))
+
+
+### Features
+
+* **feeds:** include commercial products and locale categories in the bazaarvoice feed ([c60e71c](https://github.com/aemsites/vitamix-forms/commit/c60e71c9978ba1c3a52705e0c91628fb013a1f8d))
+
 ## [1.14.1](https://github.com/aemsites/vitamix-forms/compare/v1.14.0...v1.14.1) (2026-11-04)
 
 
