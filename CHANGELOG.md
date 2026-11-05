@@ -1,3 +1,10 @@
+## [1.17.1](https://github.com/aemsites/vitamix-forms/compare/v1.17.0...v1.17.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ebs-sync:** add VX3 + Tumbler VBND codes and header-level promo code ([8d259f9](https://github.com/aemsites/vitamix-forms/commit/8d259f91fa0a7cf12e94208df83ff8200ee3b47e))
+
 # [1.17.0](https://github.com/aemsites/vitamix-forms/compare/v1.16.0...v1.17.0) (2026-11-05)
 
 
