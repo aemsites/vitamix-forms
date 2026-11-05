@@ -40,6 +40,10 @@
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
  *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
  *                                header and every line (Magento parity; see getCouponPromotionCodes)
+ *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name (ruleId when the
+ *                                grant has no name) on the header and every line, ahead of the VBND
+ *                                code and coupons — only for promotions whose gift is in the order
+ *                                (see getGwpPromotionCodes)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -738,9 +742,13 @@ function effectiveItemUnitPrice(item) {
 
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
-  // Magento stamped every applied coupon on every line item (simple, bundle
-  // child and warranty), regardless of which lines it discounted.
+  // Magento stamped every applied order-level promotion on every line item
+  // (simple, bundle child, warranty and the gift itself), regardless of which
+  // lines it discounted: the gift-with-purchase names first, then — on bundle
+  // children only — the bundle's VBND code, then the coupons.
+  const gwpCodes = getGwpPromotionCodes(order);
   const couponCodes = getCouponPromotionCodes(order);
+  const sharedPromotionCodes = [...gwpCodes, ...couponCodes];
 
   // Map warranty items by the product SKU they cover
   const warrantyBySku = new Map();
@@ -765,7 +773,9 @@ function buildLineItemsXml(order) {
       // parent line and stamped on every child line, mirroring the legacy
       // Magento sync. Warranty lines below intentionally omit it.
       const reasonCode = resolveVbndReasonCode(item);
-      const childPromotionCodes = reasonCode ? [reasonCode, ...couponCodes] : couponCodes;
+      const childPromotionCodes = reasonCode
+        ? [...gwpCodes, reasonCode, ...couponCodes]
+        : sharedPromotionCodes;
       for (const child of item.bundleItems) {
         const hasWarranty = warrantyBySku.has(child.sku);
         const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
@@ -777,7 +787,9 @@ function buildLineItemsXml(order) {
         ));
 
         if (hasWarranty) {
-          lines.push(buildWarrantyLineItemXml(warrantyBySku.get(child.sku), serial, couponCodes));
+          lines.push(buildWarrantyLineItemXml(
+            warrantyBySku.get(child.sku), serial, sharedPromotionCodes,
+          ));
         }
       }
     } else {
@@ -788,11 +800,13 @@ function buildLineItemsXml(order) {
       lines.push(buildLineItemXml(
         item.sku || '', item.quantity ?? 1,
         effectiveItemUnitPrice(item), item.taxAmount || '0.00',
-        'Each', serial, couponCodes,
+        'Each', serial, sharedPromotionCodes,
       ));
 
       if (hasWarranty) {
-        lines.push(buildWarrantyLineItemXml(warrantyBySku.get(item.sku), serial, couponCodes));
+        lines.push(buildWarrantyLineItemXml(
+          warrantyBySku.get(item.sku), serial, sharedPromotionCodes,
+        ));
       }
     }
   }
@@ -810,8 +824,8 @@ function buildLineItemsXml(order) {
  * @param {string} unitOfMeasure - `Each` or `Years`.
  * @param {string} serialNumber - warranty link serial, or `''`.
  * @param {string[]} [promotionCodes] - one `<ns2:PromotionCode>` per entry:
- *   the VBND Discount Reason Code (virtual bundle children only) followed by
- *   the order's applied coupon codes.
+ *   the gift-with-purchase promotion names, then the VBND Discount Reason Code
+ *   (virtual bundle children only), then the order's applied coupon codes.
  * @returns {string} the LineItem XML fragment.
  */
 function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, promotionCodes = []) {
@@ -844,15 +858,16 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
  *
  * @param {object} w warranty order line
  * @param {string} serial warranty link serial
- * @param {string[]} [couponCodes] applied coupon PromotionCode values, one element each
+ * @param {string[]} [promotionCodes] order-level PromotionCode values (gift-with-purchase
+ *   names, then applied coupons), one element each. A warranty never carries a VBND code.
  */
-function buildWarrantyLineItemXml(w, serial, couponCodes = []) {
+function buildWarrantyLineItemXml(w, serial, promotionCodes = []) {
   const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
   const coverageYears = Number(w.custom?.coverageYears) || 1;
   const quantity = coverageYears * lineQuantity(w);
   const unitPrice = unitSellingPrice(effectiveLineTotalCents(w), quantity);
   return buildLineItemXml(
-    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial, couponCodes,
+    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial, promotionCodes,
   );
 }
 
@@ -964,13 +979,73 @@ function getCouponPromotionCodes(order) {
 }
 
 /**
- * Emit the order-level PromotionCode elements: the VBND code of each virtual
- * bundle first, then one element per applied coupon, in the order they were
- * applied (Magento parity). Matches the ordering used on bundle child lines.
- * Emits nothing when the order has neither bundles with a code nor coupons.
+ * Normalize a product path for comparison: trimmed, without a trailing `.json`.
+ *
+ * @param {unknown} path
+ * @returns {string} the normalized path, or `''` when absent.
+ */
+function normalizeItemPath(path) {
+  return String(path ?? '').trim().replace(/\.json$/i, '');
+}
+
+/**
+ * The PromotionCode value for each gift-with-purchase (GWP) promotion whose
+ * gift is actually in the order.
+ *
+ * Magento treated a free-gift rule like any other applied cart rule and sent
+ * its description. The commerce API records the gifts a cart *qualified* for in
+ * the server-computed `estimates.freeItems[]` (`{ path, ruleId, name?, quantity }`),
+ * whether or not the shopper added them, so a grant is reported only when the
+ * order holds a $0 line at the granted `path`. The client-supplied
+ * `item.custom.giftWithPurchase` flag is deliberately ignored.
+ *
+ * The value is the promotion `name` (trimmed), or the `ruleId` for grants
+ * stored before `name` existed. Unlike a coupon it carries no `({code})`
+ * suffix. One value per distinct promotion (by `ruleId`), in `freeItems` order,
+ * however many gift lines it granted. A grant with neither a name nor a
+ * `ruleId` is skipped.
+ *
+ * @param {object} order - the stored order.
+ * @returns {string[]}
+ */
+function getGwpPromotionCodes(order) {
+  const { freeItems } = order.estimates ?? {};
+  if (!Array.isArray(freeItems) || !freeItems.length) return [];
+
+  const giftPaths = new Set();
+  for (const item of (order.items ?? [])) {
+    // parseFloat (not Number) so a missing or empty price is NaN, not a gift
+    if (parseFloat(item?.price?.final) === 0) giftPaths.add(normalizeItemPath(item.path));
+  }
+  giftPaths.delete('');
+
+  const seen = new Set();
+  const codes = [];
+  for (const grant of freeItems) {
+    if (!giftPaths.has(normalizeItemPath(grant?.path))) continue;
+    const ruleId = String(grant.ruleId ?? '').trim();
+    const code = String(grant.name ?? '').trim() || ruleId;
+    const key = ruleId || code;
+    if (!code || seen.has(key)) continue;
+    seen.add(key);
+    codes.push(code);
+  }
+  return codes;
+}
+
+/**
+ * Emit the order-level PromotionCode elements: the name of each gift-with-
+ * purchase promotion first, then the VBND code of each virtual bundle, then one
+ * element per applied coupon, in the order they were applied (Magento parity).
+ * Matches the ordering used on bundle child lines. Emits nothing when the order
+ * has no gift, no bundle with a code and no coupons.
  */
 function buildPromotionsXml(order) {
-  return [...getBundleReasonCodes(order), ...getCouponPromotionCodes(order)]
+  return [
+    ...getGwpPromotionCodes(order),
+    ...getBundleReasonCodes(order),
+    ...getCouponPromotionCodes(order),
+  ]
     .map((code) => `<ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
     .join('\n        ');
 }
