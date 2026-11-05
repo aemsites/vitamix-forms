@@ -55,6 +55,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  * @typedef {{
  *   provider: string,
  *   enabled?: boolean,
+ *   scheduleEnabledBy?: string,
  *   host: string,
  *   port: number,
  *   remoteDir: string,
@@ -75,6 +76,9 @@ export const SFTP_CONNECT_RETRIES = 1;
  *
  * `enabled` gates every real push in the environment. `scheduled` controls
  * whether the nightly alarm pushes; when false, only manual runs push.
+ * A target's `scheduleEnabledBy` names an env var that must be "true" for
+ * the nightly alarm to push that target, so its schedule can be switched on or
+ * off with a secret + redeploy instead of a code change. Manual runs ignore it.
  */
 
 /**
@@ -90,9 +94,13 @@ export const SFTP_CONNECT_RETRIES = 1;
  * - Upload to a temp name, then rename to the registered name once complete,
  *   so CJ never ingests a partial file. CJ confirmed (2026-10) that renaming
  *   on its SFTP is supported; only the final name must match the registration.
+ * - The nightly run pushes CJ only when CJ_SCHEDULE_ENABLED is "true" (GitHub
+ *   secret CJ_SCHEDULE_ENABLED_PROD); manual runs always push. Stage never
+ *   runs on the schedule.
  */
 const CJ_SFTP = {
   provider: 'cj',
+  scheduleEnabledBy: 'CJ_SCHEDULE_ENABLED',
   host: 'datatransfer.cj.com',
   port: 22,
   remoteDir: '/',
@@ -100,6 +108,39 @@ const CJ_SFTP = {
   hostFingerprints: ['SHA256:gRHIccwhOI+eXWmHZS/AacDj24Pc6zizcue39ILRsVE'],
   atomicUpload: true,
   idPattern: /^[A-Za-z0-9_-]+$/,
+};
+
+/**
+ * Bazaarvoice product feed. Staging and production are separate SFTP hosts
+ * (and accounts); everything else is shared.
+ * - The nightly run pushes BV only when BV_SCHEDULE_ENABLED is "true" (GitHub
+ *   secret BV_SCHEDULE_ENABLED_PROD), so prod can be switched on at the cutover
+ *   from the previous export without a code change. Manual runs always push.
+ *   Stage never runs on the schedule.
+ * - Files go in `/import-inbox`; BV imports each file as the full catalog for
+ *   its locale (the feed is non-incremental).
+ * - File names match what BV already receives, one file per locale. `ca/fr_ca`
+ *   isn't pushed. The MX file keeps its existing name; its content is in the
+ *   es_MX locale.
+ * - Floors are ~60% of the current item count (2026-11: US 194, CA 167, MX 10).
+ * - Upload directly under the final name: it's not yet confirmed that BV
+ *   ignores `.part` files and imports a file renamed into place. Switch to
+ *   `atomicUpload: true` once it is.
+ * - Each host offers only an RSA host key, pinned below; seen by both
+ *   ssh-keyscan and ssh2 on first connection (2026-11-05).
+ */
+const BV_SFTP = {
+  provider: 'bazaarvoice',
+  scheduleEnabledBy: 'BV_SCHEDULE_ENABLED',
+  port: 22,
+  remoteDir: '/import-inbox',
+  credentials: 'BV', // BV_SFTP_USERNAME / BV_SFTP_PASSWORD
+  atomicUpload: false,
+  locales: {
+    'us/en_us': { file: 'productfeed-en_US.xml', minItems: 115 },
+    'ca/en_us': { file: 'productfeed-en_CA.xml', minItems: 100 },
+    'mx/es_mx': { file: 'productfeed-en_MX.xml', minItems: 6 },
+  },
 };
 
 /** @type {Record<string, EnvConfig>} */
@@ -123,13 +164,27 @@ export const CONFIG = {
           'ca/en_us': { file: 'vitamix_ca_edge.xml', minItems: 85 },
         },
       },
+      // Bazaarvoice staging; manual runs only, like everything on stage
+      bazaarvoice: {
+        ...BV_SFTP,
+        host: 'sftp-stg.bazaarvoice.com',
+        hostFingerprints: ['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI'],
+      },
     },
   },
   prod: {
-    // Off until the live CJ registrations + credentials exist.
-    enabled: false,
-    scheduled: true, // nightly at 1 AM America/New_York once enabled
-    targets: {},
+    // CJ isn't configured yet: it waits for the live registrations + credentials.
+    enabled: true,
+    scheduled: true, // nightly at 1 AM America/New_York
+    targets: {
+      // Bazaarvoice production: manual runs push; the nightly run pushes only
+      // once BV_SCHEDULE_ENABLED is "true"
+      bazaarvoice: {
+        ...BV_SFTP,
+        host: 'sftp.bazaarvoice.com',
+        hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
+      },
+    },
   },
 };
 
@@ -139,6 +194,18 @@ export const CONFIG = {
  */
 export function resolveEnvironment(namespace = process.env.__OW_NAMESPACE) {
   return (namespace && NAMESPACES[namespace]) || null;
+}
+
+/**
+ * Whether the nightly alarm may push a target: its `scheduleEnabledBy` env var
+ * is "true", or it has none.
+ * @param {TargetConfig} target
+ * @param {Record<string, unknown>} params
+ * @returns {boolean}
+ */
+export function isScheduleEnabled(target, params = {}) {
+  if (!target.scheduleEnabledBy) return true;
+  return String(params[target.scheduleEnabledBy] ?? '').trim().toLowerCase() === 'true';
 }
 
 /**

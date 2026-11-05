@@ -284,9 +284,16 @@ application:
               EMAIL_TOKEN: $EMAIL_TOKEN
               # comma-separated failure alert recipients; unset = log only
               ALERT_FEED_FAIL_EMAILS: $ALERT_FEED_FAIL_EMAILS
+              # CJ: "true" lets the nightly run push (unset = manual runs only)
+              CJ_SCHEDULE_ENABLED: $CJ_SCHEDULE_ENABLED
               # CJ SFTP ("POST to CJ SFTP") credentials, per environment
               CJ_SFTP_USERNAME: $CJ_SFTP_USERNAME
               CJ_SFTP_PASSWORD: $CJ_SFTP_PASSWORD
+              # Bazaarvoice: "true" lets the nightly run push (unset = manual
+              # runs only); SFTP credentials, per environment
+              BV_SCHEDULE_ENABLED: $BV_SCHEDULE_ENABLED
+              BV_SFTP_USERNAME: $BV_SFTP_USERNAME
+              BV_SFTP_PASSWORD: $BV_SFTP_PASSWORD
 
         triggers:
           feeds-push-schedule:

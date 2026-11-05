@@ -3,8 +3,125 @@
  * catalog, so a feed that fails any check is never pushed.
  */
 
-import { XMLValidator } from 'fast-xml-parser';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { MIN_ITEMS, MAX_SHRINK } from './config.js';
+import { BV_NAMESPACE } from '../feeds/providers/bazaarvoice.js';
+
+const BV_PRODUCT_REQUIRED = ['ExternalId', 'Name', 'ProductPageUrl', 'ImageUrl'];
+const BV_URL_FIELDS = ['ProductPageUrl', 'ImageUrl'];
+
+/** @param {unknown} v */
+const asArray = (v) => {
+  if (v === undefined || v === null || v === '') return [];
+  return Array.isArray(v) ? v : [v];
+};
+
+/** Text of an element as parsed (CDATA merged, attributes ignored). */
+const text = (v) => (v === undefined || v === null || typeof v === 'object' ? '' : String(v).trim());
+
+/** The first five ids, then "…". */
+const sample = (ids) => `${ids.slice(0, 5).join(', ')}${ids.length > 5 ? ', …' : ''}`;
+
+/**
+ * Bazaarvoice ProductFeed checks. BV imports a non-incremental feed as the
+ * client's full catalog, so a structurally broken file is never uploaded:
+ *   - root <Feed> in the BV namespace, incremental="false"
+ *   - <Product> count equals the built item count
+ *   - each product has the fields BV needs to show it (ExternalId, Name,
+ *     ProductPageUrl, ImageUrl), absolute http(s) URLs, and an ExternalId
+ *     without "/" (the schema's ExternalIdType)
+ *   - product and category ExternalIds are unique
+ *   - every CategoryExternalId / ParentExternalId has a <Category> in the file
+ *     (BV rejects references to undefined categories)
+ * @param {string} body
+ * @param {number} itemCount
+ * @returns {string[]} problems
+ */
+export function checkBazaarvoice(body, itemCount) {
+  const problems = [];
+  let doc;
+  try {
+    doc = new XMLParser({
+      ignoreAttributes: false,
+      parseTagValue: false,
+      isArray: (name) => name === 'Product' || name === 'Category',
+    }).parse(body);
+  } catch (err) {
+    return [`invalid Bazaarvoice XML: ${err.message}`];
+  }
+  const feed = doc?.Feed;
+  if (!feed || typeof feed !== 'object') return ['missing <Feed> root element'];
+  if (feed['@_xmlns'] !== BV_NAMESPACE) {
+    problems.push(`<Feed> namespace is ${JSON.stringify(feed['@_xmlns'] ?? null)}, expected ${BV_NAMESPACE}`);
+  }
+  if (feed['@_incremental'] !== 'false') {
+    problems.push('<Feed> must be a full feed (incremental="false")');
+  }
+
+  const categories = asArray(feed.Categories?.Category);
+  const products = asArray(feed.Products?.Product);
+
+  if (products.length !== itemCount) {
+    problems.push(`${products.length} <Product> elements, expected ${itemCount}`);
+  }
+
+  const categoryIds = new Set();
+  const dupCategories = [];
+  for (const c of categories) {
+    const id = text(c.ExternalId);
+    if (!id) continue;
+    if (categoryIds.has(id)) dupCategories.push(id);
+    categoryIds.add(id);
+  }
+  if (dupCategories.length) problems.push(`duplicate category ExternalIds: ${sample(dupCategories)}`);
+  const badParents = categories
+    .filter((c) => text(c.ParentExternalId) && !categoryIds.has(text(c.ParentExternalId)))
+    .map((c) => `${text(c.ExternalId)}→${text(c.ParentExternalId)}`);
+  if (badParents.length) problems.push(`categories with an undefined parent: ${sample(badParents)}`);
+  const unnamed = categories.filter((c) => !text(c.ExternalId) || !text(c.Name))
+    .map((c) => text(c.ExternalId) || '(no id)');
+  if (unnamed.length) problems.push(`categories missing ExternalId or Name: ${sample(unnamed)}`);
+
+  /** @type {Record<string, string[]>} */
+  const missing = {};
+  const productIds = new Set();
+  const dupProducts = [];
+  const badIds = [];
+  const badUrls = [];
+  const badCategoryRefs = [];
+  products.forEach((p, i) => {
+    const id = text(p.ExternalId);
+    const label = id || `#${i + 1}`;
+    for (const field of BV_PRODUCT_REQUIRED) {
+      if (!text(p[field])) (missing[field] ||= []).push(label);
+    }
+    if (id) {
+      if (productIds.has(id)) dupProducts.push(id);
+      productIds.add(id);
+      if (id.includes('/')) badIds.push(id);
+    }
+    for (const field of BV_URL_FIELDS) {
+      const url = text(p[field]);
+      if (url && !/^https?:\/\/\S+$/.test(url)) badUrls.push(`${label} ${field}`);
+    }
+    const cat = text(p.CategoryExternalId);
+    if (cat && !categoryIds.has(cat)) badCategoryRefs.push(`${label}→${cat}`);
+  });
+  for (const [field, ids] of Object.entries(missing)) {
+    problems.push(`${ids.length} products missing ${field}: ${sample(ids)}`);
+  }
+  if (dupProducts.length) problems.push(`duplicate product ExternalIds: ${sample(dupProducts)}`);
+  if (badIds.length) problems.push(`product ExternalIds containing "/": ${sample(badIds)}`);
+  if (badUrls.length) problems.push(`invalid product URLs: ${sample(badUrls)}`);
+  if (badCategoryRefs.length) problems.push(`products referencing an undefined category: ${sample(badCategoryRefs)}`);
+
+  return problems;
+}
+
+/** Provider-specific structural checks, run on well-formed XML. */
+const PROVIDER_CHECKS = {
+  bazaarvoice: checkBazaarvoice,
+};
 
 /**
  * Item ids in a serialized feed (XML `<id>` or the CSV `id` column).
@@ -22,6 +139,7 @@ export function extractIds(body, contentType) {
 /**
  * @param {{ body: string, contentType: string, itemCount: number }} built
  * @param {{
+ *   provider?: string,
  *   idPattern?: RegExp,
  *   previousCount?: number | null,
  *   force?: boolean,
@@ -32,7 +150,7 @@ export function extractIds(body, contentType) {
  *   uploaded when `problems` is empty; `warnings` don't block the upload
  */
 export function validateFeed(built, {
-  idPattern, previousCount, force = false, minItems = MIN_ITEMS, maxShrink = MAX_SHRINK,
+  provider, idPattern, previousCount, force = false, minItems = MIN_ITEMS, maxShrink = MAX_SHRINK,
 } = {}) {
   const problems = [];
   const warnings = [];
@@ -46,6 +164,8 @@ export function validateFeed(built, {
     const result = XMLValidator.validate(body);
     if (result !== true) {
       problems.push(`invalid XML: ${result.err?.msg || 'parse error'} (line ${result.err?.line})`);
+    } else if (provider && PROVIDER_CHECKS[provider]) {
+      problems.push(...PROVIDER_CHECKS[provider](body, itemCount));
     }
   } else if (/csv/.test(contentType)) {
     const header = body.replace(/^\uFEFF/, '').split(/\r?\n/, 1)[0];

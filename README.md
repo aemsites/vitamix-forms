@@ -174,12 +174,19 @@ uploaded file is exactly what the feed URL serves.
 environment: the on/off switch, targets (host, port, remote directory), and the
 locale → file name map. The environment comes from the runtime namespace
 (`60038-161ivoryjackal-stage` → stage, `60038-161ivoryjackal` → prod; any other
-namespace does nothing). Only secrets are env vars (see below).
+namespace does nothing). Only secrets and per-target schedule switches
+(`CJ_SCHEDULE_ENABLED`, `BV_SCHEDULE_ENABLED`) are env vars (see below).
+
+**Schedule switches:** the nightly run pushes a target only when its switch
+is `"true"` (GitHub secrets `CJ_SCHEDULE_ENABLED_PROD` /
+`BV_SCHEDULE_ENABLED_PROD`; change + redeploy). Otherwise it skips the target
+(`scheduleOff` in the result; `reason: 'target-schedule-disabled'` when
+nothing else runs). Manual runs always push. Stage has no schedule at all.
 
 | Environment | Status | Schedule | Targets |
 |---|---|---|---|
-| stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml` |
-| prod | **disabled** | nightly 1 AM ET (once enabled) | — |
+| stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml`. Bazaarvoice **staging**: `us/en_us` → `/import-inbox/productfeed-en_US.xml`, `ca/en_us` → `/import-inbox/productfeed-en_CA.xml`, `mx/es_mx` → `/import-inbox/productfeed-en_MX.xml` |
+| prod | enabled | nightly 1 AM ET, per-target switch | Bazaarvoice **production**, same files as stage; manual runs push, the nightly run only when `BV_SCHEDULE_ENABLED` is `"true"` (CJ: not yet) |
 
 The alarm is defined once in `app.config.yaml`, so it fires in every
 environment. When an environment has `scheduled: false`, a scheduled run
@@ -188,7 +195,9 @@ push.
 
 Per run, for each target × locale: build → validate → upload. A failure in one
 never stops the others. Validation blocks an upload when the feed is empty or
-malformed, has fewer items than the feed's `minItems` floor (CJ US: 100), or
+malformed, has fewer items than the feed's `minItems` floor (CJ US: 100;
+Bazaarvoice US 115, CA 100, MX 6), fails a provider's structural checks
+(Bazaarvoice below), or
 (the **shrink guard**) has fewer than 50% of the items of the last successful
 push for that target + locale (counts kept in `aio-lib-state`). The provider
 then keeps its previous file. CJ-incompatible ids only **warn** (they affect
@@ -221,6 +230,24 @@ CJ specifics ("POST to CJ SFTP", `datatransfer.cj.com:22`):
 - All CJ SFTP subscriptions on an account share one password — resetting it in
   CJ breaks every SFTP subscription on that account.
 
+Bazaarvoice specifics (stage: `sftp-stg.bazaarvoice.com:22`, manual runs only;
+prod: `sftp.bazaarvoice.com:22`, nightly):
+- **Schedule switch:** `BV_SCHEDULE_ENABLED` (see above).
+- Files go in `/import-inbox`, one full (non-incremental) product feed per
+  locale. `ca/fr_ca` isn't pushed. The MX file is named `productfeed-en_MX.xml`
+  but its locale fields are `es_MX`.
+- **Direct upload** (`atomicUpload: false`): written straight to the final name
+  until it's confirmed that Bazaarvoice ignores `.part` files and imports a file
+  renamed into place.
+- Each host's RSA key is **pinned** (`hostFingerprints` in `config.js`).
+- Validation, on top of the generic checks: root `<Feed>` in the BV 14.7
+  namespace with `incremental="false"`; `<Product>` count equals the item count;
+  every product has `ExternalId` (no `/`), `Name`, `ProductPageUrl` and
+  `ImageUrl` (absolute http(s) URLs); unique product and category ids; every
+  `CategoryExternalId` / `ParentExternalId` defined in the file. Any failure
+  blocks that locale's upload.
+- The upload only confirms delivery; Bazaarvoice reports the import result itself.
+
 Manual runs (namespace credentials; there is no web URL):
 
 Any of `now`, `dryRun`, `force`, `target` or `locale` marks a manual run and skips
@@ -230,6 +257,7 @@ the 1 AM check. A bare invoke is treated like the schedule.
 aio rt action invoke feeds/feeds-push -p now true --result     # full run, now
 aio rt action invoke feeds/feeds-push -p dryRun true --result  # build + validate only, no SFTP
 aio rt action invoke feeds/feeds-push -p target cj -p locale us/en_us --result
+aio rt action invoke feeds/feeds-push -p target bazaarvoice -p now true --result
 aio rt action invoke feeds/feeds-push -p force true --result   # bypass the shrink guard
 ```
 
@@ -443,7 +471,10 @@ secrets only:
 
 | Variable | Description | Default |
 |---|---|---|
+| `CJ_SCHEDULE_ENABLED` | `"true"` lets the nightly run push CJ (prod; GitHub secret `CJ_SCHEDULE_ENABLED_PROD`). Manual runs don't need it. | unset — manual runs only |
 | `CJ_SFTP_USERNAME` / `CJ_SFTP_PASSWORD` | CJ SFTP credentials for this environment (GitHub secrets `CJ_SFTP_*_STAGE` / `_PROD`) | unset — CJ uploads fail and alert |
+| `BV_SCHEDULE_ENABLED` | `"true"` lets the nightly run push Bazaarvoice (prod; GitHub secret `BV_SCHEDULE_ENABLED_PROD`). Manual runs don't need it. | unset — manual runs only |
+| `BV_SFTP_USERNAME` / `BV_SFTP_PASSWORD` | Bazaarvoice SFTP credentials for this environment (GitHub secrets `BV_SFTP_*_STAGE` / `_PROD`) | unset — Bazaarvoice uploads fail and alert |
 | `ALERT_FEED_FAIL_EMAILS` | Comma-separated alert recipients for any failed feed push | unset (log only) |
 | `EMAIL_TOKEN` | Productbus token used to send the alert | — |
 

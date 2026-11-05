@@ -17,6 +17,7 @@ import { Core } from '@adobe/aio-sdk';
 import { buildProviderFeed, resolveFeedEnv } from '../feeds/build.js';
 import {
   CONFIG, MIN_ITEMS, SCHEDULE_TIMEZONE, SCHEDULE_HOUR, resolveEnvironment, resolveCredentials,
+  isScheduleEnabled,
 } from './config.js';
 import { validateFeed } from './validate.js';
 import * as sftp from './sftp.js';
@@ -82,13 +83,18 @@ export function isScheduledHour(date, timeZone = SCHEDULE_TIMEZONE, hour = SCHED
 
 /**
  * @param {import('./config.js').EnvConfig} envConfig
- * @param {{ target?: string, locale?: string }} filters
+ * @param {{
+ *   target?: string,
+ *   locale?: string,
+ *   isOn?: (target: import('./config.js').TargetConfig) => boolean,
+ * }} filters `isOn` drops targets that shouldn't run (e.g. schedule off)
  */
-export function listJobs(envConfig, { target: onlyTarget, locale: onlyLocale } = {}) {
+export function listJobs(envConfig, { target: onlyTarget, locale: onlyLocale, isOn = () => true } = {}) {
   const jobs = [];
   for (const [targetKey, target] of Object.entries(envConfig.targets || {})) {
     if (target.enabled === false) continue;
     if (onlyTarget && onlyTarget !== targetKey) continue;
+    if (!isOn(target)) continue;
     for (const [locale, localeConfig] of Object.entries(target.locales || {})) {
       if (localeConfig.enabled === false) continue;
       if (onlyLocale && onlyLocale !== locale) continue;
@@ -154,7 +160,20 @@ export async function run(params, options = {}) {
     }
   }
 
-  const jobs = listJobs(envConfig, options);
+  // The nightly run skips targets whose schedule switch (`scheduleEnabledBy`)
+  // is off; manual runs push every target.
+  const isOn = (target) => !options.scheduled || isScheduleEnabled(target, params);
+  const scheduleOff = Object.entries(envConfig.targets || {})
+    .filter(([, t]) => t.enabled !== false && !isOn(t))
+    .map(([key, t]) => `${key} (${t.scheduleEnabledBy} is not "true")`);
+  if (scheduleOff.length) log.info(`schedule off: ${scheduleOff.join(', ')}`);
+
+  const jobs = listJobs(envConfig, { target: options.target, locale: options.locale, isOn });
+  if (!jobs.length && scheduleOff.length) {
+    return {
+      skipped: true, reason: 'target-schedule-disabled', environment, scheduleOff,
+    };
+  }
   if (!jobs.length && (options.target || options.locale)) {
     // A filtered manual run that matches nothing is almost always a typo;
     // don't let it look like a successful no-op.
@@ -244,6 +263,7 @@ export async function run(params, options = {}) {
     dryRun,
     force,
     results,
+    ...(scheduleOff.length ? { scheduleOff } : {}),
     ...(warnings.length ? { warnings } : {}),
     ...(alert ? { alert } : {}),
   };
@@ -327,7 +347,7 @@ async function pushOne(ctx, job, {
 
   const previous = previousCounts[countKey(targetKey, locale)]?.count ?? null;
   const { problems, warnings } = validateFeed(built, {
-    idPattern: target.idPattern, previousCount: previous, force, minItems: job.minItems,
+    provider: target.provider, idPattern: target.idPattern, previousCount: previous, force, minItems: job.minItems,
   });
   if (warnings.length) result.warnings = warnings;
   if (problems.length) {

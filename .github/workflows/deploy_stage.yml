@@ -126,6 +126,9 @@ jobs:
           # feeds-push — CJ test feed SFTP credentials; targets/files live in code
           CJ_SFTP_USERNAME: ${{ secrets.CJ_SFTP_USERNAME_STAGE }}
           CJ_SFTP_PASSWORD: ${{ secrets.CJ_SFTP_PASSWORD_STAGE }}
+          # feeds-push — Bazaarvoice staging SFTP credentials (manual runs only)
+          BV_SFTP_USERNAME: ${{ secrets.BV_SFTP_USERNAME_STAGE }}
+          BV_SFTP_PASSWORD: ${{ secrets.BV_SFTP_PASSWORD_STAGE }}
           ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}
 
         uses: adobe/aio-apps-action@3.3.0
