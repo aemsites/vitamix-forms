@@ -14,7 +14,9 @@
  *   - products:   sku, categoryExternalId
  *
  * `path` is the category page path without the locale prefix (e.g.
- * "/shop/blenders"); the feed builds the URL for the requested locale.
+ * "/shop/blenders"); the feed builds the URL for the requested locale. Legacy
+ * paths with no Edge page are replaced from dev/bv-category-paths.json
+ * (category id -> path, may carry product-list filter params).
  *
  * The category taxonomy is the one BV input the GMC feed can't provide, so we
  * lift it from the legacy feeds (which carry the full <Categories> tree and
@@ -30,6 +32,7 @@ import { XMLParser } from 'fast-xml-parser';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const fixture = (name) => `${HERE}/../test/feeds/fixtures/${name}`;
 const OUT = `${HERE}/bv-categories.json`;
+const PATH_OVERRIDES = JSON.parse(readFileSync(`${HERE}/bv-category-paths.json`, 'utf-8'));
 
 const parser = new XMLParser({
   ignoreAttributes: false,
@@ -115,7 +118,7 @@ const categoryRows = Object.entries(categories).map(([externalId, c]) => ({
   externalId,
   parentExternalId: c.parent ?? '',
   name: c.name ?? '',
-  path: c.path ?? '',
+  path: PATH_OVERRIDES[externalId] ?? c.path ?? '',
 }));
 const productRows = Object.entries(productCategory).map(([sku, categoryExternalId]) => ({
   sku,
@@ -149,6 +152,7 @@ writeFileSync(CATEGORIES_TSV, `${tsv(categoryRows)}\n`);
 writeFileSync(PRODUCTS_TSV, `${tsv(productRows)}\n`);
 
 // Report
+const unusedOverrides = Object.keys(PATH_OVERRIDES).filter((id) => !id.startsWith('_') && !categories[id]);
 const orphanCats = categoryRows.filter((c) => c.parentExternalId && !categories[c.parentExternalId]).map((c) => c.externalId);
 const missingCatRefs = [...new Set(productRows.map((p) => p.categoryExternalId))].filter((id) => !categories[id]);
 console.log(`wrote ${OUT}`);
@@ -159,5 +163,6 @@ console.log(`products sheet:   ${productRows.length} rows`);
 console.log(`stores: ${STORES.map((s) => s.key).join(', ')}`);
 console.log(`product conflicts between stores (kept first): ${conflicts.length}${conflicts.length ? ` ${JSON.stringify(conflicts)}` : ''}`);
 console.log(`category path conflicts between stores (kept first): ${pathConflicts.length}${pathConflicts.length ? ` ${JSON.stringify(pathConflicts)}` : ''}`);
+console.log(`path overrides applied: ${Object.keys(PATH_OVERRIDES).filter((id) => categories[id]).length}${unusedOverrides.length ? `, unknown ids: [${unusedOverrides.join(', ')}]` : ''}`);
 console.log(`categories with unknown parent: ${orphanCats.length}${orphanCats.length ? ` [${orphanCats.join(', ')}]` : ''}`);
 console.log(`product categoryIds with no definition: ${missingCatRefs.length}${missingCatRefs.length ? ` [${missingCatRefs.join(', ')}]` : ''}`);

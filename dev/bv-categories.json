@@ -38,7 +38,7 @@
         "externalId": "61",
         "parentExternalId": "55",
         "name": "Ascent Series Accessories",
-        "path": "/shop/ascent-series-accessories"
+        "path": "/shop/accessories?compatibility=Ascent%20Series"
       },
       {
         "externalId": "64",
@@ -62,109 +62,109 @@
         "externalId": "76",
         "parentExternalId": "55",
         "name": "Legacy Series Accessories",
-        "path": "/shop/classic-series-accessories"
+        "path": "/shop/accessories?compatibility=Legacy%20Series"
       },
       {
         "externalId": "79",
         "parentExternalId": "55",
         "name": "Compact Food Recycling",
-        "path": "/shop/compact-food-recycling"
+        "path": "/shop"
       },
       {
         "externalId": "82",
         "parentExternalId": "55",
         "name": "Blender Containers",
-        "path": "/shop/containers"
+        "path": "/shop/accessories?productType=Container"
       },
       {
         "externalId": "85",
         "parentExternalId": "55",
         "name": "Cookbooks",
-        "path": "/shop/cookbooks"
+        "path": "/shop/accessories?productType=Cookbook"
       },
       {
         "externalId": "88",
         "parentExternalId": "55",
         "name": "Corporate Wellness Program",
-        "path": "/shop/corporate-accounts"
+        "path": "/shop"
       },
       {
         "externalId": "91",
         "parentExternalId": "55",
         "name": "C-Series: Classic Blenders",
-        "path": "/shop/c-series-blenders"
+        "path": "/shop/classic-blenders"
       },
       {
         "externalId": "94",
         "parentExternalId": "55",
         "name": "Explorian Series",
-        "path": "/shop/explorian-series-accessories"
+        "path": "/shop/accessories?compatibility=Explorian%20Series"
       },
       {
         "externalId": "97",
         "parentExternalId": "55",
         "name": "G-Series: Next Generation Blenders",
-        "path": "/shop/g-series-blenders"
+        "path": "/shop/classic-blenders"
       },
       {
         "externalId": "100",
         "parentExternalId": "55",
         "name": "Kitchen Tools",
-        "path": "/shop/kitchen-tools"
+        "path": "/shop/accessories?productType=Kitchen%20Tool"
       },
       {
         "externalId": "106",
         "parentExternalId": "55",
         "name": "All Collections",
-        "path": "/shop/shop-collections"
+        "path": "/shop"
       },
       {
         "externalId": "109",
         "parentExternalId": "55",
         "name": "Ascent Series Blenders",
-        "path": "/shop/smart-system-blenders"
+        "path": "/shop/blenders?series=Ascent%20Series"
       },
       {
         "externalId": "112",
         "parentExternalId": "55",
         "name": "Smoothie Cups",
-        "path": "/shop/smoothie-cups"
+        "path": "/shop/accessories?productType=Smoothie%20Cup"
       },
       {
         "externalId": "115",
         "parentExternalId": "55",
         "name": "Space Saving Blenders Accessories",
-        "path": "/shop/space-saving-accessories"
+        "path": "/shop/accessories"
       },
       {
         "externalId": "118",
         "parentExternalId": "55",
         "name": "Space Saving Blenders",
-        "path": "/shop/space-saving-blenders"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "121",
         "parentExternalId": "55",
         "name": "Tampers",
-        "path": "/shop/tampers"
+        "path": "/shop/accessories?productType=Tamper"
       },
       {
         "externalId": "127",
         "parentExternalId": "55",
         "name": "Beverage Blenders",
-        "path": "/shop/beverage-blenders"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "130",
         "parentExternalId": "127",
         "name": "BarBoss",
-        "path": "/shop/beverage-blenders/barboss"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "136",
         "parentExternalId": "127",
         "name": "Blending Station",
-        "path": "/shop/beverage-blenders/blending-station"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "142",
@@ -176,91 +176,91 @@
         "externalId": "145",
         "parentExternalId": "55",
         "name": "Frozen Treat Mixers",
-        "path": "/shop/frozen-treat-mixers"
+        "path": "/commercial/products?applications=Frozen%20Treats"
       },
       {
         "externalId": "148",
         "parentExternalId": "145",
         "name": "Mix'n Machine",
-        "path": "/shop/frozen-treat-mixers/mix-n-machine"
+        "path": "/commercial/products?applications=Frozen%20Treats"
       },
       {
         "externalId": "151",
         "parentExternalId": "55",
         "name": "Certified Reconditioned Collection",
-        "path": "/shop/certified-reconditioned-collection"
+        "path": "/shop/certified-reconditioned-series"
       },
       {
         "externalId": "154",
         "parentExternalId": "127",
         "name": "Drink Machine",
-        "path": "/shop/beverage-blenders/drink-machine"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "157",
         "parentExternalId": "55",
         "name": "Container Rinsers",
-        "path": "/shop/container-rinsers"
+        "path": "/commercial/products?productType=Commercial%20Accessory"
       },
       {
         "externalId": "160",
         "parentExternalId": "157",
         "name": "Rinse-O-Matic",
-        "path": "/shop/container-rinsers/rinse-o-matic-1"
+        "path": "/commercial/products?productType=Commercial%20Accessory"
       },
       {
         "externalId": "163",
         "parentExternalId": "127",
         "name": "The Quiet One",
-        "path": "/"
+        "path": "/commercial/products?applications=Drinks%20%26%20Smoothies"
       },
       {
         "externalId": "169",
         "parentExternalId": "55",
         "name": "Food Preparation",
-        "path": "/shop/food-preparation"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "172",
         "parentExternalId": "169",
         "name": "Vita-Prep",
-        "path": "/shop/food-preparation/vita-prep"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "175",
         "parentExternalId": "127",
         "name": "Venturist Series",
-        "path": "/shop/beverage-blenders/venturist-series"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "178",
         "parentExternalId": "169",
         "name": "Vitamix-XL",
-        "path": "/shop/food-preparation/vitamix-xl"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "191",
         "parentExternalId": "55",
         "name": "In Home Trial",
-        "path": "/shop/in-home-trial"
+        "path": "/shop"
       },
       {
         "externalId": "194",
         "parentExternalId": "29",
         "name": "Accessories",
-        "path": "/commercial/products/accessories"
+        "path": "/commercial/products?productType=Commercial%20Accessory"
       },
       {
         "externalId": "197",
         "parentExternalId": "29",
         "name": "Frozen-Treat-Mixers",
-        "path": "/commercial/products/frozen-treat-mixers"
+        "path": "/commercial/products?applications=Frozen%20Treats"
       },
       {
         "externalId": "200",
         "parentExternalId": "29",
         "name": "Food-Preparation",
-        "path": "/commercial/products/food-preparation"
+        "path": "/commercial/products?applications=Food%20Prep"
       },
       {
         "externalId": "201",
@@ -272,7 +272,7 @@
         "externalId": "208",
         "parentExternalId": "55",
         "name": "Blenders",
-        "path": "/shop/allblenders"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "228",
@@ -284,13 +284,13 @@
         "externalId": "229",
         "parentExternalId": "",
         "name": "Sale SKUs (Sale Exclusion Products)",
-        "path": "/sale-skus"
+        "path": "/shop/sale"
       },
       {
         "externalId": "232",
         "parentExternalId": "55",
         "name": "Kitchen Systems",
-        "path": "/shop/kitchen-systems"
+        "path": "/shop/blenders?collections=Kitchen%20Systems%20%26%20Bundles"
       },
       {
         "externalId": "237",
@@ -302,25 +302,25 @@
         "externalId": "239",
         "parentExternalId": "58",
         "name": "Immersion Blender Accessories",
-        "path": "/shop/accessories/immersion-blender-accessories"
+        "path": "/shop/accessories?productType=Immersion%20Blending"
       },
       {
         "externalId": "245",
         "parentExternalId": "58",
         "name": "Food Processor Accessories",
-        "path": "/shop/accessories/food-processor-accessories"
+        "path": "/shop/accessories?productType=Food%20Processing"
       },
       {
         "externalId": "254",
         "parentExternalId": "55",
         "name": "Full Size Blenders",
-        "path": "/shop/full-size-blenders"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "257",
         "parentExternalId": "55",
         "name": "Employee Sale Exclusions",
-        "path": "/shop/employee-sale-exclusions"
+        "path": "/shop"
       },
       {
         "externalId": "260",
@@ -344,19 +344,19 @@
         "externalId": "278",
         "parentExternalId": "55",
         "name": "Eligible Employee Discount",
-        "path": "/shop/eligible-discount-employee"
+        "path": "/shop"
       },
       {
         "externalId": "281",
         "parentExternalId": "55",
         "name": "Available Products",
-        "path": "/shop/availableproducts"
+        "path": "/shop/blenders"
       },
       {
         "externalId": "284",
         "parentExternalId": "76",
         "name": "Legacy Series",
-        "path": "/shop/classic-series-accessories/legacy-series"
+        "path": "/shop/accessories?compatibility=Legacy%20Series"
       },
       {
         "externalId": "287",

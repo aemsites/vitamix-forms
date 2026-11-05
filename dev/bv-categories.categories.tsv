@@ -3,58 +3,58 @@ externalId	parentExternalId	name	path
 29	28	Products	/commercial/products
 55		Shop	/shop
 58	55	Accessories	/shop/accessories
-61	55	Ascent Series Accessories	/shop/ascent-series-accessories
+61	55	Ascent Series Accessories	/shop/accessories?compatibility=Ascent%20Series
 64	55	All Blenders	/shop/blenders
 70	55	Certified Reconditioned Series	/shop/certified-reconditioned-series
 73	55	Legacy Series Blenders	/shop/classic-blenders
-76	55	Legacy Series Accessories	/shop/classic-series-accessories
-79	55	Compact Food Recycling	/shop/compact-food-recycling
-82	55	Blender Containers	/shop/containers
-85	55	Cookbooks	/shop/cookbooks
-88	55	Corporate Wellness Program	/shop/corporate-accounts
-91	55	C-Series: Classic Blenders	/shop/c-series-blenders
-94	55	Explorian Series	/shop/explorian-series-accessories
-97	55	G-Series: Next Generation Blenders	/shop/g-series-blenders
-100	55	Kitchen Tools	/shop/kitchen-tools
-106	55	All Collections	/shop/shop-collections
-109	55	Ascent Series Blenders	/shop/smart-system-blenders
-112	55	Smoothie Cups	/shop/smoothie-cups
-115	55	Space Saving Blenders Accessories	/shop/space-saving-accessories
-118	55	Space Saving Blenders	/shop/space-saving-blenders
-121	55	Tampers	/shop/tampers
-127	55	Beverage Blenders	/shop/beverage-blenders
-130	127	BarBoss	/shop/beverage-blenders/barboss
-136	127	Blending Station	/shop/beverage-blenders/blending-station
+76	55	Legacy Series Accessories	/shop/accessories?compatibility=Legacy%20Series
+79	55	Compact Food Recycling	/shop
+82	55	Blender Containers	/shop/accessories?productType=Container
+85	55	Cookbooks	/shop/accessories?productType=Cookbook
+88	55	Corporate Wellness Program	/shop
+91	55	C-Series: Classic Blenders	/shop/classic-blenders
+94	55	Explorian Series	/shop/accessories?compatibility=Explorian%20Series
+97	55	G-Series: Next Generation Blenders	/shop/classic-blenders
+100	55	Kitchen Tools	/shop/accessories?productType=Kitchen%20Tool
+106	55	All Collections	/shop
+109	55	Ascent Series Blenders	/shop/blenders?series=Ascent%20Series
+112	55	Smoothie Cups	/shop/accessories?productType=Smoothie%20Cup
+115	55	Space Saving Blenders Accessories	/shop/accessories
+118	55	Space Saving Blenders	/shop/blenders
+121	55	Tampers	/shop/accessories?productType=Tamper
+127	55	Beverage Blenders	/commercial/products?applications=Drinks%20%26%20Smoothies
+130	127	BarBoss	/commercial/products?applications=Drinks%20%26%20Smoothies
+136	127	Blending Station	/commercial/products?applications=Drinks%20%26%20Smoothies
 142	55	Immersion Blender	/shop/immersion-blending
-145	55	Frozen Treat Mixers	/shop/frozen-treat-mixers
-148	145	Mix'n Machine	/shop/frozen-treat-mixers/mix-n-machine
-151	55	Certified Reconditioned Collection	/shop/certified-reconditioned-collection
-154	127	Drink Machine	/shop/beverage-blenders/drink-machine
-157	55	Container Rinsers	/shop/container-rinsers
-160	157	Rinse-O-Matic	/shop/container-rinsers/rinse-o-matic-1
-163	127	The Quiet One	/
-169	55	Food Preparation	/shop/food-preparation
-172	169	Vita-Prep	/shop/food-preparation/vita-prep
-175	127	Venturist Series	/shop/beverage-blenders/venturist-series
-178	169	Vitamix-XL	/shop/food-preparation/vitamix-xl
-191	55	In Home Trial	/shop/in-home-trial
-194	29	Accessories	/commercial/products/accessories
-197	29	Frozen-Treat-Mixers	/commercial/products/frozen-treat-mixers
-200	29	Food-Preparation	/commercial/products/food-preparation
+145	55	Frozen Treat Mixers	/commercial/products?applications=Frozen%20Treats
+148	145	Mix'n Machine	/commercial/products?applications=Frozen%20Treats
+151	55	Certified Reconditioned Collection	/shop/certified-reconditioned-series
+154	127	Drink Machine	/commercial/products?applications=Drinks%20%26%20Smoothies
+157	55	Container Rinsers	/commercial/products?productType=Commercial%20Accessory
+160	157	Rinse-O-Matic	/commercial/products?productType=Commercial%20Accessory
+163	127	The Quiet One	/commercial/products?applications=Drinks%20%26%20Smoothies
+169	55	Food Preparation	/commercial/products?applications=Food%20Prep
+172	169	Vita-Prep	/commercial/products?applications=Food%20Prep
+175	127	Venturist Series	/shop/blenders
+178	169	Vitamix-XL	/commercial/products?applications=Food%20Prep
+191	55	In Home Trial	/shop
+194	29	Accessories	/commercial/products?productType=Commercial%20Accessory
+197	29	Frozen-Treat-Mixers	/commercial/products?applications=Frozen%20Treats
+200	29	Food-Preparation	/commercial/products?applications=Food%20Prep
 201	55	Food Processing	/shop/food-processing
-208	55	Blenders	/shop/allblenders
+208	55	Blenders	/shop/blenders
 228	55	Shop Now!	/shop/sale
-229		Sale SKUs (Sale Exclusion Products)	/sale-skus
-232	55	Kitchen Systems	/shop/kitchen-systems
+229		Sale SKUs (Sale Exclusion Products)	/shop/sale
+232	55	Kitchen Systems	/shop/blenders?collections=Kitchen%20Systems%20%26%20Bundles
 237	55	Propel Series Blenders	/shop/propel-series-blenders
-239	58	Immersion Blender Accessories	/shop/accessories/immersion-blender-accessories
-245	58	Food Processor Accessories	/shop/accessories/food-processor-accessories
-254	55	Full Size Blenders	/shop/full-size-blenders
-257	55	Employee Sale Exclusions	/shop/employee-sale-exclusions
+239	58	Immersion Blender Accessories	/shop/accessories?productType=Immersion%20Blending
+245	58	Food Processor Accessories	/shop/accessories?productType=Food%20Processing
+254	55	Full Size Blenders	/shop/blenders
+257	55	Employee Sale Exclusions	/shop
 260	55	Why Buy Direct	/shop/why-buy-direct
 272	55	Explorian Series Blenders	/shop/explorian-series-blenders
 273	55	Ascent X Series Blenders	/shop/ascent-x-series-blenders
-278	55	Eligible Employee Discount	/shop/eligible-discount-employee
-281	55	Available Products	/shop/availableproducts
-284	76	Legacy Series	/shop/classic-series-accessories/legacy-series
+278	55	Eligible Employee Discount	/shop
+281	55	Available Products	/shop/blenders
+284	76	Legacy Series	/shop/accessories?compatibility=Legacy%20Series
 287	55	Personal Blending	/shop/personal-blending
