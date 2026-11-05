@@ -136,6 +136,13 @@ Supported providers:
     one exists, then the deepest. Only the categories in use (and their
     ancestors) are sent, with page URLs for the requested locale
     (`<site>/<locale><path>`).
+  - **Locales:** one file per locale goes to the same BV client, so products
+    and categories also carry their values under the file's BV locale
+    (`<Names>`, `<Descriptions>`, `<ProductPageUrls>`, `<ImageUrls>`,
+    `<CategoryPageUrls>`), as in the legacy export: `us/en_us` → `en_US`,
+    `ca/en_us` → `en_CA`, `mx/es_mx` → `en_MX`. A product listed in several
+    files then keeps a name and URL per locale. Other locales (e.g. `ca/fr_ca`)
+    get the base fields only.
   - `raw=true` serves the previous, unprepared Bazaarvoice feed.
 - **`openai`** — OpenAI commerce "ads" feed (**CSV, US-only**, UTF-8 with BOM so
   spreadsheet tools detect the encoding). Columns match the sample

@@ -34,10 +34,41 @@ const GENERIC_CATEGORIES = new Set([
   'in home trial', 'sale skus (sale exclusion products)', 'shop now!', 'why buy direct',
 ]);
 
+/**
+ * Bazaarvoice locale of each feed locale, as in the legacy BV exports (one file
+ * per locale, all for the same BV client). Every product and category carries
+ * its values under this locale too (<Names>, <ProductPageUrls>, …), so a
+ * product listed in several locale files keeps a name and URL per locale
+ * instead of each file overwriting the last. Feed locales not listed here get
+ * the base fields only.
+ */
+export const BV_LOCALES = {
+  'us/en_us': 'en_US',
+  'ca/en_us': 'en_CA',
+  'mx/es_mx': 'en_MX',
+};
+
 const esc = (v) => String(v ?? '')
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 // CDATA-wrap, splitting any literal "]]>" so the section stays well-formed.
 const cdata = (v) => `<![CDATA[${String(v ?? '').replace(/]]>/g, ']]]]><![CDATA[>')}]]>`;
+
+/**
+ * A localized wrapper, e.g. <Names><Name locale="en_US">…</Name></Names>, or ''
+ * without a BV locale or a value.
+ * @param {string} wrapper
+ * @param {string} element
+ * @param {unknown} value
+ * @param {string | undefined} bvLocale
+ * @param {string} indent
+ */
+function localized(wrapper, element, value, bvLocale, indent) {
+  if (!bvLocale || value === undefined || value === null || value === '') return '';
+  return `
+${indent}<${wrapper}>
+${indent}  <${element} locale="${bvLocale}">${cdata(value)}</${element}>
+${indent}</${wrapper}>`;
+}
 
 /** @param {unknown} name */
 const nameKey = (name) => decodeEntities(String(name ?? '')).trim().toLowerCase();
@@ -224,16 +255,17 @@ export function familyValues(item, index) {
  * @param {string} siteBase e.g. "https://www.vitamix.com"
  * @param {string} locale e.g. "ca/fr_ca"
  * @param {Record<string, BvCategory>} categories
+ * @param {string | undefined} bvLocale
  */
-function categoryXml(id, cat, siteBase, locale, categories) {
+function categoryXml(id, cat, siteBase, locale, categories, bvLocale) {
   const parent = cat.parent && categories[cat.parent] ? cat.parent : undefined;
   const path = !cat.path || cat.path === '/' ? '' : cat.path;
   const url = `${siteBase}/${locale}${path}`;
   return `    <Category>
       <ExternalId>${esc(id)}</ExternalId>${parent ? `
       <ParentExternalId>${esc(parent)}</ParentExternalId>` : ''}
-      <Name>${cdata(cat.name)}</Name>
-      <CategoryPageUrl>${cdata(url)}</CategoryPageUrl>
+      <Name>${cdata(cat.name)}</Name>${localized('Names', 'Name', cat.name, bvLocale, '      ')}
+      <CategoryPageUrl>${cdata(url)}</CategoryPageUrl>${localized('CategoryPageUrls', 'CategoryPageUrl', url, bvLocale, '      ')}
     </Category>`;
 }
 
@@ -241,18 +273,19 @@ function categoryXml(id, cat, siteBase, locale, categories) {
  * @param {Record<string, unknown>} item a normalized GMC item
  * @param {string | undefined} categoryId
  * @param {Map<string, Record<string, string>>} index sku -> product index row
+ * @param {string | undefined} bvLocale
  */
-function productXml(item, categoryId, index) {
+function productXml(item, categoryId, index, bvLocale) {
   const id = String(item.id);
   const families = familyValues(item, index);
 
   return `    <Product>
       <ExternalId>${esc(id)}</ExternalId>
-      <Name>${cdata(item.title)}</Name>${item.description ? `
-      <Description>${cdata(item.description)}</Description>` : ''}${categoryId ? `
+      <Name>${cdata(item.title)}</Name>${localized('Names', 'Name', item.title, bvLocale, '      ')}${item.description ? `
+      <Description>${cdata(item.description)}</Description>` : ''}${localized('Descriptions', 'Description', item.description, bvLocale, '      ')}${categoryId ? `
       <CategoryExternalId>${esc(categoryId)}</CategoryExternalId>` : ''}
-      <ProductPageUrl>${cdata(item.link)}</ProductPageUrl>
-      <ImageUrl>${cdata(item.image_link)}</ImageUrl>${item.gtin ? `
+      <ProductPageUrl>${cdata(item.link)}</ProductPageUrl>${localized('ProductPageUrls', 'ProductPageUrl', item.link, bvLocale, '      ')}
+      <ImageUrl>${cdata(item.image_link)}</ImageUrl>${localized('ImageUrls', 'ImageUrl', item.image_link, bvLocale, '      ')}${item.gtin ? `
       <UPCs>
         <UPC>${cdata(item.gtin)}</UPC>
       </UPCs>` : ''}
@@ -294,6 +327,7 @@ export default {
     const indexOf = (item) => (isCommercialItem(item) ? commercialFirst : shopFirst);
     const siteBase = String(ctx.env.FEED_SITE_BASE || '').replace(/\/$/, '');
     const extractDate = new Date().toISOString();
+    const bvLocale = BV_LOCALES[locale];
 
     const productCategories = feed.items.map((item) => resolveCategory(item, data, indexOf(item)));
     // Only the categories this feed uses, with their ancestors: other stores'
@@ -306,9 +340,9 @@ export default {
     }
     const categoriesXml = [...used]
       .sort((x, y) => Number(x) - Number(y) || x.localeCompare(y))
-      .map((id) => categoryXml(id, data.categories[id], siteBase, locale, data.categories)).join('\n');
+      .map((id) => categoryXml(id, data.categories[id], siteBase, locale, data.categories, bvLocale)).join('\n');
     const productsXml = feed.items
-      .map((item, i) => productXml(item, productCategories[i], indexOf(item))).join('\n');
+      .map((item, i) => productXml(item, productCategories[i], indexOf(item), bvLocale)).join('\n');
 
     const uncategorized = feed.items.filter((_, i) => !productCategories[i]).map((it) => it.id);
     if (uncategorized.length) {

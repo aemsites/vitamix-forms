@@ -226,6 +226,52 @@ describe('bazaarvoice provider', () => {
   });
 });
 
+describe('bazaarvoice locale fields', () => {
+  /** text + locale of a localized element, e.g. Names.Name */
+  const loc = (node) => ({ text: node['#text'], locale: node['@_locale'] });
+
+  test.each([
+    ['us/en_us', 'en_US'],
+    ['ca/en_us', 'en_CA'],
+    ['mx/es_mx', 'en_MX'],
+  ])('%s carries its values under %s', async (locale, bvLocale) => {
+    mockFetch();
+    const res = await GET({ locale });
+    const feed = parser.parse(res.body).Feed;
+    const variant = asArray(feed.Products.Product).find((p) => p.ExternalId === '056405');
+    expect(loc(variant.Names.Name)).toEqual({ text: variant.Name, locale: bvLocale });
+    expect(loc(variant.ProductPageUrls.ProductPageUrl))
+      .toEqual({ text: variant.ProductPageUrl, locale: bvLocale });
+    expect(loc(variant.ImageUrls.ImageUrl)).toEqual({ text: variant.ImageUrl, locale: bvLocale });
+    // prepared: the variant inherits the parent's description
+    expect(loc(variant.Descriptions.Description))
+      .toEqual({ text: variant.Description, locale: bvLocale });
+
+    const blenders = asArray(feed.Categories.Category).find((c) => c.ExternalId === '91');
+    expect(loc(blenders.Names.Name)).toEqual({ text: 'Blenders', locale: bvLocale });
+    expect(loc(blenders.CategoryPageUrls.CategoryPageUrl))
+      .toEqual({ text: `https://www.vitamix.com/${locale}/shop/blenders`, locale: bvLocale });
+  });
+
+  test('omits Descriptions without a description', async () => {
+    mockFetch();
+    const res = await GET({ locale: 'us/en_us', raw: 'true' });
+    const variant = asArray(parser.parse(res.body).Feed.Products.Product)
+      .find((p) => p.ExternalId === '056405');
+    expect(variant.Description).toBeUndefined();
+    expect(variant.Descriptions).toBeUndefined();
+    expect(variant.Names.Name['@_locale']).toBe('en_US');
+  });
+
+  test('a locale without a BV locale gets the base fields only', async () => {
+    mockFetch();
+    const res = await GET({ locale: 'ca/fr_ca' });
+    expect(res.statusCode).toBe(200);
+    expect(res.body).not.toContain('locale=');
+    expect(res.body).not.toContain('<Names>');
+  });
+});
+
 const GMC_ITEM = (id, link, extra = '') => `
   <item>
     <g:id>${id}</g:id>
