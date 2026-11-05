@@ -38,7 +38,8 @@
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
  *   item.taxAmount               LineItem/Tax/@Amount       from item.taxAmount ('0.00' fallback)
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
- *   applied coupon codes         ns2:PromotionCode (item)   every code on every line (Magento parity)
+ *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
+ *                                header and every line (Magento parity; see getCouponPromotionCodes)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -737,9 +738,9 @@ function effectiveItemUnitPrice(item) {
 
 function buildLineItemsXml(order) {
   const orderKey = order.friendlyId || order.id;
-  // Magento stamped every applied coupon code on every line item (simple,
-  // bundle child and warranty), regardless of which lines it discounted.
-  const couponCodes = getAppliedCouponCodes(order);
+  // Magento stamped every applied coupon on every line item (simple, bundle
+  // child and warranty), regardless of which lines it discounted.
+  const couponCodes = getCouponPromotionCodes(order);
 
   // Map warranty items by the product SKU they cover
   const warrantyBySku = new Map();
@@ -843,7 +844,7 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
  *
  * @param {object} w warranty order line
  * @param {string} serial warranty link serial
- * @param {string[]} [couponCodes] applied coupon codes, one PromotionCode each
+ * @param {string[]} [couponCodes] applied coupon PromotionCode values, one element each
  */
 function buildWarrantyLineItemXml(w, serial, couponCodes = []) {
   const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
@@ -938,14 +939,38 @@ function getBundleReasonCodes(order) {
 }
 
 /**
+ * The PromotionCode value for each applied coupon, in the order applied, in
+ * the legacy Magento format `{description}({code})`, e.g.
+ * `$25 Off $200(WELCOME117870)`.
+ *
+ * Magento used the cart price rule's description; the commerce API's
+ * equivalent is the coupon type name, stored on the order's coupon discount
+ * entry (`estimates.discounts[]`, id `coupon:{code}`). When no name is
+ * available the description part is empty, giving `({code})`, which is what
+ * Magento sent for a rule without an order-level description.
+ *
+ * @param {object} order - the stored order.
+ * @returns {string[]}
+ */
+function getCouponPromotionCodes(order) {
+  const nameById = new Map();
+  for (const d of (order.estimates?.discounts ?? [])) {
+    if (d?.id?.startsWith('coupon:') && !nameById.has(d.id)) {
+      nameById.set(d.id, String(d.name ?? '').trim());
+    }
+  }
+  return getAppliedCouponCodes(order)
+    .map((code) => `${nameById.get(`coupon:${code}`) ?? ''}(${code})`);
+}
+
+/**
  * Emit the order-level PromotionCode elements: the VBND code of each virtual
- * bundle first, then one element per applied coupon code, in the order they
- * were applied (Magento parity). Matches the ordering used on bundle child
- * lines. Emits nothing when the order has neither bundles with a code nor
- * coupons.
+ * bundle first, then one element per applied coupon, in the order they were
+ * applied (Magento parity). Matches the ordering used on bundle child lines.
+ * Emits nothing when the order has neither bundles with a code nor coupons.
  */
 function buildPromotionsXml(order) {
-  return [...getBundleReasonCodes(order), ...getAppliedCouponCodes(order)]
+  return [...getBundleReasonCodes(order), ...getCouponPromotionCodes(order)]
     .map((code) => `<ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
     .join('\n        ');
 }

@@ -1,3 +1,221 @@
+## [1.17.2](https://github.com/aemsites/vitamix-forms/compare/v1.17.1...v1.17.2) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ebs-sync:** send coupon name with code in PromotionCode ([b9c95c2](https://github.com/aemsites/vitamix-forms/commit/b9c95c29edb0235e257b74f30c18fe5a7e483ded))
+
+## [1.17.1](https://github.com/aemsites/vitamix-forms/compare/v1.17.0...v1.17.1) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ebs-sync:** add VX3 + Tumbler VBND codes and header-level promo code ([8d259f9](https://github.com/aemsites/vitamix-forms/commit/8d259f91fa0a7cf12e94208df83ff8200ee3b47e))
+
+# [1.17.0](https://github.com/aemsites/vitamix-forms/compare/v1.16.0...v1.17.0) (2026-11-05)
+
+
+### Bug Fixes
+
+* **feeds-push:** BV_SCHEDULE_ENABLED gates only the nightly Bazaarvoice push ([b68a473](https://github.com/aemsites/vitamix-forms/commit/b68a47394f58c2c7c44c84b5ef110d07560b2137))
+
+
+### Features
+
+* **feeds-push:** BV_PUSH_ENABLED switch and nightly Bazaarvoice push on prod ([d6ffc61](https://github.com/aemsites/vitamix-forms/commit/d6ffc6138a0c881c7938681fa5591ed1c0ebc23e))
+* **feeds-push:** CJ_SCHEDULE_ENABLED gates the nightly CJ push ([71701a6](https://github.com/aemsites/vitamix-forms/commit/71701a6b6a4d46542da244aaefc2e744f8617408))
+* **feeds-push:** push the Bazaarvoice product feed to the staging SFTP ([838c47c](https://github.com/aemsites/vitamix-forms/commit/838c47c3456b1dcf27876859984ed96ceb260e31))
+
+# [1.16.0](https://github.com/aemsites/vitamix-forms/compare/v1.15.0...v1.16.0) (2026-11-05)
+
+
+### Features
+
+* **feeds:** add bazaarvoice locale fields per feed locale ([a932666](https://github.com/aemsites/vitamix-forms/commit/a932666347df40f53263bd85abda746a4eb9a3cc))
+* **feeds:** derive the bazaarvoice locale from the feed locale ([b4030de](https://github.com/aemsites/vitamix-forms/commit/b4030ded3be30f2be5843e2cdeae39abf8d99f17))
+
+# [1.15.0](https://github.com/aemsites/vitamix-forms/compare/v1.14.1...v1.15.0) (2026-11-05)
+
+
+### Bug Fixes
+
+* **feeds:** map bazaarvoice category pages without an Edge page to live pages ([6192a19](https://github.com/aemsites/vitamix-forms/commit/6192a1992997cb654b4ca37fe279f2ad6d2c494e))
+
+
+### Features
+
+* **feeds:** include commercial products and locale categories in the bazaarvoice feed ([c60e71c](https://github.com/aemsites/vitamix-forms/commit/c60e71c9978ba1c3a52705e0c91628fb013a1f8d))
+
+## [1.14.1](https://github.com/aemsites/vitamix-forms/compare/v1.14.0...v1.14.1) (2026-11-04)
+
+
+### Bug Fixes
+
+* **ebs-sync:** send coupon codes on every line item and one PromotionCode per coupon ([1fd2471](https://github.com/aemsites/vitamix-forms/commit/1fd2471c6d0df413b7b98ff4a5d3bd674767493f))
+
+# [1.14.0](https://github.com/aemsites/vitamix-forms/compare/v1.13.0...v1.14.0) (2026-11-04)
+
+
+### Features
+
+* **ebs-sync:** wire EBS_RECONCILE_ENABLED into the deploy config ([eacfb02](https://github.com/aemsites/vitamix-forms/commit/eacfb02f87b0fecb62ae2368874c52a264a45ff9))
+
+# [1.13.0](https://github.com/aemsites/vitamix-forms/compare/v1.12.0...v1.13.0) (2026-11-03)
+
+
+### Bug Fixes
+
+* **ebs-sync:** address review of the missed-orders fix ([549c87d](https://github.com/aemsites/vitamix-forms/commit/549c87db447e6a74a13dfc1fe5da4443e285f3e9))
+* **ebs-sync:** limit how long an unreadable order holds the cursor ([3310df8](https://github.com/aemsites/vitamix-forms/commit/3310df81178106521b775ee66a7ed3715c1b0f6a))
+* **ebs-sync:** release unreadable orders by failure time, report each once ([46e4422](https://github.com/aemsites/vitamix-forms/commit/46e442278f0bce87610880afcdb78570126e8ea3))
+* **ebs-sync:** ship order reconciliation disabled ([dbbc38f](https://github.com/aemsites/vitamix-forms/commit/dbbc38f22bed0a5df24436f558c181bb8d4178dc))
+* **ebs-sync:** stop missing orders on late journals and deadlines ([39b47ec](https://github.com/aemsites/vitamix-forms/commit/39b47ec2266b31948408a5ac1520ba79ab7a354e)), closes [#124](https://github.com/aemsites/vitamix-forms/issues/124)
+* **ebs-sync:** store the sync marker first and hold the cursor on read failures ([ca55a13](https://github.com/aemsites/vitamix-forms/commit/ca55a1332e2edc229ca9486652bd1c416c55b64f))
+
+
+### Features
+
+* **ebs-sync:** alert on ongoing read and run failures within the hour ([b413f45](https://github.com/aemsites/vitamix-forms/commit/b413f453d6a02cdd17a33df506a56e2b8890eb88))
+
+# [1.12.0](https://github.com/aemsites/vitamix-forms/compare/v1.11.0...v1.12.0) (2026-11-02)
+
+
+### Bug Fixes
+
+* **feeds:** fail the Bazaarvoice feed when the product index can't be loaded ([4da8c16](https://github.com/aemsites/vitamix-forms/commit/4da8c16ecd5c21b8ca8bd26d165aa230a3d14814))
+
+
+### Features
+
+* **feeds:** send the legacy reviews family to Bazaarvoice ([3c9bf2c](https://github.com/aemsites/vitamix-forms/commit/3c9bf2c3967e4b116c69b688c781cec708424ed0))
+
+# [1.11.0](https://github.com/aemsites/vitamix-forms/compare/v1.10.0...v1.11.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ci:** reject manual deploys whose SHA is no longer the branch head ([4705fc5](https://github.com/aemsites/vitamix-forms/commit/4705fc54c0edd359b86d748edfc169de887c498b))
+
+
+### Features
+
+* **ci:** allow manual stage/prod deploys via workflow_dispatch ([d559723](https://github.com/aemsites/vitamix-forms/commit/d559723b52f2346a02e0941a7d8d1930a3cfc3fe))
+
+# [1.10.0](https://github.com/aemsites/vitamix-forms/compare/v1.9.0...v1.10.0) (2026-10-31)
+
+
+### Bug Fixes
+
+* **ebs-sync:** make inventory outbox retries idempotent ([c608a25](https://github.com/aemsites/vitamix-forms/commit/c608a25c516d28609df999b49888057037814628))
+* **ebs-sync:** queue inventory deltas after syncedAt is persisted ([08f30bf](https://github.com/aemsites/vitamix-forms/commit/08f30bf6862e3a91cc0e98f4446295f1f83d6479))
+* **ebs-sync:** throw when the outbox probe limit is exhausted ([8504fec](https://github.com/aemsites/vitamix-forms/commit/8504fec3eec9a2a9bcc5455df2ba7a3f338b5fdd))
+* **inventory:** conditional sheet writes, per-order outbox, safer failure handling ([80f97da](https://github.com/aemsites/vitamix-forms/commit/80f97da6df8b2eb658e5db4dcc38efdd92923e15))
+
+
+### Features
+
+* **feeds:** upload feeds to a temp name and rename into place ([4f07604](https://github.com/aemsites/vitamix-forms/commit/4f076043ac93eb63f002589b64621af159192a7b))
+* **inventory:** queue sold units in ebs-sync and apply them with inventory-sync ([209feaa](https://github.com/aemsites/vitamix-forms/commit/209feaaf6dc9784327e3fb0edf2a133fe5c0ee05)), closes [helix-commerce-api#585](https://github.com/helix-commerce-api/issues/585)
+
+# [1.9.0](https://github.com/aemsites/vitamix-forms/compare/v1.8.0...v1.9.0) (2026-10-29)
+
+
+### Bug Fixes
+
+* **feeds:** address feeds-push review ([8d4631a](https://github.com/aemsites/vitamix-forms/commit/8d4631a3baaf536d381fe8e3d66df58ef731c5d1))
+* **feeds:** alert on feed warnings only when they change ([c4757e2](https://github.com/aemsites/vitamix-forms/commit/c4757e243358d0c7a310acd1502d932aec2122ef))
+* **feeds:** run feeds-push at 1 AM America/New_York year-round ([015d3a2](https://github.com/aemsites/vitamix-forms/commit/015d3a2ea96d8d3466c901ab6d10bcddefa11e3b))
+
+
+### Features
+
+* **feeds:** push the CJ CA test feed; stage pushes on demand only ([08f07ef](https://github.com/aemsites/vitamix-forms/commit/08f07ef0582d64c681b5572380385c698ee6e7b3))
+* **feeds:** scheduled SFTP push of provider feeds (CJ test feed on stage) ([d2cc7d0](https://github.com/aemsites/vitamix-forms/commit/d2cc7d08445d3cc60465ac418dc26b36e1c95628))
+
+# [1.8.0](https://github.com/aemsites/vitamix-forms/compare/v1.7.0...v1.8.0) (2026-10-28)
+
+
+### Features
+
+* **feeds:** pinterest product_type from product index, empty google_product_category ([74245c9](https://github.com/aemsites/vitamix-forms/commit/74245c99c69291196607be730bf3d9aed86ab879))
+
+# [1.7.0](https://github.com/aemsites/vitamix-forms/compare/v1.6.0...v1.7.0) (2026-10-17)
+
+
+### Features
+
+* **feeds:** prepare every provider by default, add raw=true and merchant-center ([184b3b2](https://github.com/aemsites/vitamix-forms/commit/184b3b26bd3eb8f82ca88aa1ef529da1ce7ccc2a))
+
+# [1.6.0](https://github.com/aemsites/vitamix-forms/compare/v1.5.3...v1.6.0) (2026-10-02)
+
+
+### Bug Fixes
+
+* **ebs-sync:** retry custom update without resending to EBS; surface ops-log errors ([b3aa92e](https://github.com/aemsites/vitamix-forms/commit/b3aa92edbf66408f21b7dc4f9ae100d2f721cde9))
+
+
+### Features
+
+* **ebs-sync:** fall back to custom.affiliateCode for SalesPersonId ([d89c537](https://github.com/aemsites/vitamix-forms/commit/d89c53767246c1c6006e9b198c6f28cab6419d79))
+* **feeds:** align provider feeds with legacy Magento feed rules ([b828e50](https://github.com/aemsites/vitamix-forms/commit/b828e5024c0a9c746e8d6da32ea934a626e08f69))
+
+## [1.5.3](https://github.com/aemsites/vitamix-forms/compare/v1.5.2...v1.5.3) (2026-09-22)
+
+
+### Bug Fixes
+
+* **proxy:** surface x-upstream-status on proxyFetch errors ([aba7bd0](https://github.com/aemsites/vitamix-forms/commit/aba7bd0dd637b56e1bcd5ac15c2a6a1ba5b0ef6b))
+
+## [1.5.2](https://github.com/aemsites/vitamix-forms/compare/v1.5.1...v1.5.2) (2026-09-22)
+
+
+### Bug Fixes
+
+* **ebs-sync:** handle multi-coupon order shapes ([3406f87](https://github.com/aemsites/vitamix-forms/commit/3406f87913b09ff7d87a14d12f82df722b735fc9))
+
+## [1.5.1](https://github.com/aemsites/vitamix-forms/compare/v1.5.0...v1.5.1) (2026-09-11)
+
+
+### Bug Fixes
+
+* opslog tweaks ([9fe6d86](https://github.com/aemsites/vitamix-forms/commit/9fe6d86d18df5046900a148edf669eb78258743f))
+
+# [1.5.0](https://github.com/aemsites/vitamix-forms/compare/v1.4.1...v1.5.0) (2026-09-10)
+
+
+### Features
+
+* **ebs-sync:** expose EBS target config on status endpoint ([2cb41e6](https://github.com/aemsites/vitamix-forms/commit/2cb41e6e441dd8b65a37f8febd8f12918f07d4a6))
+* **version:** add booleans-only EBS/EBS-JSON config health check ([470ce24](https://github.com/aemsites/vitamix-forms/commit/470ce244b83ea56a4ca6d11245047b2baddf7f2b))
+
+## [1.4.1](https://github.com/aemsites/vitamix-forms/compare/v1.4.0...v1.4.1) (2026-09-10)
+
+
+### Bug Fixes
+
+* **ci:** pass meta-capi env vars through deploy workflows ([#89](https://github.com/aemsites/vitamix-forms/issues/89)) ([5d0af49](https://github.com/aemsites/vitamix-forms/commit/5d0af498828edd2433cf2f7f87dc1f9b5b37a96e))
+* force deploy ([22bd3d6](https://github.com/aemsites/vitamix-forms/commit/22bd3d6b72741b004cad33685833fcb7a90aa01e))
+
+# [1.4.0](https://github.com/aemsites/vitamix-forms/compare/v1.3.7...v1.4.0) (2026-08-25)
+
+
+### Bug Fixes
+
+* **feeds:** default FEED_SITE_BASE to www.vitamix.com (runtime-reachable) ([5a58040](https://github.com/aemsites/vitamix-forms/commit/5a580407c494a0123c1401b0b8927391e8de042b))
+* **feeds:** don't shared-cache Bearer-gated feed responses ([2db8588](https://github.com/aemsites/vitamix-forms/commit/2db8588f4d6339098682b946e78efbbd306d0d49))
+* **feeds:** fall back to defaults unless env host/url is a valid http(s) URL ([cbaa1d3](https://github.com/aemsites/vitamix-forms/commit/cbaa1d389f1f92e3fb02c0941580caf13990b0b6))
+* **feeds:** surface the underlying error and catch fetch rejections ([7472d0d](https://github.com/aemsites/vitamix-forms/commit/7472d0d980c2d5aeff0831538ff7667c623c6b88))
+
+
+### Features
+
+* **feeds:** add bazaarvoice provider generating ProductFeed.xml ([67a2eea](https://github.com/aemsites/vitamix-forms/commit/67a2eeaa2a8639bbaffbe2c779af2f82d240dad2))
+* **feeds:** add multi-provider product feed endpoint ([119b961](https://github.com/aemsites/vitamix-forms/commit/119b9618b11b4b7dd715430b3bec0a164b80e8c3))
+* **feeds:** add openai provider (CSV, US-only) ([178aa5f](https://github.com/aemsites/vitamix-forms/commit/178aa5fec93937d3ac6c848bb373fda49fd51ee6))
+* **feeds:** also emit BV category data as tab-delimited files for sheet paste ([b3e9ec7](https://github.com/aemsites/vitamix-forms/commit/b3e9ec7f08abb724fe6c43c1466586cc4c910300))
+* **feeds:** extract Bazaarvoice category taxonomy into a lookup file ([0ef3a29](https://github.com/aemsites/vitamix-forms/commit/0ef3a2981193dc35f472f907dee92a49e0869c59))
+* **feeds:** per-provider output shapes matching the reference feeds ([7e18f50](https://github.com/aemsites/vitamix-forms/commit/7e18f50eac9e9aee9475156630ea6ad22bfe117e))
+
 ## [1.3.7](https://github.com/aemsites/vitamix-forms/compare/v1.3.6...v1.3.7) (2026-08-23)
 
 
