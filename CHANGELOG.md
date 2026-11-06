@@ -1,3 +1,22 @@
+# [1.19.0](https://github.com/aemsites/vitamix-forms/compare/v1.18.0...v1.19.0) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ebs-sync:** harden XML output against client-supplied values ([4d6ba28](https://github.com/aemsites/vitamix-forms/commit/4d6ba28af8c3966568c7081c4d10dcd8d9fd4e32))
+* **ebs-sync:** reject XML-invalid GWP names; never reuse another promotion's gift line ([e981a8e](https://github.com/aemsites/vitamix-forms/commit/e981a8e0012c7789348b4db4475265cd9a1862e5))
+
+
+### Features
+
+* **ebs-sync:** prefer catalog names for gift-with-purchase promotions ([9482f04](https://github.com/aemsites/vitamix-forms/commit/9482f049efdb4ab3c590006cff98f28d5c72d638))
+* **ebs-sync:** send gift-with-purchase promotions as PromotionCode ([16d1dbf](https://github.com/aemsites/vitamix-forms/commit/16d1dbf0d5d7693a6ed2b388f152b97ab4259cf1))
+
+
+### Reverts
+
+* **ebs-sync:** drop the catalog read for gift-with-purchase names ([f81179e](https://github.com/aemsites/vitamix-forms/commit/f81179e37695a9de48a22872638670058e02e733))
+
 # [1.18.0](https://github.com/aemsites/vitamix-forms/compare/v1.17.2...v1.18.0) (2026-11-05)
 
 
