@@ -411,10 +411,11 @@ describe('ebs-sync e2e', () => {
   beforeAll(() => {
     // proxyFetch wraps the destination request inside a JSON envelope:
     //   POST <proxy>  body: { url, method, headers, body: <SOAP XML> }
-    // Tests assert against the inner SOAP XML.
+    // The proxy URL-decodes text/xml bodies before forwarding them; decode the
+    // same way so tests assert against the XML the target receives.
     global.fetch = async (_url, opts) => {
       const wrapped = JSON.parse(opts.body);
-      capturedXml = wrapped.body;
+      capturedXml = decodeURIComponent(wrapped.body);
       return { ok: true, status: 200, text: async () => '<Response Succeeded="true" />' };
     };
   });
@@ -1112,6 +1113,18 @@ describe('ebs-sync e2e', () => {
       });
       const xml = await buildXml(order, journal);
       expect(promotionCodes(orderLevel(xml))).toEqual(['$10 Off(SAVE10)', 'ID.me 20%(IDME20)']);
+    });
+
+    test('sends "%" in coupon names through the proxy unchanged', async () => {
+      // A raw '%' (not followed by two hex digits) made the proxy's URL-decode
+      // throw; a valid escape like %25 or %20 would be silently decoded.
+      const name = '40% off New/Recons + Accessories %25 %20 100%';
+      const order = orderWith({
+        couponCodes: ['PCT40'],
+        estimates: { ...CC_APPROVED_ORDER.estimates, discounts: [couponDiscount('PCT40', name)] },
+      });
+      const xml = await buildXml(order, journal);
+      expect(promotionCodes(orderLevel(xml))).toEqual([`${name}(PCT40)`]);
     });
 
     test('names a coupon derived from estimates.discounts alone', async () => {
