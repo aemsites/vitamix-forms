@@ -42,11 +42,9 @@ const updateOrderCustom = jest.fn();
 const logOrderSync = jest.fn(async () => {});
 
 const listOrders = jest.fn(async () => []);
-const getActivePromotionNames = jest.fn(async () => new Map());
 
 jest.unstable_mockModule('../../src/actions/ebs-sync/commerce.js', () => ({
   getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync, listOrders,
-  getActivePromotionNames,
   OVERLAP_MS: 60 * 60 * 1000,
 }));
 
@@ -365,21 +363,6 @@ describe('ebs-sync gift-with-purchase reporting', () => {
     syncOrderToEbs.mockImplementation(async () => ({ status: 200, xml: '<xml/>' }));
     logOrderSync.mockImplementation(async () => {});
     getOrder.mockImplementation(async (_p, id) => ({ id, state: 'payment_completed', custom: {} }));
-    getActivePromotionNames.mockImplementation(async () => new Map());
-  });
-
-  const giftOrder = (id) => ({
-    id,
-    state: 'payment_completed',
-    custom: {},
-    estimates: { freeItems: [{ path: '/gift', ruleId: 'gwp-1', quantity: 1 }] },
-  });
-  const twoOrders = () => getJournalEntries.mockResolvedValue({
-    entries: [
-      { orderId: 'gift-1', event: 'payment_completed' },
-      { orderId: 'gift-2', event: 'payment_completed' },
-    ],
-    until: '2026-01-01T00:00:00.000Z',
   });
 
   test('alerts once on invalid gift-with-purchase data and still marks the order synced', async () => {
@@ -428,41 +411,6 @@ describe('ebs-sync gift-with-purchase reporting', () => {
     updateOrderCustom.mockResolvedValue({});
     await runSync();
     expect(alerts()).toEqual([]);
-  });
-
-  test('reads catalog promotion names once per run and passes them to every gift order', async () => {
-    twoOrders();
-    getOrder.mockImplementation(async (_p, id) => giftOrder(id));
-    const names = new Map([['gwp-1', 'Free Gift']]);
-    getActivePromotionNames.mockResolvedValue(names);
-    updateOrderCustom.mockResolvedValue({});
-
-    const { body } = await runSync();
-
-    expect(body.processedOrders).toEqual(['gift-1', 'gift-2']);
-    expect(getActivePromotionNames).toHaveBeenCalledTimes(1);
-    expect(syncOrderToEbs.mock.calls.map((c) => c[4].promotionNames)).toEqual([names, names]);
-  });
-
-  test('does not read the catalog for orders without granted gifts', async () => {
-    updateOrderCustom.mockResolvedValue({});
-    await runSync();
-    expect(getActivePromotionNames).not.toHaveBeenCalled();
-    expect(syncOrderToEbs.mock.calls[0][4].promotionNames).toBeNull();
-  });
-
-  test('sends without catalog names when the catalog cannot be read, warning once', async () => {
-    twoOrders();
-    getOrder.mockImplementation(async (_p, id) => giftOrder(id));
-    getActivePromotionNames.mockRejectedValue(new Error('price rules down'));
-    updateOrderCustom.mockResolvedValue({});
-
-    const { body } = await runSync();
-
-    expect(body.processedOrders).toEqual(['gift-1', 'gift-2']);
-    expect(getActivePromotionNames).toHaveBeenCalledTimes(1);
-    expect(syncOrderToEbs.mock.calls.map((c) => c[4].promotionNames)).toEqual([null, null]);
-    expect(logLines.filter((l) => l.startsWith('warn:') && l.includes('Could not read catalog promotion names'))).toHaveLength(1);
   });
 
   test('reports after queueing inventory', async () => {

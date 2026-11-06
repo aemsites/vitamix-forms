@@ -59,10 +59,7 @@ import {
   inventoryOutboxEntryExists,
 } from './state.js';
 import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
-import {
-  getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync,
-  getActivePromotionNames,
-} from './commerce.js';
+import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
 import {
   reconcileOrders, isReconcileDue, isReconcileEnabled, RECONCILE_MIN_REMAINING_MS,
 } from './reconcile.js';
@@ -543,30 +540,9 @@ async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) 
 }
 
 /**
- * Catalog promotion names for gift-with-purchase reporting, read at most once
- * per run and only for orders with granted gifts. A failed read is logged and
- * leaves the names to the gift lines' custom data (null).
- *
- * @param {object} runCtx
- * @param {object} order
- * @returns {Promise<Map<string, string> | null>}
- */
-async function promotionNamesFor(runCtx, order) {
-  const freeItems = order?.estimates?.freeItems;
-  if (!Array.isArray(freeItems) || !freeItems.length) return null;
-  if (!runCtx.promotionNames) {
-    runCtx.promotionNames = getActivePromotionNames(runCtx.params).catch((err) => {
-      runCtx.log.warn('[ebs-sync] Could not read catalog promotion names; using the gift lines\' names', errorInfo(err));
-      return null;
-    });
-  }
-  return runCtx.promotionNames;
-}
-
-/**
  * Report gift-with-purchase data problems on an order EBS accepted. The order
  * was sent with the promotion id in place of the name, so nothing is retried:
- * invalid or conflicting data raises one alert for a person to check the EBS order;
+ * invalid custom data raises one alert for a person to check the EBS order;
  * a missing name (orders placed before the storefront recorded it) is logged.
  *
  * @param {object} runCtx
@@ -608,7 +584,6 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
   } = runCtx;
   let lastErr = null;
   let ebsResult = null;
-  const promotionNames = await promotionNamesFor(runCtx, order);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     if (Date.now() > lastAttemptStartAt) {
@@ -618,7 +593,6 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     try {
       ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal, {
         signal: AbortSignal.timeout(EBS_ATTEMPT_TIMEOUT_MS),
-        promotionNames,
       });
       log.info(`[ebs-sync] Order ${orderId} synced to EBS on attempt ${attempt}.`);
       break;

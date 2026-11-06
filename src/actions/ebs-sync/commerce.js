@@ -144,36 +144,6 @@ export async function getOrder(params, orderId) {
 }
 
 /**
- * Names of the catalog promotions with an active rule, by promotion id.
- *
- * Reads the public active view of the catalog price rules (no token: the
- * orders token has no price-rules scope), so promotions that have ended are
- * absent. Entries without a string id or name are skipped.
- *
- * @param {object} params
- * @returns {Promise<Map<string, string>>}
- */
-export async function getActivePromotionNames(params) {
-  const { EDGE_COMMERCE_API_BASE, ORG, SITE } = params;
-  const url = `${EDGE_COMMERCE_API_BASE}/${ORG}/sites/${SITE}/price-rules/catalog?active=true`;
-
-  const res = await fetch(url, { signal: timeout() });
-  if (!res.ok) {
-    const body = await res.text().catch(() => '');
-    throw new Error(`Price rules API ${res.status}: ${body}`);
-  }
-
-  const data = await res.json();
-  const names = new Map();
-  for (const promotion of (Array.isArray(data?.promotions) ? data.promotions : [])) {
-    if (typeof promotion?.id === 'string' && typeof promotion.name === 'string') {
-      names.set(promotion.id, promotion.name);
-    }
-  }
-  return names;
-}
-
-/**
  * Merge custom data into an order.
  *
  * @param {object} params
