@@ -1,3 +1,10 @@
+## [1.19.1](https://github.com/aemsites/vitamix-forms/compare/v1.19.0...v1.19.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ebs-sync:** URL-encode the order XML sent through the proxy ([60de6bc](https://github.com/aemsites/vitamix-forms/commit/60de6bc6635cb6b88653011043ff5f768e7a21f6))
+
 # [1.19.0](https://github.com/aemsites/vitamix-forms/compare/v1.18.0...v1.19.0) (2026-11-06)
 
 
