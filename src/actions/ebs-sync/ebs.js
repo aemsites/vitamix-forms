@@ -40,10 +40,10 @@
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
  *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
  *                                header and every line (Magento parity; see getCouponPromotionCodes)
- *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name (ruleId when the
- *                                grant has no name) on the header and every line, ahead of the VBND
- *                                code and coupons — only for promotions whose gift is in the order
- *                                (see getGwpPromotionCodes)
+ *   gift-with-purchase promos    ns2:PromotionCode (order + item)  each promotion name from the order's
+ *                                custom.gwpPromotions (set by the storefront; ruleId fallback for older
+ *                                orders) on the header and every line, ahead of the VBND code and
+ *                                coupons (see getGwpPromotionCodes)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -989,26 +989,61 @@ function normalizeItemPath(path) {
 }
 
 /**
- * The PromotionCode value for each gift-with-purchase (GWP) promotion whose
- * gift is actually in the order.
+ * Separator between promotion names in the order's `custom.gwpPromotions`
+ * (order custom values are strings). Must match the storefront.
+ */
+const GWP_PROMOTIONS_SEPARATOR = '|';
+
+/**
+ * The PromotionCode value for each gift-with-purchase (GWP) promotion on the
+ * order. Magento treated a free-gift rule like any other applied cart rule and
+ * sent its description; the Edge equivalent is the promotion name.
  *
- * Magento treated a free-gift rule like any other applied cart rule and sent
- * its description. The commerce API records the gifts a cart *qualified* for in
- * the server-computed `estimates.freeItems[]` (`{ path, ruleId, name?, quantity }`),
- * whether or not the shopper added them, so a grant is reported only when the
- * order holds a $0 line at the granted `path`. The client-supplied
- * `item.custom.giftWithPurchase` flag is deliberately ignored.
+ * Primary source: the order's `custom.gwpPromotions`, which the storefront sets
+ * at checkout from the gift lines (names joined by `|`). One value per distinct
+ * name, in order, trimmed; empty segments are dropped.
  *
- * The value is the promotion `name` (trimmed), or the `ruleId` for grants
- * stored before `name` existed. Unlike a coupon it carries no `({code})`
- * suffix. One value per distinct promotion (by `ruleId`), in `freeItems` order,
- * however many gift lines it granted. A grant with neither a name nor a
- * `ruleId` is skipped.
+ * Fallback, for orders without it (placed before the storefront set it): the
+ * server-computed `estimates.freeItems[]` (`{ path, ruleId, quantity }`) lists
+ * the gifts the cart *qualified* for, whether or not they were added, so a
+ * grant's `ruleId` is reported only when the order holds a $0 line at the
+ * granted `path`. One value per distinct `ruleId`, in `freeItems` order. The
+ * client-supplied `item.custom.giftWithPurchase` flag is not used.
+ *
+ * Unlike a coupon, a GWP value carries no `({code})` suffix.
  *
  * @param {object} order - the stored order.
  * @returns {string[]}
  */
 function getGwpPromotionCodes(order) {
+  const fromCustom = splitGwpPromotions(order.custom?.gwpPromotions);
+  return fromCustom.length ? fromCustom : getGwpRuleIdsFromFreeItems(order);
+}
+
+/**
+ * Split the order's `custom.gwpPromotions` into distinct, trimmed names.
+ *
+ * @param {unknown} value
+ * @returns {string[]} the names, or `[]` when absent or not a string.
+ */
+function splitGwpPromotions(value) {
+  if (typeof value !== 'string') return [];
+  const names = [];
+  for (const part of value.split(GWP_PROMOTIONS_SEPARATOR)) {
+    const name = part.trim();
+    if (name && !names.includes(name)) names.push(name);
+  }
+  return names;
+}
+
+/**
+ * The `ruleId` of each free-item grant whose gift is in the order as a $0
+ * line, deduped, in `freeItems` order. Fallback for {@link getGwpPromotionCodes}.
+ *
+ * @param {object} order - the stored order.
+ * @returns {string[]}
+ */
+function getGwpRuleIdsFromFreeItems(order) {
   const { freeItems } = order.estimates ?? {};
   if (!Array.isArray(freeItems) || !freeItems.length) return [];
 
@@ -1019,18 +1054,13 @@ function getGwpPromotionCodes(order) {
   }
   giftPaths.delete('');
 
-  const seen = new Set();
-  const codes = [];
+  const ruleIds = [];
   for (const grant of freeItems) {
     if (!giftPaths.has(normalizeItemPath(grant?.path))) continue;
     const ruleId = String(grant.ruleId ?? '').trim();
-    const code = String(grant.name ?? '').trim() || ruleId;
-    const key = ruleId || code;
-    if (!code || seen.has(key)) continue;
-    seen.add(key);
-    codes.push(code);
+    if (ruleId && !ruleIds.includes(ruleId)) ruleIds.push(ruleId);
   }
-  return codes;
+  return ruleIds;
 }
 
 /**

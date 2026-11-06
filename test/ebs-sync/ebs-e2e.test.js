@@ -1180,29 +1180,37 @@ describe('ebs-sync e2e', () => {
       const GWP_NAME = '(US) Pre-Holiday 2026 GWP';
       const GWP_RULE_ID = 'us-pre-holiday-2026-gwp';
 
-      const freeItem = (overrides = {}) => ({
-        path: GWP_PATH, ruleId: GWP_RULE_ID, name: GWP_NAME, quantity: 1, ...overrides,
-      });
       const giftLine = (overrides = {}) => ({
         sku: 'gift-sku',
         path: GWP_PATH,
         quantity: 1,
         name: 'Cookbook',
         price: { final: '0', currency: 'CAD' },
+        custom: { giftWithPurchase: true, promotionId: GWP_RULE_ID, promotionName: GWP_NAME },
         ...overrides,
       });
       const lineSku = (line) => line.match(/Sku="([^"]*)"/)[1];
 
-      /** CC order plus a $0 gift line, with the given estimates.freeItems. */
-      const gwpOrder = (freeItems, { gifts = [giftLine()], ...overrides } = {}) => {
+      /**
+       * CC order plus gift lines. `gwpPromotions` is the order's custom value the
+       * storefront sets; `freeItems` are the server grants (fallback source).
+       */
+      const gwpOrder = (gwpPromotions, {
+        gifts = [giftLine()], freeItems, ...overrides
+      } = {}) => {
         const order = orderWith(overrides);
-        order.estimates = { ...order.estimates, freeItems };
+        if (gwpPromotions !== undefined) {
+          order.custom = { ...order.custom, gwpPromotions };
+        }
+        if (freeItems !== undefined) order.estimates = { ...order.estimates, freeItems };
         order.items = [...order.items, ...gifts];
         return order;
       };
 
+      // ── Primary source: custom.gwpPromotions ──────────────────────────────
+
       test('sends the promotion name on the header and on every line, including the gift line', async () => {
-        const xml = await buildXml(gwpOrder([freeItem()]), journal);
+        const xml = await buildXml(gwpOrder(GWP_NAME), journal);
         expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
         const lines = lineItems(xml);
         expect(lines.map(lineSku)).toEqual(['068051-04', 'gift-sku']);
@@ -1210,156 +1218,42 @@ describe('ebs-sync e2e', () => {
       });
 
       test('sends the name without parentheses, since it is not a coupon', async () => {
-        const xml = await buildXml(gwpOrder([freeItem({ name: 'Free Cookbooks' })]), journal);
+        const xml = await buildXml(gwpOrder('Free Cookbooks'), journal);
         expect(xml).toContain('<ns2:PromotionCode>Free Cookbooks</ns2:PromotionCode>');
         expect(xml).not.toContain('Free Cookbooks(');
         expect(xml).not.toContain('(Free Cookbooks)');
       });
 
-      test('trims the promotion name', async () => {
-        const xml = await buildXml(gwpOrder([freeItem({ name: '  Free Cookbooks  ' })]), journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual(['Free Cookbooks']);
-      });
-
-      test('falls back to the ruleId when the grant has no name (older orders)', async () => {
-        const xml = await buildXml(gwpOrder([freeItem({ name: undefined })]), journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
-        lineItems(xml).forEach((line) => expect(promotionCodes(line)).toEqual([GWP_RULE_ID]));
-      });
-
-      test.each([['blank', '   '], ['empty', ''], ['null', null]])('falls back to the ruleId when the name is %s', async (_label, name) => {
-        const xml = await buildXml(gwpOrder([freeItem({ name })]), journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
-      });
-
-      test('skips a grant that has neither a name nor a ruleId', async () => {
-        const xml = await buildXml(
-          gwpOrder([freeItem({ name: '  ', ruleId: undefined })]),
-          journal,
-        );
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test('does not send a qualified promotion whose gift is not in the order', async () => {
-        const xml = await buildXml(gwpOrder([freeItem()], { gifts: [] }), journal);
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test('does not send a promotion whose gift path is only present as a paid line', async () => {
-        const paidLine = giftLine({ price: { final: '19.95', currency: 'CAD' } });
-        const xml = await buildXml(gwpOrder([freeItem()], { gifts: [paidLine] }), journal);
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test('does not send a promotion whose grant path differs from the $0 line', async () => {
-        const xml = await buildXml(
-          gwpOrder([freeItem({ path: '/us/en_us/products/other-gift' })]),
-          journal,
-        );
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test('sends only the promotions whose gift is in the order, in freeItems order', async () => {
-        const otherPath = '/us/en_us/products/tumbler';
-        const missingPath = '/us/en_us/products/spatula';
-        const order = gwpOrder([
-          freeItem({ path: missingPath, ruleId: 'missing-gwp', name: 'Not Added' }),
-          freeItem({ path: otherPath, ruleId: 'second-gwp', name: 'Free Tumbler' }),
-          freeItem(),
-        ], {
-          // gift lines appear in the opposite order to the grants
-          gifts: [giftLine(), giftLine({ sku: 'tumbler-sku', path: otherPath })],
-        });
-        const xml = await buildXml(order, journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual(['Free Tumbler', GWP_NAME]);
-      });
-
-      test('ignores a $0 line that the client flags as a gift but no grant covers', async () => {
-        const order = orderWith({});
-        order.items.push(giftLine({ custom: { giftWithPurchase: true, promotionId: GWP_RULE_ID } }));
-        const xml = await buildXml(order, journal);
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test('ignores a $0 line when the order has no freeItems at all', async () => {
-        const xml = await buildXml(gwpOrder(undefined), journal);
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test('emits one value per promotion when it grants several gift lines', async () => {
-        const secondPath = '/us/en_us/products/cookbook-2';
-        const order = gwpOrder([freeItem(), freeItem({ path: secondPath })], {
-          gifts: [giftLine(), giftLine({ sku: 'gift-sku-2', path: secondPath })],
-        });
-        const xml = await buildXml(order, journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
-        const lines = lineItems(xml);
-        expect(lines).toHaveLength(3);
-        lines.forEach((line) => expect(promotionCodes(line)).toEqual([GWP_NAME]));
-      });
-
-      test('emits one value when the same grant is repeated', async () => {
-        const xml = await buildXml(gwpOrder([freeItem(), freeItem()]), journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
-      });
-
-      test('dedupes by ruleId when repeated grants disagree on the name', async () => {
-        const secondPath = '/us/en_us/products/cookbook-2';
-        const order = gwpOrder([freeItem(), freeItem({ path: secondPath, name: 'Renamed' })], {
-          gifts: [giftLine(), giftLine({ sku: 'gift-sku-2', path: secondPath })],
-        });
-        const xml = await buildXml(order, journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
-      });
-
-      test('matches a grant path that carries a .json suffix', async () => {
-        const xml = await buildXml(gwpOrder([freeItem({ path: `${GWP_PATH}.json` })]), journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
-      });
-
-      test('matches a gift line path that carries a .json suffix', async () => {
-        const order = gwpOrder([freeItem()], { gifts: [giftLine({ path: `${GWP_PATH}.json` })] });
-        const xml = await buildXml(order, journal);
-        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
+      test('splits several promotions on "|", trimmed and deduped, dropping empty segments', async () => {
+        const xml = await buildXml(gwpOrder(' Free Cookbooks | Free Tumbler || Free Cookbooks |'), journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual(['Free Cookbooks', 'Free Tumbler']);
+        lineItems(xml).forEach((line) => expect(promotionCodes(line)).toEqual(['Free Cookbooks', 'Free Tumbler']));
       });
 
       test.each([
-        ['numeric 0', 0],
-        ['"0.00"', '0.00'],
-      ])('treats a %s final price as a gift', async (_label, final) => {
-        const order = gwpOrder([freeItem()], {
-          gifts: [giftLine({ price: { final, currency: 'CAD' } })],
-        });
+        ['blank', '   '],
+        ['only separators', ' | | '],
+        ['not a string', ['Free Cookbooks']],
+      ])('sends nothing when custom.gwpPromotions is %s and there are no grants', async (_label, value) => {
+        const xml = await buildXml(gwpOrder(value), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test('prefers custom.gwpPromotions over the freeItems fallback', async () => {
+        const order = gwpOrder(GWP_NAME, { freeItems: [{ path: GWP_PATH, ruleId: GWP_RULE_ID, quantity: 1 }] });
         const xml = await buildXml(order, journal);
         expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME]);
-      });
-
-      test('does not treat a line with no price as a gift', async () => {
-        const order = gwpOrder([freeItem()], { gifts: [giftLine({ price: undefined })] });
-        const xml = await buildXml(order, journal);
-        expect(xml).not.toContain('<ns2:PromotionCode>');
-      });
-
-      test.each([
-        ['a string', 'nope'],
-        ['an object', { path: GWP_PATH }],
-        ['non-object entries', [null, 'x', 7, {}]],
-      ])('tolerates freeItems that is %s', async (_label, freeItems) => {
-        const xml = await buildXml(gwpOrder(freeItems), journal);
-        expect(xml).not.toContain('<ns2:PromotionCode>');
       });
 
       test('XML-escapes the promotion name', async () => {
-        const xml = await buildXml(gwpOrder([freeItem({ name: 'Buy 1 & Get <1> "Free"' })]), journal);
+        const xml = await buildXml(gwpOrder('Buy 1 & Get <1> "Free"'), journal);
         expect(xml).toContain(
           '<ns2:PromotionCode>Buy 1 &amp; Get &lt;1&gt; &quot;Free&quot;</ns2:PromotionCode>',
         );
       });
 
       test('puts the GWP before the coupon on the header and on simple lines', async () => {
-        const order = gwpOrder([freeItem({ name: 'Free Cookbooks' })], {
-          couponCodes: ['WELCOMEW84'],
-        });
+        const order = gwpOrder('Free Cookbooks', { couponCodes: ['WELCOMEW84'] });
         order.estimates.discounts = [couponDiscount('WELCOMEW84', '$25 Off $200')];
         const xml = await buildXml(order, journal);
         const expected = ['Free Cookbooks', '$25 Off $200(WELCOMEW84)'];
@@ -1372,12 +1266,12 @@ describe('ebs-sync e2e', () => {
       test('orders GWP, then VBND, then coupon across header, bundle, warranty, simple and gift lines', async () => {
         const order = bundleOrder({
           couponCodes: ['WELCOME1'],
+          custom: { gwpPromotions: GWP_NAME },
           estimates: {
             ...PP_BUNDLE_WARRANTY_ORDER.estimates,
             discounts: [couponDiscount('WELCOME1', '$25 Off $200')],
           },
         });
-        order.estimates.freeItems = [freeItem()];
         order.items.push(
           { sku: 'simple-sku', quantity: 1, price: { final: '50.00', currency: 'CAD' } },
           giftLine(),
@@ -1406,8 +1300,7 @@ describe('ebs-sync e2e', () => {
       });
 
       test('puts the GWP ahead of the VBND code when there is no coupon', async () => {
-        const order = bundleOrder();
-        order.estimates = { ...order.estimates, freeItems: [freeItem()] };
+        const order = bundleOrder({ custom: { gwpPromotions: GWP_NAME } });
         order.items.push(giftLine());
         const xml = await buildXml(order, bundleJournal);
         expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME, 'VBND10']);
@@ -1419,11 +1312,106 @@ describe('ebs-sync e2e', () => {
       });
 
       test('keeps the gift line priced at zero and leaves SalesPersonId untouched', async () => {
-        const order = gwpOrder([freeItem()], { couponCodes: ['06-AFF1'] });
+        const order = gwpOrder(GWP_NAME, { couponCodes: ['06-AFF1'] });
         const xml = await buildXml(order, journal);
         const gift = lineItems(xml).find((line) => lineSku(line) === 'gift-sku');
         expect(gift).toMatch(/UnitSellingPrice="0\.00"/);
         expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
+      });
+
+      // ── Fallback: freeItems grants for orders without custom.gwpPromotions ─
+
+      const grant = (overrides = {}) => ({
+        path: GWP_PATH, ruleId: GWP_RULE_ID, quantity: 1, ...overrides,
+      });
+      const fallbackOrder = (freeItems, options = {}) => gwpOrder(undefined, { freeItems, ...options });
+
+      test('falls back to the grant ruleId on the header and every line', async () => {
+        const xml = await buildXml(fallbackOrder([grant()]), journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
+        lineItems(xml).forEach((line) => expect(promotionCodes(line)).toEqual([GWP_RULE_ID]));
+      });
+
+      test('falls back when custom.gwpPromotions is blank', async () => {
+        const xml = await buildXml(gwpOrder('  ', { freeItems: [grant()] }), journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
+      });
+
+      test('ignores a grant name; the fallback reports the ruleId', async () => {
+        const xml = await buildXml(fallbackOrder([grant({ name: 'Ignored Name' })]), journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
+      });
+
+      test('skips a grant without a ruleId', async () => {
+        const xml = await buildXml(fallbackOrder([grant({ ruleId: '  ' })]), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test('does not send a qualified promotion whose gift is not in the order', async () => {
+        const xml = await buildXml(fallbackOrder([grant()], { gifts: [] }), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test('does not send a promotion whose gift path is only present as a paid line', async () => {
+        const paidLine = giftLine({ price: { final: '19.95', currency: 'CAD' } });
+        const xml = await buildXml(fallbackOrder([grant()], { gifts: [paidLine] }), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test('does not send a promotion whose grant path differs from the $0 line', async () => {
+        const xml = await buildXml(fallbackOrder([grant({ path: '/us/en_us/products/other-gift' })]), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test('sends only the promotions whose gift is in the order, in freeItems order, deduped', async () => {
+        const otherPath = '/us/en_us/products/tumbler';
+        const order = fallbackOrder([
+          grant({ path: '/us/en_us/products/spatula', ruleId: 'missing-gwp' }),
+          grant({ path: otherPath, ruleId: 'second-gwp' }),
+          grant(),
+          grant(),
+        ], {
+          // gift lines appear in the opposite order to the grants
+          gifts: [giftLine(), giftLine({ sku: 'tumbler-sku', path: otherPath })],
+        });
+        const xml = await buildXml(order, journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual(['second-gwp', GWP_RULE_ID]);
+      });
+
+      test('ignores a $0 line that the client flags as a gift but no grant covers', async () => {
+        const xml = await buildXml(fallbackOrder(undefined), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test.each([
+        ['grant path', { freeItems: [grant({ path: `${GWP_PATH}.json` })] }],
+        ['gift line path', { freeItems: [grant()], gifts: [giftLine({ path: `${GWP_PATH}.json` })] }],
+      ])('matches a %s that carries a .json suffix', async (_label, { freeItems, gifts }) => {
+        const xml = await buildXml(fallbackOrder(freeItems, gifts ? { gifts } : {}), journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
+      });
+
+      test.each([
+        ['numeric 0', 0],
+        ['"0.00"', '0.00'],
+      ])('treats a %s final price as a gift', async (_label, final) => {
+        const order = fallbackOrder([grant()], { gifts: [giftLine({ price: { final, currency: 'CAD' } })] });
+        const xml = await buildXml(order, journal);
+        expect(promotionCodes(orderLevel(xml))).toEqual([GWP_RULE_ID]);
+      });
+
+      test('does not treat a line with no price as a gift', async () => {
+        const xml = await buildXml(fallbackOrder([grant()], { gifts: [giftLine({ price: undefined })] }), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
+      });
+
+      test.each([
+        ['a string', 'nope'],
+        ['an object', { path: GWP_PATH }],
+        ['non-object entries', [null, 'x', 7, {}]],
+      ])('tolerates freeItems that is %s', async (_label, freeItems) => {
+        const xml = await buildXml(fallbackOrder(freeItems), journal);
+        expect(xml).not.toContain('<ns2:PromotionCode>');
       });
     });
   });
