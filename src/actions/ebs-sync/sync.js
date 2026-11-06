@@ -76,7 +76,8 @@ export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
 /**
  * Time kept free after an EBS attempt for the syncedAt patch (3 tries of at
  * most COMMERCE_TIMEOUT_MS plus backoff), the pending-update save, the
- * operations log, the inventory outbox, saving state and releasing the lock.
+ * operations log, the inventory outbox, the gift-with-purchase data alert
+ * (rare, best-effort, after the outbox), saving state and releasing the lock.
  */
 export const AFTER_SEND_RESERVE_MS = 60_000;
 const PENDING_SAVE_RETRIES = 2;
@@ -540,6 +541,31 @@ async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) 
 }
 
 /**
+ * Report gift-with-purchase data problems on an order EBS accepted. The order
+ * was sent with the promotion id in place of the name, so nothing is retried:
+ * invalid custom data raises one alert for a person to check the EBS order;
+ * a missing name (orders placed before the storefront recorded it) is logged.
+ *
+ * @param {object} runCtx
+ * @param {string} orderId
+ * @param {{ issues?: string[], missing?: string[] }} [gwp] from syncOrderToEbs
+ */
+async function reportGwpProblems(runCtx, orderId, gwp) {
+  const { params, log } = runCtx;
+  if (gwp?.missing?.length) {
+    log.info(`[ebs-sync] Order ${orderId}: no gift-with-purchase promotion name for ${gwp.missing.join(', ')}; sent the promotion id.`);
+  }
+  if (!gwp?.issues?.length) return;
+  const error = `Order sent to EBS; check its gift-with-purchase promotion: ${gwp.issues.join('; ')}`;
+  log.warn(`[ebs-sync] Order ${orderId}: ${error}`);
+  await logOrderSync(params, {
+    action: 'order-sync', id: orderId, source: 'ebs-sync', reason: 'invalid_gwp_promotion', error,
+  }).catch((logErr) => {
+    log.warn(`[ebs-sync] Failed to report gift-with-purchase data for ${orderId}`, errorInfo(logErr));
+  });
+}
+
+/**
  * Send one order to EBS (with retries) and record the outcome: syncedAt (or a
  * pending custom update), inventory outbox, counters; on failure syncError.
  * Callers must have checked skipReason() right before.
@@ -673,6 +699,9 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     } else if (inventoryDeltas.length) {
       summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
     }
+
+    // After the inventory queueing so the alert can't widen that window.
+    await reportGwpProblems(runCtx, orderId, ebsResult.gwp);
 
     state.lastProcessedOrderId = orderId;
     state.processedCount = (state.processedCount || 0) + 1;
