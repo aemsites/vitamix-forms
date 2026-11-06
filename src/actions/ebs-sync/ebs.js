@@ -124,7 +124,9 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
       'Cache-Control': 'no-cache',
       Pragma: 'no-cache',
     },
-    body: xml,
+    // The proxy URL-decodes text/xml bodies (as src/ebs.js expects), so a raw
+    // '%' in the XML would be rejected or altered. Encode it like src/ebs.js.
+    body: encodeURIComponent(xml),
     signal,
   });
 
