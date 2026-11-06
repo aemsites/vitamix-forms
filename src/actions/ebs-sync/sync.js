@@ -76,7 +76,8 @@ export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
 /**
  * Time kept free after an EBS attempt for the syncedAt patch (3 tries of at
  * most COMMERCE_TIMEOUT_MS plus backoff), the pending-update save, the
- * operations log, the inventory outbox, saving state and releasing the lock.
+ * operations log, the inventory outbox, the gift-with-purchase data alert
+ * (rare, best-effort, after the outbox), saving state and releasing the lock.
  */
 export const AFTER_SEND_RESERVE_MS = 60_000;
 const PENDING_SAVE_RETRIES = 2;

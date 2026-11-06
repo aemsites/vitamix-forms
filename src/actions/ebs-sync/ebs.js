@@ -1017,6 +1017,8 @@ function checkPromotionName(value, label) {
   const name = value.trim();
   if (!name) return { invalid: `${label} is blank` };
   if (CONTROL_CHARACTERS.test(name)) return { invalid: `${label} contains control characters` };
+  // escapeXml would strip these, silently changing (or emptying) the name.
+  if (XML_INVALID_CHARACTER.test(name)) return { invalid: `${label} contains characters XML does not allow` };
   if (name.length > GWP_PROMOTION_NAME_MAX_LENGTH) {
     return { invalid: `${label} is ${name.length} characters (max ${GWP_PROMOTION_NAME_MAX_LENGTH})` };
   }
@@ -1051,8 +1053,10 @@ function readGiftPromotionName(line, ruleId) {
 /**
  * Pair each granted promotion with one $0 gift line at its path. A line is
  * used by at most one grant: first every grant takes a line carrying its own
- * `custom.promotionId`, then the remaining grants take any unused line.
- * Grants left without a line are not in the order.
+ * `custom.promotionId`, then the remaining grants take an unused line with no
+ * `promotionId` (gifts recorded before the storefront set it). A line naming
+ * another promotion is never reused: that promotion's gift is what is in the
+ * order. Grants left without a line are not in the order.
  *
  * @param {object} order
  * @returns {{ ruleId: string, line: object }[]} in `freeItems` order, one per ruleId
@@ -1089,7 +1093,7 @@ function matchGiftLines(order) {
   }
   for (const grant of grants) {
     if (grant.line) continue;
-    grant.line = grant.lines.find((l) => !used.has(l)) ?? null;
+    grant.line = grant.lines.find((l) => !used.has(l) && !l.custom?.promotionId) ?? null;
     if (grant.line) used.add(grant.line);
   }
   return grants.filter((g) => g.line).map(({ ruleId, line }) => ({ ruleId, line }));
@@ -1416,6 +1420,7 @@ function sanitizeName(value) {
  */
 // eslint-disable-next-line no-control-regex
 const XML_INVALID_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const XML_INVALID_CHARACTER = new RegExp(XML_INVALID_CHARACTERS.source);
 
 /** Escape XML special characters. */
 function escapeXml(value) {

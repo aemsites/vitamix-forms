@@ -1247,7 +1247,10 @@ describe('ebs-sync e2e', () => {
           ['a promotionName with a newline', giftCustom({ promotionName: 'Free\nGift' })],
           ['a promotionName with a NUL character', giftCustom({ promotionName: 'Free\u0000Gift' })],
           ['a promotionName over 240 characters', giftCustom({ promotionName: 'x'.repeat(241) })],
-          ['a promotionId for another promotion', giftCustom({ promotionId: 'other-gwp' })],
+          ['a promotionName with U+FFFF', giftCustom({ promotionName: 'Free Gift\uFFFF' })],
+          ['a promotionName with U+FFFE', giftCustom({ promotionName: '\uFFFEFree Gift' })],
+          ['a promotionName of only XML-invalid characters', giftCustom({ promotionName: '\uFFFF\uFFFF' })],
+          ['a promotionName with an unpaired surrogate', giftCustom({ promotionName: 'Free \uD800Gift' })],
           ['no promotionId', giftCustom({ promotionId: undefined })],
         ])('with %s', async (_label, custom) => {
           const xml = await buildXml(withGiftCustom(custom), journal);
@@ -1471,6 +1474,28 @@ describe('ebs-sync e2e', () => {
       });
 
       describe('pairing grants with gift lines', () => {
+        test('accepts a name with characters outside the BMP', () => {
+          const name = 'Free Gift \u{1F381}';
+          expect(resolveGwpPromotions(withGiftCustom(giftCustom({ promotionName: name }))).codes)
+            .toEqual([name]);
+        });
+
+        test.each([
+          ['another promotion', 'other-gwp'],
+          ['a very long promotion id', 'y'.repeat(500)],
+        ])('skips a grant whose only line names %s, without alerting', async (_label, promotionId) => {
+          const order = withGiftCustom(giftCustom({ promotionId }));
+          expect(resolveGwpPromotions(order)).toEqual({ codes: [], issues: [], missing: [] });
+          const xml = await buildXml(order, journal);
+          expect(xml).not.toContain('<ns2:PromotionCode>');
+        });
+
+        test('reports only the promotion whose gift is in the order when two share a product', () => {
+          // A's gift is in the order; B (listed second) qualified but its gift was not kept.
+          const order = gwpOrder([freeItem(), freeItem({ ruleId: 'b-gwp' })]);
+          expect(resolveGwpPromotions(order)).toEqual({ codes: [GWP_NAME], issues: [], missing: [] });
+        });
+
         test('skips a grant whose shared gift line belongs to another promotion', async () => {
           // B is listed first but only A's gift is in the order.
           const order = gwpOrder([freeItem({ ruleId: 'b-gwp' }), freeItem()]);
@@ -1512,9 +1537,9 @@ describe('ebs-sync e2e', () => {
           ['not a string', giftCustom({ promotionName: 42 }), 'custom.promotionName is a number, not a string'],
           ['control characters', giftCustom({ promotionName: 'a\tb' }), 'custom.promotionName contains control characters'],
           ['too long', giftCustom({ promotionName: 'x'.repeat(300) }), 'custom.promotionName is 300 characters (max 240)'],
-          ['wrong promotion', giftCustom({ promotionId: 'other-gwp' }), 'custom.promotionId "other-gwp" does not match the granting promotion'],
+          ['U+FFFF', giftCustom({ promotionName: 'Gift\uFFFF' }), 'custom.promotionName contains characters XML does not allow'],
+          ['only XML-invalid characters', giftCustom({ promotionName: '\uFFFF\uFFFF' }), 'custom.promotionName contains characters XML does not allow'],
           ['no promotion id', giftCustom({ promotionId: undefined }), 'custom.promotionId null does not match the granting promotion'],
-          ['a long promotion id', giftCustom({ promotionId: 'y'.repeat(500) }), `custom.promotionId "${'y'.repeat(79)} does not match the granting promotion`],
         ])('reports invalid data (%s) with the line and the fallback', (_label, custom, reason) => {
           const result = resolveGwpPromotions(withGiftCustom(custom));
           expect(result.codes).toEqual([GWP_RULE_ID]);
