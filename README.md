@@ -113,7 +113,9 @@ Supported providers:
   `src/actions/feeds/product-type.js`) and always emits `google_product_category`
   (empty unless the source sets it), matching the legacy Magento feed.
 - **`cj`** — Commission Junction. Bare `<feed>` root, non-namespaced, Google-spec
-  `availability` (`in_stock`); replaces the current SFTP drop.
+  `availability` (`in_stock`); replaces the current SFTP drop. Like the legacy
+  feed it omits `item_group_id` (CJ accepts only letters, digits, `_` and `-`)
+  and sends `identifier_exists` `no` for items with neither `gtin` nor `mpn`.
 - **`bazaarvoice`** — Bazaarvoice `ProductFeed.xml`. Unlike the other
   providers it also includes the commercial catalog (its own product index and
   GMC feed under `<locale>/products/commercial/`), as the legacy feed did; a
