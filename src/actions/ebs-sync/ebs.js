@@ -40,6 +40,10 @@
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
  *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
  *                                header and every line (Magento parity; see getCouponPromotionCodes)
+ *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name from the gift
+ *                                line's custom.promotionName (the server's ruleId when missing or
+ *                                invalid) on the header and every line, ahead of the VBND code and
+ *                                coupons; only for gifts the server granted (see resolveGwpPromotions)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -95,6 +99,9 @@ export function isRetriableError(err) {
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
  * @param {{ signal?: AbortSignal }} [opts] - signal aborts the EBS request (per-attempt timeout)
+ * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] } }>}
+ *   gwp: gift-with-purchase data problems found while building the request
+ *   (see resolveGwpPromotions); they never fail the sync.
  */
 export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal } = {}) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
@@ -104,7 +111,8 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
     );
   }
 
-  const xml = buildCreateOrderXml(order, paymentSnapshot);
+  const gwp = resolveGwpPromotions(order);
+  const xml = buildCreateOrderXml(order, paymentSnapshot, gwp.codes);
 
   const res = await proxyFetch(ctx, `${params.EBS_BASE_URL}/VITOTCCreateWebOrder`, {
     method: 'POST',
@@ -128,7 +136,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
     throw err;
   }
 
-  return { status: res.status, xml };
+  return { status: res.status, xml, gwp: { issues: gwp.issues, missing: gwp.missing } };
 }
 
 /** Returns true when the EBS response indicates success. */
@@ -319,7 +327,12 @@ export function buildPaymentSnapshot(order, orderJournal) {
 // XML builders
 // ---------------------------------------------------------------------------
 
-function buildCreateOrderXml(order, paymentSnapshot) {
+/**
+ * @param {object} order
+ * @param {object} paymentSnapshot
+ * @param {string[]} [gwpCodes] gift-with-purchase PromotionCode values (resolveGwpPromotions)
+ */
+function buildCreateOrderXml(order, paymentSnapshot, gwpCodes = []) {
   const country = resolveCountry(order);
   const source = countryToSource(country);
   const priceList = countryToPriceList(country);
@@ -374,12 +387,12 @@ function buildCreateOrderXml(order, paymentSnapshot) {
           Created="${created}">
         ${buildCustomerXml(order, paymentSnapshot)}
         ${buildPaymentXml(paymentSnapshot, order)}
-        <ns2:Tax Amount="${taxAmount}" Provisional="true" />
+        <ns2:Tax Amount="${escapeXml(taxAmount)}" Provisional="true" />
         ${giftMessage}
         ${salesPersonId ? `<ns2:SalesPersonId>${escapeXml(salesPersonId)}</ns2:SalesPersonId>` : ''}
-        ${buildPromotionsXml(order)}
-        <ns2:Charge Type="Shipping" Value="${shippingAmount}" />
-        ${buildLineItemsXml(order)}
+        ${buildPromotionsXml(order, gwpCodes)}
+        <ns2:Charge Type="Shipping" Value="${escapeXml(shippingAmount)}" />
+        ${buildLineItemsXml(order, gwpCodes)}
       </ns2:Order>
     </ns2:CreateRequest>
   </soapenv:Body>
@@ -447,7 +460,7 @@ function resolveBillingIsValidated(paymentSnapshot) {
  * Uses OrderAddress field names: address1, address2, state, zip.
  */
 function buildAddressXml(tag, address, emailKey) {
-  const key = `${emailKey}-${address.id || '0'}`;
+  const key = `${emailKey}-${escapeXml(address.id || '0')}`;
   const street1 = escapeXml(sanitizeAddress(address.address1 || ''));
   // Always emit Address2 — empty string when absent (PHP parity).
   const street2 = `<Address2>${address.address2 ? escapeXml(sanitizeAddress(address.address2)) : ''}</Address2>`;
@@ -512,9 +525,9 @@ function buildPaymentXml(paymentSnapshot, order) {
               CardBrand="${escapeXml(paymentSnapshot.cardBrand)}"${safetechAttrs}
               CardLast4Digits="${escapeXml(paymentSnapshot.last4)}"
               MITMsgType="${escapeXml(paymentSnapshot.mitMsgType)}"
-              StoredCredentials="${paymentSnapshot.storedCredentials}"
+              StoredCredentials="${escapeXml(paymentSnapshot.storedCredentials)}"
               TransactionId="${escapeXml(paymentSnapshot.transactionId)}"
-              Amount="${paymentSnapshot.amount}">
+              Amount="${escapeXml(paymentSnapshot.amount)}">
               <NameOnCard>${nameOnCard}</NameOnCard>
             </ns2:CreditCard>`;
   } else if (method === 'applepay') {
@@ -523,7 +536,7 @@ function buildPaymentXml(paymentSnapshot, order) {
     );
     inner = `<ns2:ApplePay
               TransactionId="${escapeXml(paymentSnapshot.transactionId || '')}"
-              Amount="${paymentSnapshot.amount}"
+              Amount="${escapeXml(paymentSnapshot.amount)}"
               Approval="${formatEbsDate(paymentSnapshot.approvalDate || paymentSnapshot.timestamp)}"
               AuthCode="${escapeXml(paymentSnapshot.approvalCode || '')}"
               CardBrand="${escapeXml(paymentSnapshot.cardBrand || '')}"
@@ -535,7 +548,7 @@ function buildPaymentXml(paymentSnapshot, order) {
   } else if (method === 'affirm') {
     inner = `<ns2:Affirm
               TransactionId="${escapeXml(paymentSnapshot.transactionId)}"
-              Amount="${paymentSnapshot.amount}"
+              Amount="${escapeXml(paymentSnapshot.amount)}"
               TransactionDate="${formatEbsDate(paymentSnapshot.transactionDate)}"
               TransactionStatus="authorized" />`;
   } else if (isPayPal) {
@@ -549,7 +562,7 @@ function buildPaymentXml(paymentSnapshot, order) {
                 AuthCode="${escapeXml(paymentSnapshot.transactionId)}"
                 PayerId="${escapeXml(paymentSnapshot.payerId)}"
                 TransactionId="${escapeXml(paymentSnapshot.transactionId)}"
-                Amount="${paymentSnapshot.amount}" />`;
+                Amount="${escapeXml(paymentSnapshot.amount)}" />`;
     transactionLogger = buildPayPalTransactionLogger(paymentSnapshot, order);
   } else {
     console.warn(`[ebs-sync] Unknown payment method "${method}" — omitting OrderPayment block`);
@@ -597,8 +610,8 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
           <ns3:InvoiceID>${invoiceId}</ns3:InvoiceID>
           <ns3:ContactPhone>${billingPhone}</ns3:ContactPhone>
           <ns3:PaymentDetails>
-            <ns3:OrderTotal>${paymentSnapshot.amount}</ns3:OrderTotal>
-            <ns3:ItemTotal>${paymentSnapshot.subtotal}</ns3:ItemTotal>
+            <ns3:OrderTotal>${escapeXml(paymentSnapshot.amount)}</ns3:OrderTotal>
+            <ns3:ItemTotal>${escapeXml(paymentSnapshot.subtotal)}</ns3:ItemTotal>
             <ns3:AllowedPaymentMethodType>InstantFundingSource</ns3:AllowedPaymentMethodType>
             <ns3:ShippingDiscount>${shippingDiscount}</ns3:ShippingDiscount>
           </ns3:PaymentDetails>
@@ -625,7 +638,7 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
   )}</ns3:AddressStatus>
           </ns3:BillingAddress>
           <ns3:TransactionID>${escapeXml(paymentSnapshot.transactionId)}</ns3:TransactionID>
-          <ns3:Amount>${paymentSnapshot.amount}</ns3:Amount>
+          <ns3:Amount>${escapeXml(paymentSnapshot.amount)}</ns3:Amount>
           <ns3:MsgSubId></ns3:MsgSubId>
           <ns3:AuthorizationInfo>
             <ns3:PendingReason>${escapeXml(paymentSnapshot.pendingReason)}</ns3:PendingReason>
@@ -736,11 +749,14 @@ function effectiveItemUnitPrice(item) {
   return unitSellingPrice(effectiveLineTotalCents(item), lineQuantity(item));
 }
 
-function buildLineItemsXml(order) {
+function buildLineItemsXml(order, gwpCodes = []) {
   const orderKey = order.friendlyId || order.id;
-  // Magento stamped every applied coupon on every line item (simple, bundle
-  // child and warranty), regardless of which lines it discounted.
+  // Magento stamped every applied order-level promotion on every line item
+  // (simple, bundle child, warranty and the gift itself), regardless of which
+  // lines it discounted: the gift-with-purchase names first, then — on bundle
+  // children only — the bundle's VBND code, then the coupons.
   const couponCodes = getCouponPromotionCodes(order);
+  const sharedPromotionCodes = [...gwpCodes, ...couponCodes];
 
   // Map warranty items by the product SKU they cover
   const warrantyBySku = new Map();
@@ -765,7 +781,9 @@ function buildLineItemsXml(order) {
       // parent line and stamped on every child line, mirroring the legacy
       // Magento sync. Warranty lines below intentionally omit it.
       const reasonCode = resolveVbndReasonCode(item);
-      const childPromotionCodes = reasonCode ? [reasonCode, ...couponCodes] : couponCodes;
+      const childPromotionCodes = reasonCode
+        ? [...gwpCodes, reasonCode, ...couponCodes]
+        : sharedPromotionCodes;
       for (const child of item.bundleItems) {
         const hasWarranty = warrantyBySku.has(child.sku);
         const serial = hasWarranty ? `ci${orderKey}-${++serialIndex}` : '';
@@ -777,7 +795,9 @@ function buildLineItemsXml(order) {
         ));
 
         if (hasWarranty) {
-          lines.push(buildWarrantyLineItemXml(warrantyBySku.get(child.sku), serial, couponCodes));
+          lines.push(buildWarrantyLineItemXml(
+            warrantyBySku.get(child.sku), serial, sharedPromotionCodes,
+          ));
         }
       }
     } else {
@@ -788,11 +808,13 @@ function buildLineItemsXml(order) {
       lines.push(buildLineItemXml(
         item.sku || '', item.quantity ?? 1,
         effectiveItemUnitPrice(item), item.taxAmount || '0.00',
-        'Each', serial, couponCodes,
+        'Each', serial, sharedPromotionCodes,
       ));
 
       if (hasWarranty) {
-        lines.push(buildWarrantyLineItemXml(warrantyBySku.get(item.sku), serial, couponCodes));
+        lines.push(buildWarrantyLineItemXml(
+          warrantyBySku.get(item.sku), serial, sharedPromotionCodes,
+        ));
       }
     }
   }
@@ -810,8 +832,8 @@ function buildLineItemsXml(order) {
  * @param {string} unitOfMeasure - `Each` or `Years`.
  * @param {string} serialNumber - warranty link serial, or `''`.
  * @param {string[]} [promotionCodes] - one `<ns2:PromotionCode>` per entry:
- *   the VBND Discount Reason Code (virtual bundle children only) followed by
- *   the order's applied coupon codes.
+ *   the gift-with-purchase promotion names, then the VBND Discount Reason Code
+ *   (virtual bundle children only), then the order's applied coupon codes.
  * @returns {string} the LineItem XML fragment.
  */
 function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, promotionCodes = []) {
@@ -823,10 +845,10 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
     .join('');
   return `<ns2:LineItem
             Sku="${escapeXml(sku)}"
-            Quantity="${qty}"
-            UnitSellingPrice="${price}"
-            UnitOfMeasure="${unitOfMeasure}">
-            <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}${promoEl}
+            Quantity="${escapeXml(qty)}"
+            UnitSellingPrice="${escapeXml(price)}"
+            UnitOfMeasure="${escapeXml(unitOfMeasure)}">
+            <ns2:Tax Amount="${escapeXml(tax)}" Provisional="true" />${serialEl}${promoEl}
           </ns2:LineItem>`;
 }
 
@@ -844,15 +866,16 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
  *
  * @param {object} w warranty order line
  * @param {string} serial warranty link serial
- * @param {string[]} [couponCodes] applied coupon PromotionCode values, one element each
+ * @param {string[]} [promotionCodes] order-level PromotionCode values (gift-with-purchase
+ *   names, then applied coupons), one element each. A warranty never carries a VBND code.
  */
-function buildWarrantyLineItemXml(w, serial, couponCodes = []) {
-  const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
+function buildWarrantyLineItemXml(w, serial, promotionCodes = []) {
+  const wSku = (Object.hasOwn(WARRANTY_VITAMIX_ID, w.sku) && WARRANTY_VITAMIX_ID[w.sku]) || w.sku || '';
   const coverageYears = Number(w.custom?.coverageYears) || 1;
   const quantity = coverageYears * lineQuantity(w);
   const unitPrice = unitSellingPrice(effectiveLineTotalCents(w), quantity);
   return buildLineItemXml(
-    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial, couponCodes,
+    wSku, quantity, unitPrice, w.taxAmount || '0.00', 'Years', serial, promotionCodes,
   );
 }
 
@@ -964,13 +987,176 @@ function getCouponPromotionCodes(order) {
 }
 
 /**
- * Emit the order-level PromotionCode elements: the VBND code of each virtual
- * bundle first, then one element per applied coupon, in the order they were
- * applied (Magento parity). Matches the ordering used on bundle child lines.
- * Emits nothing when the order has neither bundles with a code nor coupons.
+ * Normalize a product path for comparison: trimmed, without a trailing `.json`.
+ *
+ * @param {unknown} path
+ * @returns {string} the normalized path, or `''` when absent.
  */
-function buildPromotionsXml(order) {
-  return [...getBundleReasonCodes(order), ...getCouponPromotionCodes(order)]
+function normalizeItemPath(path) {
+  return String(path ?? '').trim().replace(/\.json$/i, '');
+}
+
+/**
+ * The longest gift-with-purchase promotion name sent to EBS. Longer values fall
+ * back to the promotion id: EBS flexfield columns hold 240 characters.
+ */
+export const GWP_PROMOTION_NAME_MAX_LENGTH = 240;
+
+// eslint-disable-next-line no-control-regex
+const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
+
+/**
+ * Check a promotion name before it goes into an EBS field.
+ *
+ * @param {unknown} value
+ * @param {string} label - what the value is, for the problem description.
+ * @returns {{ name: string } | { invalid: string }}
+ */
+function checkPromotionName(value, label) {
+  if (typeof value !== 'string') return { invalid: `${label} is a ${typeof value}, not a string` };
+  const name = value.trim();
+  if (!name) return { invalid: `${label} is blank` };
+  if (CONTROL_CHARACTERS.test(name)) return { invalid: `${label} contains control characters` };
+  // escapeXml would strip these, silently changing (or emptying) the name.
+  if (XML_INVALID_CHARACTER.test(name)) return { invalid: `${label} contains characters XML does not allow` };
+  if (name.length > GWP_PROMOTION_NAME_MAX_LENGTH) {
+    return { invalid: `${label} is ${name.length} characters (max ${GWP_PROMOTION_NAME_MAX_LENGTH})` };
+  }
+  return { name };
+}
+
+/** A client-supplied value for a problem description, bounded in length. */
+function shown(value) {
+  return (JSON.stringify(value ?? null) ?? String(value)).slice(0, 80);
+}
+
+/**
+ * Read the client-supplied promotion name on a gift line, checked against the
+ * server's grant.
+ *
+ * @param {object} line - the $0 gift line.
+ * @param {string} ruleId - the granting promotion's id, from `estimates.freeItems`.
+ * @returns {{ name: string } | { missing: true } | { invalid: string }}
+ */
+function readGiftPromotionName(line, ruleId) {
+  const custom = line.custom && typeof line.custom === 'object' ? line.custom : {};
+  const { promotionName, promotionId } = custom;
+  if (promotionName === undefined || promotionName === null) return { missing: true };
+  const checked = checkPromotionName(promotionName, 'custom.promotionName');
+  if (checked.invalid) return checked;
+  if (promotionId !== ruleId) {
+    return { invalid: `custom.promotionId ${shown(promotionId)} does not match the granting promotion` };
+  }
+  return checked;
+}
+
+/**
+ * Pair each granted promotion with one $0 gift line at its path. A line is
+ * used by at most one grant: first every grant takes a line carrying its own
+ * `custom.promotionId`, then the remaining grants take an unused line with no
+ * `promotionId` (gifts recorded before the storefront set it). A line naming
+ * another promotion is never reused: that promotion's gift is what is in the
+ * order. Grants left without a line are not in the order.
+ *
+ * @param {object} order
+ * @returns {{ ruleId: string, line: object }[]} in `freeItems` order, one per ruleId
+ */
+function matchGiftLines(order) {
+  const freeItems = order?.estimates?.freeItems;
+  if (!Array.isArray(freeItems) || !freeItems.length) return [];
+
+  const giftLinesByPath = new Map();
+  for (const item of (Array.isArray(order.items) ? order.items : [])) {
+    // parseFloat (not Number) so a missing or empty price is NaN, not a gift
+    if (!item || parseFloat(item.price?.final) !== 0) continue;
+    const path = normalizeItemPath(item.path);
+    if (!path) continue;
+    if (!giftLinesByPath.has(path)) giftLinesByPath.set(path, []);
+    giftLinesByPath.get(path).push(item);
+  }
+
+  // One entry per distinct promotion that has a candidate line, in freeItems order.
+  const grants = [];
+  const seen = new Set();
+  for (const grant of freeItems) {
+    const ruleId = String(grant?.ruleId ?? '').trim();
+    const lines = giftLinesByPath.get(normalizeItemPath(grant?.path));
+    if (!ruleId || !lines || seen.has(ruleId)) continue;
+    seen.add(ruleId);
+    grants.push({ ruleId, lines, line: null });
+  }
+
+  const used = new Set();
+  for (const grant of grants) {
+    grant.line = grant.lines.find((l) => !used.has(l) && l.custom?.promotionId === grant.ruleId) ?? null;
+    if (grant.line) used.add(grant.line);
+  }
+  for (const grant of grants) {
+    if (grant.line) continue;
+    grant.line = grant.lines.find((l) => !used.has(l) && !l.custom?.promotionId) ?? null;
+    if (grant.line) used.add(grant.line);
+  }
+  return grants.filter((g) => g.line).map(({ ruleId, line }) => ({ ruleId, line }));
+}
+
+/**
+ * The gift-with-purchase (GWP) promotions to report for an order, and any
+ * problems with the data they came from.
+ *
+ * Magento treated a free-gift rule like any other applied cart rule and sent
+ * its description. Which gifts were granted comes from the server-computed
+ * `estimates.freeItems[]` (`{ path, ruleId, quantity }`), which lists the gifts
+ * a cart *qualified* for, so a grant is reported only when the order holds a
+ * $0 line at the granted `path` (see matchGiftLines).
+ *
+ * The name comes from that gift line's `custom.promotionName`, set by the
+ * storefront. Custom data is client-supplied, so the name is used only when it
+ * is a non-blank string without control characters, at most
+ * {@link GWP_PROMOTION_NAME_MAX_LENGTH} characters, on a line whose
+ * `custom.promotionId` matches the grant's `ruleId`. Otherwise the `ruleId` is
+ * sent instead: a missing name is expected for orders placed before the
+ * storefront recorded it and goes to `missing`; anything else goes to `issues`
+ * so it can be alerted on. Nothing here ever fails the sync.
+ *
+ * One value per distinct promotion (by `ruleId`), in `freeItems` order. No
+ * `({code})` suffix, since a GWP promotion is not a coupon.
+ *
+ * @param {object} order - the stored order.
+ * @returns {{ codes: string[], issues: string[], missing: string[] }} codes to
+ *   send; issues (invalid custom data) and missing (ruleIds sent without a
+ *   name) for reporting.
+ */
+export function resolveGwpPromotions(order) {
+  const result = { codes: [], issues: [], missing: [] };
+  for (const { ruleId, line } of matchGiftLines(order)) {
+    const read = readGiftPromotionName(line, ruleId);
+    if (read.name) {
+      result.codes.push(read.name);
+      continue;
+    }
+    result.codes.push(ruleId);
+    if (read.invalid) {
+      result.issues.push(`gift-with-purchase ${ruleId} (${line.sku || line.path}): ${read.invalid}; sent the promotion id instead`);
+    } else {
+      result.missing.push(ruleId);
+    }
+  }
+  return result;
+}
+
+/**
+ * Emit the order-level PromotionCode elements: the name of each gift-with-
+ * purchase promotion first, then the VBND code of each virtual bundle, then one
+ * element per applied coupon, in the order they were applied (Magento parity).
+ * Matches the ordering used on bundle child lines. Emits nothing when the order
+ * has no gift, no bundle with a code and no coupons.
+ */
+function buildPromotionsXml(order, gwpCodes = []) {
+  return [
+    ...gwpCodes,
+    ...getBundleReasonCodes(order),
+    ...getCouponPromotionCodes(order),
+  ]
     .map((code) => `<ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
     .join('\n        ');
 }
@@ -1153,7 +1339,7 @@ function resolveCountry(order) {
 
 const SOURCE_MAP = { US: 'US', CA: 'CA', UK: 'UK', GB: 'UK', IE: 'IE' };
 function countryToSource(country) {
-  return SOURCE_MAP[country] || 'US';
+  return (Object.hasOwn(SOURCE_MAP, country) && SOURCE_MAP[country]) || 'US';
 }
 
 const PRICE_LIST_MAP = {
@@ -1164,7 +1350,7 @@ const PRICE_LIST_MAP = {
   IE: 'EUR IRELAND HH END CUSTOMER EX VAT',
 };
 function countryToPriceList(country) {
-  return PRICE_LIST_MAP[country] || 'US HH END CUSTOMER';
+  return (Object.hasOwn(PRICE_LIST_MAP, country) && PRICE_LIST_MAP[country]) || 'US HH END CUSTOMER';
 }
 
 /**
@@ -1227,9 +1413,19 @@ function sanitizeName(value) {
   return String(value || '').replace(/[&"'<>]/g, '');
 }
 
+/**
+ * Characters XML 1.0 does not allow, even escaped: C0 controls other than tab,
+ * newline and carriage return, U+FFFE/U+FFFF, and unpaired surrogates. One of
+ * them anywhere in the request makes EBS reject the whole document.
+ */
+// eslint-disable-next-line no-control-regex
+const XML_INVALID_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+const XML_INVALID_CHARACTER = new RegExp(XML_INVALID_CHARACTERS.source);
+
 /** Escape XML special characters. */
 function escapeXml(value) {
   return String(value)
+    .replace(XML_INVALID_CHARACTERS, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')

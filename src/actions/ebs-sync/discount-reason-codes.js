@@ -135,8 +135,9 @@ export function resolveVbndReasonCode(item) {
   const urlKey = bundleUrlKey(item?.path);
   if (!urlKey) return '';
   const sku = item?.sku;
-  if (sku && VBND_REASON_CODES[`${urlKey}|${sku}`]) {
-    return VBND_REASON_CODES[`${urlKey}|${sku}`];
+  const variantKey = `${urlKey}|${sku}`;
+  if (sku && Object.hasOwn(VBND_REASON_CODES, variantKey)) {
+    return VBND_REASON_CODES[variantKey];
   }
-  return VBND_REASON_CODES_BY_BUNDLE[urlKey] || '';
+  return Object.hasOwn(VBND_REASON_CODES_BY_BUNDLE, urlKey) ? VBND_REASON_CODES_BY_BUNDLE[urlKey] : '';
 }
