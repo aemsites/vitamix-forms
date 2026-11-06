@@ -59,7 +59,10 @@ import {
   inventoryOutboxEntryExists,
 } from './state.js';
 import { collectOrderDeltas, isInventorySyncEnabled } from './inventory.js';
-import { getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync } from './commerce.js';
+import {
+  getJournalEntries, getOrderJournalEntries, getOrder, updateOrderCustom, logOrderSync,
+  getActivePromotionNames,
+} from './commerce.js';
 import {
   reconcileOrders, isReconcileDue, isReconcileEnabled, RECONCILE_MIN_REMAINING_MS,
 } from './reconcile.js';
@@ -540,9 +543,30 @@ async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) 
 }
 
 /**
+ * Catalog promotion names for gift-with-purchase reporting, read at most once
+ * per run and only for orders with granted gifts. A failed read is logged and
+ * leaves the names to the gift lines' custom data (null).
+ *
+ * @param {object} runCtx
+ * @param {object} order
+ * @returns {Promise<Map<string, string> | null>}
+ */
+async function promotionNamesFor(runCtx, order) {
+  const freeItems = order?.estimates?.freeItems;
+  if (!Array.isArray(freeItems) || !freeItems.length) return null;
+  if (!runCtx.promotionNames) {
+    runCtx.promotionNames = getActivePromotionNames(runCtx.params).catch((err) => {
+      runCtx.log.warn('[ebs-sync] Could not read catalog promotion names; using the gift lines\' names', errorInfo(err));
+      return null;
+    });
+  }
+  return runCtx.promotionNames;
+}
+
+/**
  * Report gift-with-purchase data problems on an order EBS accepted. The order
  * was sent with the promotion id in place of the name, so nothing is retried:
- * invalid custom data raises one alert for a person to correct the EBS order;
+ * invalid or conflicting data raises one alert for a person to check the EBS order;
  * a missing name (orders placed before the storefront recorded it) is logged.
  *
  * @param {object} runCtx
@@ -555,10 +579,10 @@ async function reportGwpProblems(runCtx, orderId, gwp) {
     log.info(`[ebs-sync] Order ${orderId}: no gift-with-purchase promotion name for ${gwp.missing.join(', ')}; sent the promotion id.`);
   }
   if (!gwp?.issues?.length) return;
-  const error = `Order sent to EBS with invalid gift-with-purchase data: ${gwp.issues.join('; ')}`;
+  const error = `Order sent to EBS; check its gift-with-purchase promotion: ${gwp.issues.join('; ')}`;
   log.warn(`[ebs-sync] Order ${orderId}: ${error}`);
   await logOrderSync(params, {
-    action: 'order-sync', id: orderId, reason: 'invalid_gwp_promotion', error,
+    action: 'order-sync', id: orderId, source: 'ebs-sync', reason: 'invalid_gwp_promotion', error,
   }).catch((logErr) => {
     log.warn(`[ebs-sync] Failed to report gift-with-purchase data for ${orderId}`, errorInfo(logErr));
   });
@@ -584,6 +608,7 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
   } = runCtx;
   let lastErr = null;
   let ebsResult = null;
+  const promotionNames = await promotionNamesFor(runCtx, order);
 
   for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
     if (Date.now() > lastAttemptStartAt) {
@@ -593,6 +618,7 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     try {
       ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal, {
         signal: AbortSignal.timeout(EBS_ATTEMPT_TIMEOUT_MS),
+        promotionNames,
       });
       log.info(`[ebs-sync] Order ${orderId} synced to EBS on attempt ${attempt}.`);
       break;
@@ -682,7 +708,6 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     }).catch((logErr) => {
       log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
     });
-    await reportGwpProblems(runCtx, orderId, ebsResult.gwp);
 
     // Queue the inventory decrement only AFTER syncedAt / the pending update is
     // persisted. Queueing earlier would sit inside the window where a crash
@@ -699,6 +724,9 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     } else if (inventoryDeltas.length) {
       summary.inventoryOutboxSeqs.push(await queueInventoryDeltas({ orderIds: [orderId], deltas: inventoryDeltas }, log));
     }
+
+    // After the inventory queueing so the alert can't widen that window.
+    await reportGwpProblems(runCtx, orderId, ebsResult.gwp);
 
     state.lastProcessedOrderId = orderId;
     state.processedCount = (state.processedCount || 0) + 1;

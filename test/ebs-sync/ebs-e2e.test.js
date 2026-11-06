@@ -1469,6 +1469,92 @@ describe('ebs-sync e2e', () => {
         expect(xml).toContain('<ns2:SalesPersonId>06-AFF1</ns2:SalesPersonId>');
       });
 
+      describe('pairing grants with gift lines', () => {
+        test('skips a grant whose shared gift line belongs to another promotion', async () => {
+          // B is listed first but only A's gift is in the order.
+          const order = gwpOrder([freeItem({ ruleId: 'b-gwp' }), freeItem()]);
+          const result = resolveGwpPromotions(order);
+          expect(result).toEqual({ codes: [GWP_NAME], issues: [], missing: [] });
+        });
+
+        test('uses one unlabelled gift line for only one of two grants', () => {
+          const order = gwpOrder([freeItem({ ruleId: 'a-gwp' }), freeItem({ ruleId: 'b-gwp' })], {
+            gifts: [giftLine({ custom: undefined })],
+          });
+          expect(resolveGwpPromotions(order).codes).toEqual(['a-gwp']);
+        });
+
+        test('gives each of two lines to a different grant', () => {
+          const order = gwpOrder([freeItem({ ruleId: 'a-gwp' }), freeItem({ ruleId: 'b-gwp' })], {
+            gifts: [
+              giftLine({ custom: giftCustom({ promotionId: 'b-gwp', promotionName: 'B' }) }),
+              giftLine({ custom: undefined }),
+            ],
+          });
+          expect(resolveGwpPromotions(order).codes).toEqual(['a-gwp', 'B']);
+        });
+      });
+
+      describe('catalog promotion names', () => {
+        const CATALOG_NAME = 'Catalog GWP Name';
+        const catalog = (name = CATALOG_NAME) => new Map([[GWP_RULE_ID, name]]);
+
+        test('syncOrderToEbs sends the catalog name on the header and every line', async () => {
+          const order = withGiftCustom(giftCustom({ promotionName: CATALOG_NAME }));
+          const { xml, gwp } = await syncOrderToEbs(
+            MOCK_CTX, MOCK_PARAMS, order, journal, { promotionNames: catalog() },
+          );
+          expect(promotionCodes(orderLevel(xml))).toEqual([CATALOG_NAME]);
+          lineItems(xml).forEach((line) => expect(promotionCodes(line)).toEqual([CATALOG_NAME]));
+          expect(gwp).toEqual({ issues: [], missing: [] });
+        });
+
+        test('uses the catalog name without alerting when the gift line has none', () => {
+          const order = withGiftCustom(giftCustom({ promotionName: undefined }));
+          expect(resolveGwpPromotions(order, catalog()))
+            .toEqual({ codes: [CATALOG_NAME], issues: [], missing: [] });
+        });
+
+        test('reports a gift line name that differs from the catalog', () => {
+          const result = resolveGwpPromotions(withGiftCustom(giftCustom()), catalog());
+          expect(result.codes).toEqual([CATALOG_NAME]);
+          expect(result.issues).toEqual([
+            `gift-with-purchase ${GWP_RULE_ID} (gift-sku): custom.promotionName "${GWP_NAME}" differs from the catalog name; sent the catalog name`,
+          ]);
+        });
+
+        test('reports invalid gift line data and still sends the catalog name', () => {
+          const result = resolveGwpPromotions(
+            withGiftCustom(giftCustom({ promotionId: 'other-gwp' })),
+            catalog(),
+          );
+          expect(result.codes).toEqual([CATALOG_NAME]);
+          expect(result.issues).toEqual([
+            `gift-with-purchase ${GWP_RULE_ID} (gift-sku): custom.promotionId "other-gwp" does not match the granting promotion; sent the catalog name`,
+          ]);
+        });
+
+        test.each([
+          ['blank', '  ', 'the catalog promotion name is blank'],
+          ['too long', 'z'.repeat(241), 'the catalog promotion name is 241 characters (max 240)'],
+        ])('ignores a %s catalog name and falls back to the gift line', (_label, name, reason) => {
+          const result = resolveGwpPromotions(withGiftCustom(giftCustom()), catalog(name));
+          expect(result.codes).toEqual([GWP_NAME]);
+          expect(result.issues).toEqual([`gift-with-purchase ${GWP_RULE_ID} (gift-sku): ${reason}; ignored it`]);
+        });
+
+        test('falls back to the gift line when the catalog does not list the promotion', () => {
+          const result = resolveGwpPromotions(withGiftCustom(giftCustom()), new Map([['other', 'Other']]));
+          expect(result).toEqual({ codes: [GWP_NAME], issues: [], missing: [] });
+        });
+
+        test('falls back to the ruleId when neither has a name', () => {
+          const order = withGiftCustom(giftCustom({ promotionName: undefined }));
+          expect(resolveGwpPromotions(order, new Map()))
+            .toEqual({ codes: [GWP_RULE_ID], issues: [], missing: [GWP_RULE_ID] });
+        });
+      });
+
       describe('reporting', () => {
         test('syncOrderToEbs returns no problems for a valid gift line', async () => {
           const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, gwpOrder([freeItem()]), journal);

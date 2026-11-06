@@ -40,10 +40,10 @@
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
  *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
  *                                header and every line (Magento parity; see getCouponPromotionCodes)
- *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name from the gift
- *                                line's custom.promotionName (the server's ruleId when missing or
- *                                invalid) on the header and every line, ahead of the VBND code and
- *                                coupons; only for gifts the server granted (see resolveGwpPromotions)
+ *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name (catalog, else
+ *                                the gift line's custom.promotionName, else the ruleId) on the header
+ *                                and every line, ahead of the VBND code and coupons; only for gifts
+ *                                the server granted (see resolveGwpPromotions)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -98,12 +98,14 @@ export function isRetriableError(err) {
  * @param {object}   params       - Action params (needs EBS_BASE_URL)
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
- * @param {{ signal?: AbortSignal }} [opts] - signal aborts the EBS request (per-attempt timeout)
+ * @param {{ signal?: AbortSignal, promotionNames?: Map<string, string> | null }} [opts] -
+ *   signal aborts the EBS request (per-attempt timeout); promotionNames are the
+ *   catalog promotion names by id (see resolveGwpPromotions)
  * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] } }>}
  *   gwp: gift-with-purchase data problems found while building the request
  *   (see resolveGwpPromotions); they never fail the sync.
  */
-export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal } = {}) {
+export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal, promotionNames } = {}) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
   if (!paymentSnapshot) {
     throw new Error(
@@ -111,7 +113,8 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
     );
   }
 
-  const xml = buildCreateOrderXml(order, paymentSnapshot);
+  const gwp = resolveGwpPromotions(order, promotionNames);
+  const xml = buildCreateOrderXml(order, paymentSnapshot, gwp.codes);
 
   const res = await proxyFetch(ctx, `${params.EBS_BASE_URL}/VITOTCCreateWebOrder`, {
     method: 'POST',
@@ -135,8 +138,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
     throw err;
   }
 
-  const { issues, missing } = resolveGwpPromotions(order);
-  return { status: res.status, xml, gwp: { issues, missing } };
+  return { status: res.status, xml, gwp: { issues: gwp.issues, missing: gwp.missing } };
 }
 
 /** Returns true when the EBS response indicates success. */
@@ -327,7 +329,12 @@ export function buildPaymentSnapshot(order, orderJournal) {
 // XML builders
 // ---------------------------------------------------------------------------
 
-function buildCreateOrderXml(order, paymentSnapshot) {
+/**
+ * @param {object} order
+ * @param {object} paymentSnapshot
+ * @param {string[]} [gwpCodes] gift-with-purchase PromotionCode values (resolveGwpPromotions)
+ */
+function buildCreateOrderXml(order, paymentSnapshot, gwpCodes = []) {
   const country = resolveCountry(order);
   const source = countryToSource(country);
   const priceList = countryToPriceList(country);
@@ -385,9 +392,9 @@ function buildCreateOrderXml(order, paymentSnapshot) {
         <ns2:Tax Amount="${taxAmount}" Provisional="true" />
         ${giftMessage}
         ${salesPersonId ? `<ns2:SalesPersonId>${escapeXml(salesPersonId)}</ns2:SalesPersonId>` : ''}
-        ${buildPromotionsXml(order)}
+        ${buildPromotionsXml(order, gwpCodes)}
         <ns2:Charge Type="Shipping" Value="${shippingAmount}" />
-        ${buildLineItemsXml(order)}
+        ${buildLineItemsXml(order, gwpCodes)}
       </ns2:Order>
     </ns2:CreateRequest>
   </soapenv:Body>
@@ -744,13 +751,12 @@ function effectiveItemUnitPrice(item) {
   return unitSellingPrice(effectiveLineTotalCents(item), lineQuantity(item));
 }
 
-function buildLineItemsXml(order) {
+function buildLineItemsXml(order, gwpCodes = []) {
   const orderKey = order.friendlyId || order.id;
   // Magento stamped every applied order-level promotion on every line item
   // (simple, bundle child, warranty and the gift itself), regardless of which
   // lines it discounted: the gift-with-purchase names first, then — on bundle
   // children only — the bundle's VBND code, then the coupons.
-  const gwpCodes = getGwpPromotionCodes(order);
   const couponCodes = getCouponPromotionCodes(order);
   const sharedPromotionCodes = [...gwpCodes, ...couponCodes];
 
@@ -1002,7 +1008,30 @@ export const GWP_PROMOTION_NAME_MAX_LENGTH = 240;
 const CONTROL_CHARACTERS = /[\u0000-\u001F\u007F-\u009F]/;
 
 /**
- * Validate the client-supplied promotion name on a gift line against the
+ * Check a promotion name before it goes into an EBS field.
+ *
+ * @param {unknown} value
+ * @param {string} label - what the value is, for the problem description.
+ * @returns {{ name: string } | { invalid: string }}
+ */
+function checkPromotionName(value, label) {
+  if (typeof value !== 'string') return { invalid: `${label} is a ${typeof value}, not a string` };
+  const name = value.trim();
+  if (!name) return { invalid: `${label} is blank` };
+  if (CONTROL_CHARACTERS.test(name)) return { invalid: `${label} contains control characters` };
+  if (name.length > GWP_PROMOTION_NAME_MAX_LENGTH) {
+    return { invalid: `${label} is ${name.length} characters (max ${GWP_PROMOTION_NAME_MAX_LENGTH})` };
+  }
+  return { name };
+}
+
+/** A client-supplied value for a problem description, bounded in length. */
+function shown(value) {
+  return (JSON.stringify(value ?? null) ?? String(value)).slice(0, 80);
+}
+
+/**
+ * Read the client-supplied promotion name on a gift line, checked against the
  * server's grant.
  *
  * @param {object} line - the $0 gift line.
@@ -1013,51 +1042,26 @@ function readGiftPromotionName(line, ruleId) {
   const custom = line.custom && typeof line.custom === 'object' ? line.custom : {};
   const { promotionName, promotionId } = custom;
   if (promotionName === undefined || promotionName === null) return { missing: true };
-  if (typeof promotionName !== 'string') return { invalid: `custom.promotionName is a ${typeof promotionName}, not a string` };
-  const name = promotionName.trim();
-  if (!name) return { invalid: 'custom.promotionName is blank' };
-  if (CONTROL_CHARACTERS.test(name)) return { invalid: 'custom.promotionName contains control characters' };
-  if (name.length > GWP_PROMOTION_NAME_MAX_LENGTH) {
-    return { invalid: `custom.promotionName is ${name.length} characters (max ${GWP_PROMOTION_NAME_MAX_LENGTH})` };
-  }
+  const checked = checkPromotionName(promotionName, 'custom.promotionName');
+  if (checked.invalid) return checked;
   if (promotionId !== ruleId) {
-    const shown = JSON.stringify(promotionId ?? null).slice(0, 80);
-    return { invalid: `custom.promotionId ${shown} does not match the granting promotion` };
+    return { invalid: `custom.promotionId ${shown(promotionId)} does not match the granting promotion` };
   }
-  return { name };
+  return checked;
 }
 
 /**
- * The gift-with-purchase (GWP) promotions to report for an order, and any
- * problems with the data they came from.
+ * Pair each granted promotion with one $0 gift line at its path. A line is
+ * used by at most one grant: first every grant takes a line carrying its own
+ * `custom.promotionId`, then the remaining grants take any unused line.
+ * Grants left without a line are not in the order.
  *
- * Magento treated a free-gift rule like any other applied cart rule and sent
- * its description. Which gifts were granted comes from the server-computed
- * `estimates.freeItems[]` (`{ path, ruleId, quantity }`), which lists the gifts
- * a cart *qualified* for, so a grant is reported only when the order holds a
- * $0 line at the granted `path`.
- *
- * The name comes from that gift line's `custom.promotionName`, set by the
- * storefront. Custom data is client-supplied, so the name is used only when it
- * is a non-blank string without control characters, at most
- * {@link GWP_PROMOTION_NAME_MAX_LENGTH} characters, on a line whose
- * `custom.promotionId` matches the grant's `ruleId`. Otherwise the `ruleId` is
- * sent instead: a missing name is expected for orders placed before the
- * storefront recorded it; anything else is returned in `issues` so it can be
- * alerted on. Nothing here ever fails the sync.
- *
- * One value per distinct promotion (by `ruleId`), in `freeItems` order. No
- * `({code})` suffix, since a GWP promotion is not a coupon.
- *
- * @param {object} order - the stored order.
- * @returns {{ codes: string[], issues: string[], missing: string[] }} codes to
- *   send; issues (invalid custom data) and missing (ruleIds sent without a
- *   name) for reporting.
+ * @param {object} order
+ * @returns {{ ruleId: string, line: object }[]} in `freeItems` order, one per ruleId
  */
-export function resolveGwpPromotions(order) {
-  const result = { codes: [], issues: [], missing: [] };
+function matchGiftLines(order) {
   const freeItems = order?.estimates?.freeItems;
-  if (!Array.isArray(freeItems) || !freeItems.length) return result;
+  if (!Array.isArray(freeItems) || !freeItems.length) return [];
 
   const giftLinesByPath = new Map();
   for (const item of (Array.isArray(order.items) ? order.items : [])) {
@@ -1069,38 +1073,98 @@ export function resolveGwpPromotions(order) {
     giftLinesByPath.get(path).push(item);
   }
 
+  // One entry per distinct promotion that has a candidate line, in freeItems order.
+  const grants = [];
   const seen = new Set();
   for (const grant of freeItems) {
     const ruleId = String(grant?.ruleId ?? '').trim();
     const lines = giftLinesByPath.get(normalizeItemPath(grant?.path));
     if (!ruleId || !lines || seen.has(ruleId)) continue;
     seen.add(ruleId);
-
-    // Two promotions can grant the same product: prefer the line that names this one.
-    const line = lines.find((l) => l.custom?.promotionId === ruleId) ?? lines[0];
-    const read = readGiftPromotionName(line, ruleId);
-    if (read.name) {
-      result.codes.push(read.name);
-      continue;
-    }
-    result.codes.push(ruleId);
-    if (read.invalid) {
-      result.issues.push(`gift-with-purchase ${ruleId} (${line.sku || line.path}): ${read.invalid}; sent the promotion id instead`);
-    } else {
-      result.missing.push(ruleId);
-    }
+    grants.push({ ruleId, lines, line: null });
   }
-  return result;
+
+  const used = new Set();
+  for (const grant of grants) {
+    grant.line = grant.lines.find((l) => !used.has(l) && l.custom?.promotionId === grant.ruleId) ?? null;
+    if (grant.line) used.add(grant.line);
+  }
+  for (const grant of grants) {
+    if (grant.line) continue;
+    grant.line = grant.lines.find((l) => !used.has(l)) ?? null;
+    if (grant.line) used.add(grant.line);
+  }
+  return grants.filter((g) => g.line).map(({ ruleId, line }) => ({ ruleId, line }));
 }
 
 /**
- * The PromotionCode values for the order's gift-with-purchase promotions.
+ * The gift-with-purchase (GWP) promotions to report for an order, and any
+ * problems with the data they came from.
+ *
+ * Magento treated a free-gift rule like any other applied cart rule and sent
+ * its description. Which gifts were granted comes from the server-computed
+ * `estimates.freeItems[]` (`{ path, ruleId, quantity }`), which lists the gifts
+ * a cart *qualified* for, so a grant is reported only when the order holds a
+ * $0 line at the granted `path` (see matchGiftLines).
+ *
+ * The name, in order of preference:
+ *   1. the catalog promotion's name (`promotionNames`, by `ruleId`). The gift
+ *      line's `custom.promotionName` is then only compared with it: a
+ *      different or invalid client value is reported, a missing one is not.
+ *   2. the gift line's `custom.promotionName`, set by the storefront, when the
+ *      catalog has no name (e.g. the promotion has ended or the catalog could
+ *      not be read). Custom data is client-supplied, so it is used only when it
+ *      is a non-blank string without control characters, at most
+ *      {@link GWP_PROMOTION_NAME_MAX_LENGTH} characters, on a line whose
+ *      `custom.promotionId` matches the grant's `ruleId`.
+ *   3. the `ruleId`. A missing name is expected for orders placed before the
+ *      storefront recorded it and goes to `missing`; invalid data goes to
+ *      `issues` so it can be alerted on.
+ * Nothing here ever fails the sync.
+ *
+ * One value per distinct promotion (by `ruleId`), in `freeItems` order. No
+ * `({code})` suffix, since a GWP promotion is not a coupon.
  *
  * @param {object} order - the stored order.
- * @returns {string[]}
+ * @param {Map<string, string> | null} [promotionNames] - catalog promotion names by id.
+ * @returns {{ codes: string[], issues: string[], missing: string[] }} codes to
+ *   send; issues (invalid or conflicting data) and missing (ruleIds sent
+ *   without a name) for reporting.
  */
-function getGwpPromotionCodes(order) {
-  return resolveGwpPromotions(order).codes;
+export function resolveGwpPromotions(order, promotionNames = null) {
+  const result = { codes: [], issues: [], missing: [] };
+  for (const { ruleId, line } of matchGiftLines(order)) {
+    const where = `gift-with-purchase ${ruleId} (${line.sku || line.path})`;
+    const client = readGiftPromotionName(line, ruleId);
+
+    let catalog = null;
+    if (promotionNames?.has(ruleId)) {
+      catalog = checkPromotionName(promotionNames.get(ruleId), 'the catalog promotion name');
+      if (catalog.invalid) {
+        result.issues.push(`${where}: ${catalog.invalid}; ignored it`);
+        catalog = null;
+      }
+    }
+
+    if (catalog) {
+      result.codes.push(catalog.name);
+      if (client.invalid) {
+        result.issues.push(`${where}: ${client.invalid}; sent the catalog name`);
+      } else if (client.name && client.name !== catalog.name) {
+        result.issues.push(`${where}: custom.promotionName ${shown(client.name)} differs from the catalog name; sent the catalog name`);
+      }
+    } else if (client.name) {
+      result.codes.push(client.name);
+    } else {
+      result.codes.push(ruleId);
+      if (client.invalid) {
+        result.issues.push(`${where}: ${client.invalid}; sent the promotion id instead`);
+      } else {
+        result.missing.push(ruleId);
+      }
+    }
+  }
+  return result;
 }
 
 /**
@@ -1110,9 +1174,9 @@ function getGwpPromotionCodes(order) {
  * Matches the ordering used on bundle child lines. Emits nothing when the order
  * has no gift, no bundle with a code and no coupons.
  */
-function buildPromotionsXml(order) {
+function buildPromotionsXml(order, gwpCodes = []) {
   return [
-    ...getGwpPromotionCodes(order),
+    ...gwpCodes,
     ...getBundleReasonCodes(order),
     ...getCouponPromotionCodes(order),
   ]
