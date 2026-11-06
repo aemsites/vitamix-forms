@@ -540,6 +540,31 @@ async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) 
 }
 
 /**
+ * Report gift-with-purchase data problems on an order EBS accepted. The order
+ * was sent with the promotion id in place of the name, so nothing is retried:
+ * invalid custom data raises one alert for a person to correct the EBS order;
+ * a missing name (orders placed before the storefront recorded it) is logged.
+ *
+ * @param {object} runCtx
+ * @param {string} orderId
+ * @param {{ issues?: string[], missing?: string[] }} [gwp] from syncOrderToEbs
+ */
+async function reportGwpProblems(runCtx, orderId, gwp) {
+  const { params, log } = runCtx;
+  if (gwp?.missing?.length) {
+    log.info(`[ebs-sync] Order ${orderId}: no gift-with-purchase promotion name for ${gwp.missing.join(', ')}; sent the promotion id.`);
+  }
+  if (!gwp?.issues?.length) return;
+  const error = `Order sent to EBS with invalid gift-with-purchase data: ${gwp.issues.join('; ')}`;
+  log.warn(`[ebs-sync] Order ${orderId}: ${error}`);
+  await logOrderSync(params, {
+    action: 'order-sync', id: orderId, reason: 'invalid_gwp_promotion', error,
+  }).catch((logErr) => {
+    log.warn(`[ebs-sync] Failed to report gift-with-purchase data for ${orderId}`, errorInfo(logErr));
+  });
+}
+
+/**
  * Send one order to EBS (with retries) and record the outcome: syncedAt (or a
  * pending custom update), inventory outbox, counters; on failure syncError.
  * Callers must have checked skipReason() right before.
@@ -657,6 +682,7 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
     }).catch((logErr) => {
       log.warn(`[ebs-sync] Failed to log order-sync for ${orderId}`, errorInfo(logErr));
     });
+    await reportGwpProblems(runCtx, orderId, ebsResult.gwp);
 
     // Queue the inventory decrement only AFTER syncedAt / the pending update is
     // persisted. Queueing earlier would sit inside the window where a crash

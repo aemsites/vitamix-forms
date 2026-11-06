@@ -352,3 +352,62 @@ describe('ebs-sync managed inventory outbox', () => {
     expect(publishInventoryOutboxHead.mock.calls).toEqual([[7]]);
   });
 });
+
+describe('ebs-sync gift-with-purchase reporting', () => {
+  const ISSUE = 'gift-with-purchase gwp-1 (gift-sku): custom.promotionName is blank; sent the promotion id instead';
+  const alerts = () => logOrderSync.mock.calls
+    .map(([, payload]) => payload)
+    .filter((payload) => payload.reason === 'invalid_gwp_promotion');
+
+  afterEach(() => {
+    syncOrderToEbs.mockImplementation(async () => ({ status: 200, xml: '<xml/>' }));
+    logOrderSync.mockImplementation(async () => {});
+  });
+
+  test('alerts once on invalid gift-with-purchase data and still marks the order synced', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', gwp: { issues: [ISSUE], missing: [] } });
+    updateOrderCustom.mockResolvedValue({});
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(updateOrderCustom).toHaveBeenCalledWith(expect.anything(), ORDER_ID, expect.objectContaining({ syncedAt: expect.any(String) }));
+    expect(alerts()).toEqual([{
+      action: 'order-sync',
+      id: ORDER_ID,
+      reason: 'invalid_gwp_promotion',
+      error: `Order sent to EBS with invalid gift-with-purchase data: ${ISSUE}`,
+    }]);
+  });
+
+  test('logs a missing promotion name without alerting', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', gwp: { issues: [], missing: ['gwp-1'] } });
+    updateOrderCustom.mockResolvedValue({});
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(alerts()).toEqual([]);
+    expect(logOrderSync.mock.calls.every(([, payload]) => payload.error === undefined)).toBe(true);
+    expect(logLines.some((l) => l.startsWith('info:') && l.includes('no gift-with-purchase promotion name for gwp-1'))).toBe(true);
+  });
+
+  test('a failed alert does not fail the sync', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', gwp: { issues: [ISSUE], missing: [] } });
+    updateOrderCustom.mockResolvedValue({});
+    logOrderSync.mockImplementation(async (_p, payload) => {
+      if (payload.reason === 'invalid_gwp_promotion') throw new Error('ops log down');
+    });
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(logLines.some((l) => l.startsWith('warn:') && l.includes('Failed to report gift-with-purchase data'))).toBe(true);
+  });
+
+  test('sends no alert when syncOrderToEbs reports nothing', async () => {
+    updateOrderCustom.mockResolvedValue({});
+    await runSync();
+    expect(alerts()).toEqual([]);
+  });
+});
