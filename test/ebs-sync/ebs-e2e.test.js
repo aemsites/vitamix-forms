@@ -11,6 +11,7 @@
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import { syncOrderToEbs, buildPaymentSnapshot, resolveGwpPromotions } from '../../src/actions/ebs-sync/ebs.js';
+import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -1495,66 +1496,6 @@ describe('ebs-sync e2e', () => {
         });
       });
 
-      describe('catalog promotion names', () => {
-        const CATALOG_NAME = 'Catalog GWP Name';
-        const catalog = (name = CATALOG_NAME) => new Map([[GWP_RULE_ID, name]]);
-
-        test('syncOrderToEbs sends the catalog name on the header and every line', async () => {
-          const order = withGiftCustom(giftCustom({ promotionName: CATALOG_NAME }));
-          const { xml, gwp } = await syncOrderToEbs(
-            MOCK_CTX, MOCK_PARAMS, order, journal, { promotionNames: catalog() },
-          );
-          expect(promotionCodes(orderLevel(xml))).toEqual([CATALOG_NAME]);
-          lineItems(xml).forEach((line) => expect(promotionCodes(line)).toEqual([CATALOG_NAME]));
-          expect(gwp).toEqual({ issues: [], missing: [] });
-        });
-
-        test('uses the catalog name without alerting when the gift line has none', () => {
-          const order = withGiftCustom(giftCustom({ promotionName: undefined }));
-          expect(resolveGwpPromotions(order, catalog()))
-            .toEqual({ codes: [CATALOG_NAME], issues: [], missing: [] });
-        });
-
-        test('reports a gift line name that differs from the catalog', () => {
-          const result = resolveGwpPromotions(withGiftCustom(giftCustom()), catalog());
-          expect(result.codes).toEqual([CATALOG_NAME]);
-          expect(result.issues).toEqual([
-            `gift-with-purchase ${GWP_RULE_ID} (gift-sku): custom.promotionName "${GWP_NAME}" differs from the catalog name; sent the catalog name`,
-          ]);
-        });
-
-        test('reports invalid gift line data and still sends the catalog name', () => {
-          const result = resolveGwpPromotions(
-            withGiftCustom(giftCustom({ promotionId: 'other-gwp' })),
-            catalog(),
-          );
-          expect(result.codes).toEqual([CATALOG_NAME]);
-          expect(result.issues).toEqual([
-            `gift-with-purchase ${GWP_RULE_ID} (gift-sku): custom.promotionId "other-gwp" does not match the granting promotion; sent the catalog name`,
-          ]);
-        });
-
-        test.each([
-          ['blank', '  ', 'the catalog promotion name is blank'],
-          ['too long', 'z'.repeat(241), 'the catalog promotion name is 241 characters (max 240)'],
-        ])('ignores a %s catalog name and falls back to the gift line', (_label, name, reason) => {
-          const result = resolveGwpPromotions(withGiftCustom(giftCustom()), catalog(name));
-          expect(result.codes).toEqual([GWP_NAME]);
-          expect(result.issues).toEqual([`gift-with-purchase ${GWP_RULE_ID} (gift-sku): ${reason}; ignored it`]);
-        });
-
-        test('falls back to the gift line when the catalog does not list the promotion', () => {
-          const result = resolveGwpPromotions(withGiftCustom(giftCustom()), new Map([['other', 'Other']]));
-          expect(result).toEqual({ codes: [GWP_NAME], issues: [], missing: [] });
-        });
-
-        test('falls back to the ruleId when neither has a name', () => {
-          const order = withGiftCustom(giftCustom({ promotionName: undefined }));
-          expect(resolveGwpPromotions(order, new Map()))
-            .toEqual({ codes: [GWP_RULE_ID], issues: [], missing: [GWP_RULE_ID] });
-        });
-      });
-
       describe('reporting', () => {
         test('syncOrderToEbs returns no problems for a valid gift line', async () => {
           const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, gwpOrder([freeItem()]), journal);
@@ -1594,6 +1535,124 @@ describe('ebs-sync e2e', () => {
   });
 
   // ── Warranty VitamixProductId lookup ────────────────────────────────────
+
+  // ── Client-supplied values ──────────────────────────────────────────────
+  // Custom data and most order fields come from the browser. Whatever they
+  // hold, the request must stay well-formed and carry them as text only.
+
+  describe('client-supplied values', () => {
+    const journal = loadJournal('journal-cc-approved.ndjson');
+    const INJECT = `x"'</ns2:PromotionCode><evil a="1"/>]]><![CDATA[&amp;&#x3c;`;
+    // Ends with a low then a high surrogate: both unpaired.
+    const INVALID_CHARS = '\u0000\u0001\u0008\u000B\u001F\uFFFE\uFFFF\uDFFF\uD800';
+
+    const parser = new XMLParser({ ignoreAttributes: false, removeNSPrefix: true });
+    /** Every element name in a parsed document. */
+    const elementNames = (node, out = new Set()) => {
+      if (node && typeof node === 'object') {
+        for (const [key, value] of Object.entries(node)) {
+          if (!key.startsWith('@_') && key !== '#text') out.add(key);
+          (Array.isArray(value) ? value : [value]).forEach((v) => elementNames(v, out));
+        }
+      }
+      return out;
+    };
+
+    /** CC order with every client-reachable string set to `value`. */
+    const hostileOrder = (value) => {
+      const order = structuredClone(CC_APPROVED_ORDER);
+      const address = (base) => ({
+        ...base,
+        id: value,
+        name: value,
+        address1: value,
+        address2: value,
+        city: value,
+        state: value,
+        zip: value,
+        phone: value,
+      });
+      order.customer = { ...order.customer, firstName: value, lastName: value, email: value, phone: value };
+      order.shipping = address(order.shipping);
+      order.billing = address(order.billing ?? order.shipping);
+      order.giftMessage = value;
+      order.couponCodes = [`06-${value}`];
+      order.custom = { affiliateCode: `06-${value}`, note: value };
+      order.estimates = {
+        ...order.estimates,
+        discounts: [{ id: `coupon:06-${value}`, name: value, amount: 1, source: 'coupon' }],
+        freeItems: [{ path: '/us/en_us/products/gift', ruleId: 'gwp-1', quantity: 1 }],
+      };
+      order.items = [
+        ...order.items.map((item) => ({
+          ...item,
+          custom: { ...item.custom, categories: [value, { name: value }], isCommercial: value },
+        })),
+        {
+          sku: '001314',
+          path: '/us/en_us/products/warranty',
+          quantity: 1,
+          price: { final: '10.00', currency: 'USD' },
+          custom: { linkedTo: order.items[0].sku, coverageYears: value },
+        },
+        {
+          sku: 'gift-sku',
+          path: '/us/en_us/products/gift',
+          quantity: 1,
+          price: { final: '0', currency: 'USD' },
+          custom: { giftWithPurchase: true, promotionId: 'gwp-1', promotionName: value },
+        },
+      ];
+      return order;
+    };
+
+    test.each([
+      ['markup and entity text', INJECT],
+      ['characters XML does not allow', `a${INVALID_CHARS}b`],
+      ['both', `${INJECT}${INVALID_CHARS}`],
+    ])('keeps the request well-formed with %s in every client field', async (_label, value) => {
+      const xml = await buildXml(hostileOrder(value), journal);
+      expect(XMLValidator.validate(xml)).toBe(true);
+      const names = elementNames(parser.parse(xml));
+      expect(names.has('evil')).toBe(false);
+      expect(xml).not.toMatch(/<evil\b/);
+      // eslint-disable-next-line no-control-regex
+      expect(xml).not.toMatch(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]/);
+      expect(xml).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    });
+
+    test('carries custom values as escaped text', async () => {
+      const xml = await buildXml(hostileOrder(INJECT), journal);
+      const doc = new XMLParser({ removeNSPrefix: true, processEntities: true, htmlEntities: false })
+        .parse(xml);
+      const order = doc.Envelope.Body.CreateRequest.Order;
+      // Parsed back, the value is exactly what the client sent.
+      expect(order.SalesPersonId).toBe(`06-${INJECT}`);
+      expect(xml).toContain(
+        '<ns2:PromotionCode>x&quot;&apos;&lt;/ns2:PromotionCode&gt;&lt;evil a=&quot;1&quot;/&gt;]]&gt;&lt;![CDATA[&amp;amp;&amp;#x3c;</ns2:PromotionCode>',
+      );
+    });
+
+    test('drops characters XML does not allow from custom values', async () => {
+      const xml = await buildXml(hostileOrder(`A${INVALID_CHARS}B`), journal);
+      expect(xml).toContain('<ns2:SalesPersonId>06-AB</ns2:SalesPersonId>');
+    });
+
+    test.each(['constructor', 'toString', '__proto__', 'hasOwnProperty'])(
+      'does not resolve %s through Object.prototype',
+      async (key) => {
+        const order = hostileOrder('v');
+        order.shipping.country = key;
+        order.billing.country = key;
+        order.country = key;
+        const warranty = order.items.find((i) => i.custom?.linkedTo);
+        warranty.sku = key;
+        const xml = await buildXml(order, journal);
+        expect(XMLValidator.validate(xml)).toBe(true);
+        expect(xml).not.toContain('[native code]');
+      },
+    );
+  });
 
   describe('warranty vitamixProductId mapping', () => {
     const journal = loadJournal('journal-pp-bundle-warranty.ndjson');

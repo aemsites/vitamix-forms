@@ -40,10 +40,10 @@
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
  *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
  *                                header and every line (Magento parity; see getCouponPromotionCodes)
- *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name (catalog, else
- *                                the gift line's custom.promotionName, else the ruleId) on the header
- *                                and every line, ahead of the VBND code and coupons; only for gifts
- *                                the server granted (see resolveGwpPromotions)
+ *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name from the gift
+ *                                line's custom.promotionName (the server's ruleId when missing or
+ *                                invalid) on the header and every line, ahead of the VBND code and
+ *                                coupons; only for gifts the server granted (see resolveGwpPromotions)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -98,14 +98,12 @@ export function isRetriableError(err) {
  * @param {object}   params       - Action params (needs EBS_BASE_URL)
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
- * @param {{ signal?: AbortSignal, promotionNames?: Map<string, string> | null }} [opts] -
- *   signal aborts the EBS request (per-attempt timeout); promotionNames are the
- *   catalog promotion names by id (see resolveGwpPromotions)
+ * @param {{ signal?: AbortSignal }} [opts] - signal aborts the EBS request (per-attempt timeout)
  * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] } }>}
  *   gwp: gift-with-purchase data problems found while building the request
  *   (see resolveGwpPromotions); they never fail the sync.
  */
-export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal, promotionNames } = {}) {
+export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal } = {}) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
   if (!paymentSnapshot) {
     throw new Error(
@@ -113,7 +111,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal,
     );
   }
 
-  const gwp = resolveGwpPromotions(order, promotionNames);
+  const gwp = resolveGwpPromotions(order);
   const xml = buildCreateOrderXml(order, paymentSnapshot, gwp.codes);
 
   const res = await proxyFetch(ctx, `${params.EBS_BASE_URL}/VITOTCCreateWebOrder`, {
@@ -389,11 +387,11 @@ function buildCreateOrderXml(order, paymentSnapshot, gwpCodes = []) {
           Created="${created}">
         ${buildCustomerXml(order, paymentSnapshot)}
         ${buildPaymentXml(paymentSnapshot, order)}
-        <ns2:Tax Amount="${taxAmount}" Provisional="true" />
+        <ns2:Tax Amount="${escapeXml(taxAmount)}" Provisional="true" />
         ${giftMessage}
         ${salesPersonId ? `<ns2:SalesPersonId>${escapeXml(salesPersonId)}</ns2:SalesPersonId>` : ''}
         ${buildPromotionsXml(order, gwpCodes)}
-        <ns2:Charge Type="Shipping" Value="${shippingAmount}" />
+        <ns2:Charge Type="Shipping" Value="${escapeXml(shippingAmount)}" />
         ${buildLineItemsXml(order, gwpCodes)}
       </ns2:Order>
     </ns2:CreateRequest>
@@ -462,7 +460,7 @@ function resolveBillingIsValidated(paymentSnapshot) {
  * Uses OrderAddress field names: address1, address2, state, zip.
  */
 function buildAddressXml(tag, address, emailKey) {
-  const key = `${emailKey}-${address.id || '0'}`;
+  const key = `${emailKey}-${escapeXml(address.id || '0')}`;
   const street1 = escapeXml(sanitizeAddress(address.address1 || ''));
   // Always emit Address2 — empty string when absent (PHP parity).
   const street2 = `<Address2>${address.address2 ? escapeXml(sanitizeAddress(address.address2)) : ''}</Address2>`;
@@ -527,9 +525,9 @@ function buildPaymentXml(paymentSnapshot, order) {
               CardBrand="${escapeXml(paymentSnapshot.cardBrand)}"${safetechAttrs}
               CardLast4Digits="${escapeXml(paymentSnapshot.last4)}"
               MITMsgType="${escapeXml(paymentSnapshot.mitMsgType)}"
-              StoredCredentials="${paymentSnapshot.storedCredentials}"
+              StoredCredentials="${escapeXml(paymentSnapshot.storedCredentials)}"
               TransactionId="${escapeXml(paymentSnapshot.transactionId)}"
-              Amount="${paymentSnapshot.amount}">
+              Amount="${escapeXml(paymentSnapshot.amount)}">
               <NameOnCard>${nameOnCard}</NameOnCard>
             </ns2:CreditCard>`;
   } else if (method === 'applepay') {
@@ -538,7 +536,7 @@ function buildPaymentXml(paymentSnapshot, order) {
     );
     inner = `<ns2:ApplePay
               TransactionId="${escapeXml(paymentSnapshot.transactionId || '')}"
-              Amount="${paymentSnapshot.amount}"
+              Amount="${escapeXml(paymentSnapshot.amount)}"
               Approval="${formatEbsDate(paymentSnapshot.approvalDate || paymentSnapshot.timestamp)}"
               AuthCode="${escapeXml(paymentSnapshot.approvalCode || '')}"
               CardBrand="${escapeXml(paymentSnapshot.cardBrand || '')}"
@@ -550,7 +548,7 @@ function buildPaymentXml(paymentSnapshot, order) {
   } else if (method === 'affirm') {
     inner = `<ns2:Affirm
               TransactionId="${escapeXml(paymentSnapshot.transactionId)}"
-              Amount="${paymentSnapshot.amount}"
+              Amount="${escapeXml(paymentSnapshot.amount)}"
               TransactionDate="${formatEbsDate(paymentSnapshot.transactionDate)}"
               TransactionStatus="authorized" />`;
   } else if (isPayPal) {
@@ -564,7 +562,7 @@ function buildPaymentXml(paymentSnapshot, order) {
                 AuthCode="${escapeXml(paymentSnapshot.transactionId)}"
                 PayerId="${escapeXml(paymentSnapshot.payerId)}"
                 TransactionId="${escapeXml(paymentSnapshot.transactionId)}"
-                Amount="${paymentSnapshot.amount}" />`;
+                Amount="${escapeXml(paymentSnapshot.amount)}" />`;
     transactionLogger = buildPayPalTransactionLogger(paymentSnapshot, order);
   } else {
     console.warn(`[ebs-sync] Unknown payment method "${method}" — omitting OrderPayment block`);
@@ -612,8 +610,8 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
           <ns3:InvoiceID>${invoiceId}</ns3:InvoiceID>
           <ns3:ContactPhone>${billingPhone}</ns3:ContactPhone>
           <ns3:PaymentDetails>
-            <ns3:OrderTotal>${paymentSnapshot.amount}</ns3:OrderTotal>
-            <ns3:ItemTotal>${paymentSnapshot.subtotal}</ns3:ItemTotal>
+            <ns3:OrderTotal>${escapeXml(paymentSnapshot.amount)}</ns3:OrderTotal>
+            <ns3:ItemTotal>${escapeXml(paymentSnapshot.subtotal)}</ns3:ItemTotal>
             <ns3:AllowedPaymentMethodType>InstantFundingSource</ns3:AllowedPaymentMethodType>
             <ns3:ShippingDiscount>${shippingDiscount}</ns3:ShippingDiscount>
           </ns3:PaymentDetails>
@@ -640,7 +638,7 @@ function buildPayPalTransactionLogger(paymentSnapshot, order) {
   )}</ns3:AddressStatus>
           </ns3:BillingAddress>
           <ns3:TransactionID>${escapeXml(paymentSnapshot.transactionId)}</ns3:TransactionID>
-          <ns3:Amount>${paymentSnapshot.amount}</ns3:Amount>
+          <ns3:Amount>${escapeXml(paymentSnapshot.amount)}</ns3:Amount>
           <ns3:MsgSubId></ns3:MsgSubId>
           <ns3:AuthorizationInfo>
             <ns3:PendingReason>${escapeXml(paymentSnapshot.pendingReason)}</ns3:PendingReason>
@@ -847,10 +845,10 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
     .join('');
   return `<ns2:LineItem
             Sku="${escapeXml(sku)}"
-            Quantity="${qty}"
-            UnitSellingPrice="${price}"
-            UnitOfMeasure="${unitOfMeasure}">
-            <ns2:Tax Amount="${tax}" Provisional="true" />${serialEl}${promoEl}
+            Quantity="${escapeXml(qty)}"
+            UnitSellingPrice="${escapeXml(price)}"
+            UnitOfMeasure="${escapeXml(unitOfMeasure)}">
+            <ns2:Tax Amount="${escapeXml(tax)}" Provisional="true" />${serialEl}${promoEl}
           </ns2:LineItem>`;
 }
 
@@ -872,7 +870,7 @@ function buildLineItemXml(sku, qty, price, tax, unitOfMeasure, serialNumber, pro
  *   names, then applied coupons), one element each. A warranty never carries a VBND code.
  */
 function buildWarrantyLineItemXml(w, serial, promotionCodes = []) {
-  const wSku = WARRANTY_VITAMIX_ID[w.sku] || w.sku || '';
+  const wSku = (Object.hasOwn(WARRANTY_VITAMIX_ID, w.sku) && WARRANTY_VITAMIX_ID[w.sku]) || w.sku || '';
   const coverageYears = Number(w.custom?.coverageYears) || 1;
   const quantity = coverageYears * lineQuantity(w);
   const unitPrice = unitSellingPrice(effectiveLineTotalCents(w), quantity);
@@ -1107,61 +1105,36 @@ function matchGiftLines(order) {
  * a cart *qualified* for, so a grant is reported only when the order holds a
  * $0 line at the granted `path` (see matchGiftLines).
  *
- * The name, in order of preference:
- *   1. the catalog promotion's name (`promotionNames`, by `ruleId`). The gift
- *      line's `custom.promotionName` is then only compared with it: a
- *      different or invalid client value is reported, a missing one is not.
- *   2. the gift line's `custom.promotionName`, set by the storefront, when the
- *      catalog has no name (e.g. the promotion has ended or the catalog could
- *      not be read). Custom data is client-supplied, so it is used only when it
- *      is a non-blank string without control characters, at most
- *      {@link GWP_PROMOTION_NAME_MAX_LENGTH} characters, on a line whose
- *      `custom.promotionId` matches the grant's `ruleId`.
- *   3. the `ruleId`. A missing name is expected for orders placed before the
- *      storefront recorded it and goes to `missing`; invalid data goes to
- *      `issues` so it can be alerted on.
- * Nothing here ever fails the sync.
+ * The name comes from that gift line's `custom.promotionName`, set by the
+ * storefront. Custom data is client-supplied, so the name is used only when it
+ * is a non-blank string without control characters, at most
+ * {@link GWP_PROMOTION_NAME_MAX_LENGTH} characters, on a line whose
+ * `custom.promotionId` matches the grant's `ruleId`. Otherwise the `ruleId` is
+ * sent instead: a missing name is expected for orders placed before the
+ * storefront recorded it and goes to `missing`; anything else goes to `issues`
+ * so it can be alerted on. Nothing here ever fails the sync.
  *
  * One value per distinct promotion (by `ruleId`), in `freeItems` order. No
  * `({code})` suffix, since a GWP promotion is not a coupon.
  *
  * @param {object} order - the stored order.
- * @param {Map<string, string> | null} [promotionNames] - catalog promotion names by id.
  * @returns {{ codes: string[], issues: string[], missing: string[] }} codes to
- *   send; issues (invalid or conflicting data) and missing (ruleIds sent
- *   without a name) for reporting.
+ *   send; issues (invalid custom data) and missing (ruleIds sent without a
+ *   name) for reporting.
  */
-export function resolveGwpPromotions(order, promotionNames = null) {
+export function resolveGwpPromotions(order) {
   const result = { codes: [], issues: [], missing: [] };
   for (const { ruleId, line } of matchGiftLines(order)) {
-    const where = `gift-with-purchase ${ruleId} (${line.sku || line.path})`;
-    const client = readGiftPromotionName(line, ruleId);
-
-    let catalog = null;
-    if (promotionNames?.has(ruleId)) {
-      catalog = checkPromotionName(promotionNames.get(ruleId), 'the catalog promotion name');
-      if (catalog.invalid) {
-        result.issues.push(`${where}: ${catalog.invalid}; ignored it`);
-        catalog = null;
-      }
+    const read = readGiftPromotionName(line, ruleId);
+    if (read.name) {
+      result.codes.push(read.name);
+      continue;
     }
-
-    if (catalog) {
-      result.codes.push(catalog.name);
-      if (client.invalid) {
-        result.issues.push(`${where}: ${client.invalid}; sent the catalog name`);
-      } else if (client.name && client.name !== catalog.name) {
-        result.issues.push(`${where}: custom.promotionName ${shown(client.name)} differs from the catalog name; sent the catalog name`);
-      }
-    } else if (client.name) {
-      result.codes.push(client.name);
+    result.codes.push(ruleId);
+    if (read.invalid) {
+      result.issues.push(`gift-with-purchase ${ruleId} (${line.sku || line.path}): ${read.invalid}; sent the promotion id instead`);
     } else {
-      result.codes.push(ruleId);
-      if (client.invalid) {
-        result.issues.push(`${where}: ${client.invalid}; sent the promotion id instead`);
-      } else {
-        result.missing.push(ruleId);
-      }
+      result.missing.push(ruleId);
     }
   }
   return result;
@@ -1362,7 +1335,7 @@ function resolveCountry(order) {
 
 const SOURCE_MAP = { US: 'US', CA: 'CA', UK: 'UK', GB: 'UK', IE: 'IE' };
 function countryToSource(country) {
-  return SOURCE_MAP[country] || 'US';
+  return (Object.hasOwn(SOURCE_MAP, country) && SOURCE_MAP[country]) || 'US';
 }
 
 const PRICE_LIST_MAP = {
@@ -1373,7 +1346,7 @@ const PRICE_LIST_MAP = {
   IE: 'EUR IRELAND HH END CUSTOMER EX VAT',
 };
 function countryToPriceList(country) {
-  return PRICE_LIST_MAP[country] || 'US HH END CUSTOMER';
+  return (Object.hasOwn(PRICE_LIST_MAP, country) && PRICE_LIST_MAP[country]) || 'US HH END CUSTOMER';
 }
 
 /**
@@ -1436,9 +1409,18 @@ function sanitizeName(value) {
   return String(value || '').replace(/[&"'<>]/g, '');
 }
 
+/**
+ * Characters XML 1.0 does not allow, even escaped: C0 controls other than tab,
+ * newline and carriage return, U+FFFE/U+FFFF, and unpaired surrogates. One of
+ * them anywhere in the request makes EBS reject the whole document.
+ */
+// eslint-disable-next-line no-control-regex
+const XML_INVALID_CHARACTERS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g;
+
 /** Escape XML special characters. */
 function escapeXml(value) {
   return String(value)
+    .replace(XML_INVALID_CHARACTERS, '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
