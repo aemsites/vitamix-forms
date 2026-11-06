@@ -1,3 +1,10 @@
+## [1.19.2](https://github.com/aemsites/vitamix-forms/compare/v1.19.1...v1.19.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **feeds:** drop item_group_id and set identifier_exists in the CJ feed ([4faf862](https://github.com/aemsites/vitamix-forms/commit/4faf86224f210be56a6bc237034a185a78bb6d41))
+
 ## [1.19.1](https://github.com/aemsites/vitamix-forms/compare/v1.19.0...v1.19.1) (2026-11-06)
 
 
