@@ -237,11 +237,15 @@ export async function run(params) {
     //
     // A failed send is only known to be the order's own problem once another
     // send works after it in the same run (`confirmedAt`). Until then it may
-    // be an EBS outage: two such failures with no send working in between stop
-    // the run, so an outage doesn't burn through the queue. Confirmed orders
-    // say nothing about EBS: they don't count, and only they are released
-    // (RETRY_HOLD_MAX_MS after the first failure, not in a run that looks
-    // like an outage).
+    // be an EBS outage: when an order that never failed before fails with
+    // another unconfirmed failure before it and no send working in between,
+    // the run stops, so an outage doesn't burn through the queue (each run
+    // tries at most one new order past the held ones). Orders that already
+    // failed in an earlier run never stop it: otherwise two adjacent failing
+    // orders would stop every run before a later send could confirm them.
+    // Confirmed orders say nothing about EBS: they don't count, and only they
+    // are released (RETRY_HOLD_MAX_MS after the first failure, not in a run
+    // that looks like an outage).
     let stoppedAt = -1; // index of the first order not handled (deadline / outage stop)
     let firstHoldAt = -1; // index of the first held order
     // Scheduled runs: when each order started failing, per kind (state.readFailures / state.sendFailures).
@@ -265,7 +269,7 @@ export async function run(params) {
       } // else: released and reported earlier; don't hold, don't report again
     };
     let failed = false;
-    let sendHalted = false; // stopped on unconfirmed failed sends in a row
+    let sendHalted = false; // stopped on unconfirmed failed sends (likely outage)
     let unconfirmedStreak = 0; // unconfirmed failed sends since the last send that worked
     const toConfirm = []; // orders whose send failed in this run since the last send that worked
     let lastSendError = null;
@@ -315,8 +319,8 @@ export async function run(params) {
         if (!holds.send.failures[orderId]?.confirmedAt) {
           toConfirm.push(orderId);
           unconfirmedStreak += 1;
-          if (unconfirmedStreak >= 2) {
-            // No send has worked since the previous failure: EBS is likely down.
+          if (unconfirmedStreak >= 2 && !knownSendFailure) {
+            // A first failure, and no send has worked since the previous one: EBS is likely down.
             log.error(`[ebs-sync] Order ${orderId} failed with no send working since the previous failure. Halting.`);
             summary.halted = true;
             summary.haltReason = 'max-retries';

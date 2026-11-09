@@ -1180,6 +1180,9 @@ describe('failed sends', () => {
     const bodies = await runEvery5Min(T0, T0 + 6 * 60 * MIN, {});
 
     expect(bodies.some((b) => b.releasedFailedOrders)).toBe(false);
+    // each run tries at most one order that never failed before
+    const newPerRun = bodies.slice(1).map((b, i) => b.failedOrders.filter((id) => !bodies[i].failedOrders.includes(id)).length);
+    expect(Math.max(...newPerRun)).toBeLessThanOrEqual(1);
     expect(api.opsLog.filter((e) => e.reason === 'send_failed')).toEqual([]);
     expect(persisted().since).toBe(iso(T0));
     expect(incidentAlerts('send_failures').length).toBeGreaterThan(0);
@@ -1266,6 +1269,26 @@ describe('failed sends', () => {
     expect(deferred.haltReason).toBe('deadline');
     expect(ebsHooks.attempts.filter((a) => a.at > T0 + 10 * MIN)).toEqual([]);
     expect(persisted().sendFailures['synth-clock']).toEqual(first);
+  });
+
+  test('two adjacent failing orders do not stop the sync', async () => {
+    ['synth-a1', 'synth-a2', 'synth-ok1'].forEach((id, i) => api.addOrder({ id, completedAt: T0 - (10 - i) * MIN }));
+    ebsHooks.failIds.add('synth-a1');
+    ebsHooks.failIds.add('synth-a2');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    // first failures of both: may be an outage, so the run stops
+    const first = await scheduledRun({});
+    expect(first).toMatchObject({ halted: true, haltReason: 'max-retries' });
+    expect(sent).toEqual([]);
+
+    // next run: both already failed before, so they don't stop it; ok1 is sent and confirms them
+    api.addOrder({ id: 'synth-new', completedAt: T0 + 2 * MIN });
+    const bodies = await runEvery5Min(T0 + 5 * MIN, T0 + 6 * 60 * MIN, {});
+    expect(sent).toEqual(['synth-ok1', 'synth-new']);
+    expect(bodies.every((b) => !b.halted)).toBe(true);
+    expect(bodies.flatMap((b) => b.releasedFailedOrders ?? []).sort()).toEqual(['synth-a1', 'synth-a2']);
+    expect(Date.parse(persisted().since)).toBeGreaterThan(T0 + 4 * 60 * MIN);
   });
 });
 
