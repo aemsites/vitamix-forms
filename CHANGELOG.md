@@ -1,3 +1,12 @@
+## [1.19.3](https://github.com/aemsites/vitamix-forms/compare/v1.19.2...v1.19.3) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ebs-sync:** count only unconfirmed send failures toward the outage stop ([c0edf36](https://github.com/aemsites/vitamix-forms/commit/c0edf36bf9ecc44553590974b1e6308ef8645905))
+* **ebs-sync:** don't let one failing order halt the sync; alert on failed sends once ([658d052](https://github.com/aemsites/vitamix-forms/commit/658d05269d542d60b7c3c4758aec42db4fe15136))
+* **ebs-sync:** only a first-time failure stops the run on a failed-send streak ([58b3730](https://github.com/aemsites/vitamix-forms/commit/58b3730dad9fc586ca620a6ba956d8785d470f50))
+
 ## [1.19.2](https://github.com/aemsites/vitamix-forms/compare/v1.19.1...v1.19.2) (2026-11-06)
 
 
