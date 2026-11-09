@@ -1146,16 +1146,17 @@ describe('failed sends', () => {
     expect(persisted().since).toBe(iso(T0 - 10 * MIN));
     expect(alerts('send_failed')).toEqual([]);
 
-    // past the limit, but no other send has worked yet: still held
+    // past the limit, but not known to be the order's own failure (no other send has worked yet): still held
     at(T0 + held + 5 * MIN);
     expect((await scheduledRun({})).releasedFailedOrders).toBeUndefined();
     expect(persisted().since).toBe(iso(T0 - 10 * MIN));
 
-    // another order goes through, so EBS works: released
+    // another order goes through after it: confirmed, released on the next run
     api.addOrder({ id: 'synth-ok-later', completedAt: T0 + held + 7 * MIN });
 
     const bodies = await runEvery5Min(T0 + held + 10 * MIN, T0 + held + 2 * 60 * MIN, {});
-    expect(bodies[0].releasedFailedOrders).toEqual(['synth-stuck-send']);
+    expect(bodies[0].releasedFailedOrders).toBeUndefined();
+    expect(bodies[1].releasedFailedOrders).toEqual(['synth-stuck-send']);
     expect(api.opsLog.filter((e) => e.reason === 'send_failed')).toEqual([
       expect.objectContaining({ orderIds: ['synth-stuck-send'], error: expect.stringContaining('orderId') }),
     ]);
@@ -1183,4 +1184,88 @@ describe('failed sends', () => {
     expect(persisted().since).toBe(iso(T0));
     expect(incidentAlerts('send_failures').length).toBeGreaterThan(0);
   });
+
+  test('two failing orders with a good one between them do not stop the sync', async () => {
+    ['synth-q1', 'synth-q2', 'synth-q3'].forEach((id, i) => api.addOrder({ id, completedAt: T0 - (10 - i) * MIN }));
+    ebsHooks.failIds.add('synth-q1');
+    ebsHooks.failIds.add('synth-q3');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    await scheduledRun({});
+    api.addOrder({ id: 'synth-q4', completedAt: T0 + 2 * MIN });
+    const bodies = await runEvery5Min(T0 + 5 * MIN, T0 + 6 * 60 * MIN, {});
+
+    expect(sent).toEqual(['synth-q2', 'synth-q4']);
+    expect(bodies.every((b) => !b.halted)).toBe(true);
+    // both proven order-specific (a send worked after them), so both are released
+    const released = bodies.flatMap((b) => b.releasedFailedOrders ?? []);
+    expect(released.sort()).toEqual(['synth-q1', 'synth-q3']);
+    expect(Date.parse(persisted().since)).toBeGreaterThan(T0 + 4 * 60 * MIN);
+  });
+
+  test('an order that already failed gets a single attempt on later runs', async () => {
+    api.addOrder({ id: 'synth-timeout', completedAt: T0 - 10 * MIN });
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    ebsHooks.onSend = (order) => {
+      if (order.id !== 'synth-timeout') return;
+      const err = new Error('The operation was aborted due to timeout');
+      err.retriable = true;
+      throw err;
+    };
+    const run = async () => {
+      const p = scheduledRun({});
+      await jest.runAllTimersAsync();
+      return p;
+    };
+
+    await run();
+    expect(ebsHooks.attempts).toHaveLength(3);
+
+    at(T0 + 5 * MIN);
+    await run();
+    expect(ebsHooks.attempts).toHaveLength(4);
+
+    // a new order still gets its full retries
+    api.addOrder({ id: 'synth-new-timeout', completedAt: T0 + 6 * MIN });
+    ebsHooks.onSend = () => {
+      const err = new Error('The operation was aborted due to timeout');
+      err.retriable = true;
+      throw err;
+    };
+    at(T0 + 10 * MIN);
+    await run();
+    expect(ebsHooks.attempts.filter((a) => a.id === 'synth-new-timeout')).toHaveLength(3);
+  });
+
+  test('the failure clock is kept when the order is not sent (read failure, no time left)', async () => {
+    api.addOrder({ id: 'synth-clock', completedAt: T0 - 10 * MIN });
+    ebsHooks.failIds.add('synth-clock');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+    await scheduledRun({});
+    const first = persisted().sendFailures['synth-clock'];
+    expect(first).toMatchObject({ since: iso(T0) });
+
+    // its read fails this time
+    api.failures.getOrder = (id) => id === 'synth-clock';
+    at(T0 + 5 * MIN);
+    expect((await scheduledRun({})).retryOrders).toEqual(['synth-clock']);
+    expect(persisted().sendFailures['synth-clock']).toEqual(first);
+    api.failures.getOrder = null;
+
+    // no time left to attempt it: deferred
+    api.addOrder({ id: 'other', completedAt: T0 - 5 * 60 * MIN });
+    at(T0 + 10 * MIN);
+    persisted().pendingCustomUpdates = { other: { syncedAt: iso(T0), failedAt: iso(T0), error: 'x' } };
+    const realFetch = api.fetch;
+    global.fetch = async (url, init) => {
+      if (init?.method === 'PATCH' && url.includes('/other/')) at(Date.now() + 8.5 * MIN);
+      return realFetch(url, init);
+    };
+    const deferred = await scheduledRun({});
+    global.fetch = realFetch;
+    expect(deferred.haltReason).toBe('deadline');
+    expect(ebsHooks.attempts.filter((a) => a.at > T0 + 10 * MIN)).toEqual([]);
+    expect(persisted().sendFailures['synth-clock']).toEqual(first);
+  });
 });
+
