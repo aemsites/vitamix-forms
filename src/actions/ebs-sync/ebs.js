@@ -967,6 +967,27 @@ function getBundleReasonCodes(order) {
 /** A discount amount followed by "off": `$25 off`, `$1,000.00 Off`, `40% off`. */
 const DISCOUNT_PHRASE = /(?:\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%)\s+off\b/i;
 
+/** A part naming a free item: `Free Tumbler`, `FREE shipping`. */
+const FREE_PHRASE = /^free\s/i;
+
+/** The longest coupon name sent before the `({code})`; see {@link capCouponName}. */
+export const COUPON_NAME_MAX_LENGTH = 50;
+
+/**
+ * Cut a name to {@link COUPON_NAME_MAX_LENGTH} characters, at a word boundary
+ * when one falls in the second half, without trailing separators.
+ *
+ * @param {string} name
+ * @returns {string}
+ */
+function capCouponName(name) {
+  if (name.length <= COUPON_NAME_MAX_LENGTH) return name;
+  const cut = name.slice(0, COUPON_NAME_MAX_LENGTH + 1);
+  const space = cut.lastIndexOf(' ');
+  const capped = space >= COUPON_NAME_MAX_LENGTH / 2 ? cut.slice(0, space) : cut.slice(0, -1);
+  return capped.replace(/[\s\-–,:;/]+$/, '');
+}
+
 /**
  * Shorten a coupon type name to the part that says what the discount is.
  * EBS shows all PromotionCodes in one field of limited length, so the
@@ -974,9 +995,11 @@ const DISCOUNT_PHRASE = /(?:\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%)\s+off\b/i
  * other codes.
  *
  * Type names follow `[#{id} ]{part}[ - {part}…]`. The leading `#{id}` is
- * dropped; then, if a ` - `-separated part names a discount (`$25 off …`,
- * `40% off …`), that part is kept from the amount on. Otherwise the name is
- * kept as it is (without the id):
+ * dropped; then the first ` - `-separated part naming a discount
+ * (`$25 off …`, `40% off …`) is kept from the amount on, else the first part
+ * naming a free item (`Free …`). Otherwise the name is kept as it is (without
+ * the id). Either way the result is capped at {@link COUPON_NAME_MAX_LENGTH}
+ * characters, so one long name can't push the other codes out of the field:
  *
  *   `#974 US 2026 MAIN Email Offer - $25 off orders over $200 - WELCOME, TEXT (SMS)`
  *     → `$25 off orders over $200`
@@ -988,8 +1011,10 @@ const DISCOUNT_PHRASE = /(?:\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%)\s+off\b/i
  */
 export function shortenCouponName(name) {
   const withoutId = name.replace(/^#\d+\s+/, '').trim() || name;
-  const part = withoutId.split(/\s+-\s+/).find((p) => DISCOUNT_PHRASE.test(p));
-  return part ? part.slice(part.search(DISCOUNT_PHRASE)).trim() : withoutId;
+  const parts = withoutId.split(/\s+-\s+/);
+  const discount = parts.find((p) => DISCOUNT_PHRASE.test(p));
+  if (discount) return capCouponName(discount.slice(discount.search(DISCOUNT_PHRASE)).trim());
+  return capCouponName(parts.find((p) => FREE_PHRASE.test(p)) ?? withoutId);
 }
 
 /**

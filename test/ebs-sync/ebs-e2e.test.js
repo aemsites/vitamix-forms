@@ -12,6 +12,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import {
   syncOrderToEbs, buildPaymentSnapshot, resolveGwpPromotions, shortenCouponName,
+  COUPON_NAME_MAX_LENGTH,
 } from '../../src/actions/ebs-sync/ebs.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -1115,8 +1116,43 @@ describe('ebs-sync e2e', () => {
         ['#12 Big Sale - $1,000.50 Off a Blender', '$1,000.50 Off a Blender'],
         ['#7 Promo - 12.5 % off everything', '12.5 % off everything'],
         ['$25 Off $200', '$25 Off $200'],
+        ['#40 Rewards - Free Tumbler - RWD1 - US', 'Free Tumbler'],
+        ['#41 Spring - FREE shipping on blenders', 'FREE shipping on blenders'],
+        ['#42 Spring - Free Tumbler - $10 off a blender', '$10 off a blender'],
       ])('keeps the discount part of %j', (name, expected) => {
         expect(shortenCouponName(name)).toBe(expected);
+      });
+
+      test.each([
+        [
+          'at a word boundary',
+          '#43 Get a Tumbler for $5 when you buy a Blender and a Container',
+          'Get a Tumbler for $5 when you buy a Blender and a',
+        ],
+        [
+          'without a trailing separator',
+          '#44 Partner Accounts - Regional Portal Program -- Extra Words',
+          'Partner Accounts - Regional Portal Program',
+        ],
+        [
+          'mid-word when no space falls in the second half',
+          'Supercalifragilisticexpialidociously-long-single-word-coupon-name',
+          'Supercalifragilisticexpialidociously-long-single-w',
+        ],
+        [
+          'a long discount part',
+          '#45 Promo - $25 off any blender, container, accessory or cookbook in the store',
+          '$25 off any blender, container, accessory or',
+        ],
+      ])('caps a long name %s', (_label, name, expected) => {
+        const short = shortenCouponName(name);
+        expect(short).toBe(expected);
+        expect(short.length).toBeLessThanOrEqual(COUPON_NAME_MAX_LENGTH);
+      });
+
+      test('keeps a name of exactly the maximum length', () => {
+        const name = `Partner ${'x'.repeat(COUPON_NAME_MAX_LENGTH - 8)}`;
+        expect(shortenCouponName(name)).toBe(name);
       });
 
       test.each([
@@ -1300,6 +1336,17 @@ describe('ebs-sync e2e', () => {
           ['null', null],
         ])('falls back to the promotion name when the threshold is %s', async (_label, minimumSubtotal) => {
           expect(await headerCodes(gwpOrder([freeItem({ minimumSubtotal })]))).toEqual([GWP_NAME]);
+        });
+
+        test('sends one value for two promotions with the same name and no threshold', async () => {
+          const otherPath = '/us/en_us/products/tumbler';
+          const order = gwpOrder([freeItem(), freeItem({ path: otherPath, ruleId: 'second-gwp' })], {
+            gifts: [
+              giftLine(),
+              giftLine({ sku: 'tumbler-sku', path: otherPath, custom: giftCustom({ promotionId: 'second-gwp' }) }),
+            ],
+          });
+          expect(await headerCodes(order)).toEqual([GWP_NAME]);
         });
 
         test('sends one value for two promotions at the same threshold', async () => {
