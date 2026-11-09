@@ -244,13 +244,15 @@ describe('ebs-sync managed inventory outbox', () => {
       entries: [
         { orderId: 'ok-1', event: 'payment_completed' },
         { orderId: 'bad', event: 'payment_completed' },
+        { orderId: 'bad-too', event: 'payment_completed' },
         { orderId: 'never', event: 'payment_completed' },
       ],
       until: '2026-01-01T00:00:00.000Z',
     });
     getOrder.mockImplementation(async (_p, id) => orderWithItems(id));
+    // two failed sends in a row halt the run
     syncOrderToEbs.mockImplementation(async (_ctx, _p, order) => {
-      if (order.id === 'bad') throw new Error('EBS rejected order');
+      if (order.id.startsWith('bad')) throw new Error('EBS rejected order');
       return { status: 200, xml: '<xml/>' };
     });
 

@@ -354,15 +354,15 @@ describe('cursor on deadline', () => {
     expect(persisted().since).toBe(iso(T0 - 10 * MIN)); // synth-x's entry, before the old cursor
   });
 
-  test('max-retries halt keeps the cursor', async () => {
+  test('a failed send holds the cursor at the order', async () => {
     api.addOrder({ id: 'synth-bad', completedAt: T0 - 10 * MIN });
     ebsHooks.failIds.add('synth-bad');
     fakeState.store.state = { since: iso(T0 - 5 * MIN) };
 
     const body = await scheduledRun();
 
-    expect(body.haltReason).toBe('max-retries');
-    expect(persisted().since).toBe(iso(T0 - 5 * MIN));
+    expect(body).toMatchObject({ halted: false, failedOrders: ['synth-bad'] });
+    expect(persisted().since).toBe(iso(T0 - 10 * MIN));
   });
 
   test('nextCursor / terminalOrders', () => {
@@ -603,14 +603,15 @@ describe('manual runs and the scheduled status', () => {
     fakeState.store.state = { since: iso(T0 - 5 * MIN), status: 'idle', lastError: null };
 
     const { body } = await manualRun({ since: iso(T0 - 3 * 60 * MIN - MIN), duration: 5 });
-    expect(body.haltReason).toBe('max-retries');
+    expect(body).toMatchObject({ failedOrders: ['synth-mfail'], nextSince: iso(T0 - 3 * 60 * MIN) });
     expect(persisted()).toMatchObject({ status: 'idle', lastError: null });
-    expect(persisted().lastManualRun).toMatchObject({ haltReason: 'max-retries', nextSince: body.since });
+    expect(persisted().lastManualRun).toMatchObject({ failedOrders: ['synth-mfail'], nextSince: body.nextSince });
+    expect(persisted().sendFailures).toBeUndefined();
 
     const status = await main({
       ...PARAMS, SYNC_STATUS_TOKEN: 'secret', __ow_method: 'get', __ow_headers: { authorization: 'Bearer secret' },
     });
-    expect(JSON.parse(status.body).lastManualRun).toMatchObject({ haltReason: 'max-retries', finishedAt: expect.any(String) });
+    expect(JSON.parse(status.body).lastManualRun).toMatchObject({ failedOrders: ['synth-mfail'], finishedAt: expect.any(String) });
   });
 
   test('a manual run that throws is recorded too', async () => {
@@ -1039,5 +1040,147 @@ describe('orders listing range checks', () => {
   ])('%s throws without calling the API', async (_name, since, until, message) => {
     await expect(listOrders(PARAMS, { since, until })).rejects.toThrow(message);
     expect(listCalls()).toEqual([]);
+  });
+});
+
+describe('failed sends', () => {
+  const incidentAlerts = (reason) => api.opsLog.filter((e) => e.source === 'ebs-sync' && e.reason === reason);
+
+  test('one failing order holds the cursor but does not block the orders after it', async () => {
+    api.addOrder({ id: 'synth-poison', completedAt: T0 - 10 * MIN });
+    api.addOrder({ id: 'synth-after1', completedAt: T0 - 8 * MIN });
+    api.addOrder({ id: 'synth-after2', completedAt: T0 - 6 * MIN });
+    ebsHooks.failIds.add('synth-poison');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    const body = await scheduledRun();
+
+    expect(sent).toEqual(['synth-after1', 'synth-after2']);
+    expect(body).toMatchObject({ halted: false, failedOrders: ['synth-poison'], nextSince: iso(T0 - 10 * MIN) });
+    expect(body.reconcile.skipped).toBeUndefined(); // the last send worked
+    expect(persisted()).toMatchObject({
+      since: iso(T0 - 10 * MIN),
+      status: 'error',
+      lastError: expect.stringContaining('synthetic'),
+      sendFailures: { 'synth-poison': { since: iso(T0), reportedAt: null } },
+    });
+    expect(api.orders.get('synth-poison').custom.syncError).toBeTruthy();
+
+    // retried next run; the rest are not resent
+    at(T0 + 5 * MIN);
+    await scheduledRun();
+    expect(ebsHooks.attempts.filter((a) => a.id === 'synth-poison').length).toBeGreaterThan(1);
+    expect(sent).toEqual(['synth-after1', 'synth-after2']);
+
+    // fixed: sent, hold and error cleared
+    ebsHooks.failIds.clear();
+    at(T0 + 10 * MIN);
+    const fixed = await scheduledRun();
+    expect(sent).toEqual(['synth-after1', 'synth-after2', 'synth-poison']);
+    expect(fixed.failedOrders).toBeUndefined();
+    expect(persisted()).toMatchObject({ status: 'idle', sendFailures: {}, since: iso(T0 + 10 * MIN) });
+  });
+
+  test('two failed sends in a row stop the run (EBS likely down)', async () => {
+    ['synth-o1', 'synth-o2', 'synth-o3'].forEach((id, i) => api.addOrder({ id, completedAt: T0 - (10 - i) * MIN }));
+    ['synth-o1', 'synth-o2', 'synth-o3'].forEach((id) => ebsHooks.failIds.add(id));
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    const body = await scheduledRun();
+
+    expect(body).toMatchObject({
+      halted: true, haltReason: 'max-retries', failedOrders: ['synth-o1', 'synth-o2'], nextSince: iso(T0 - 10 * MIN),
+    });
+    expect(ebsHooks.attempts.some((a) => a.id === 'synth-o3')).toBe(false);
+    expect(body.reconcile).toEqual({ skipped: 'journal-pass-failed' });
+  });
+
+  test('a failure followed by a success is order-specific: the run goes on', async () => {
+    ['synth-p1', 'synth-p2', 'synth-p3', 'synth-p4'].forEach((id, i) => api.addOrder({ id, completedAt: T0 - (10 - i) * MIN }));
+    ebsHooks.failIds.add('synth-p1');
+    ebsHooks.failIds.add('synth-p3');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    const body = await scheduledRun();
+
+    expect(sent).toEqual(['synth-p2', 'synth-p4']);
+    expect(body).toMatchObject({ halted: false, failedOrders: ['synth-p1', 'synth-p3'], nextSince: iso(T0 - 10 * MIN) });
+  });
+
+  test('alert once failing for 30 minutes, then hourly, not on every attempt; clear on recovery', async () => {
+    api.addOrder({ id: 'synth-poison2', completedAt: T0 - 10 * MIN });
+    ebsHooks.failIds.add('synth-poison2');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    await runEvery5Min(T0, T0 + INCIDENT_ALERT_AFTER_MS - 5 * MIN, {});
+    expect(incidentAlerts('send_failures')).toEqual([]);
+    // per-attempt events are recorded but carry no `error`, so they don't alert
+    const attempts = api.opsLog.filter((e) => e.id === 'synth-poison2');
+    expect(attempts.length).toBeGreaterThan(0);
+    expect(attempts.every((e) => e.error === undefined && e.attemptError)).toBe(true);
+
+    at(T0 + INCIDENT_ALERT_AFTER_MS);
+    const body = await scheduledRun({});
+    expect(body.alerts).toEqual(['send_failures']);
+    expect(incidentAlerts('send_failures')).toEqual([
+      expect.objectContaining({ since: iso(T0), orderIds: ['synth-poison2'], error: expect.stringContaining('synthetic') }),
+    ]);
+
+    await runEvery5Min(T0 + INCIDENT_ALERT_AFTER_MS + 5 * MIN, T0 + INCIDENT_ALERT_AFTER_MS + INCIDENT_REPEAT_MS, {});
+    expect(incidentAlerts('send_failures')).toHaveLength(2);
+
+    ebsHooks.failIds.clear();
+    at(T0 + 2 * 60 * MIN);
+    await scheduledRun({});
+    expect(sent).toEqual(['synth-poison2']);
+    expect(persisted().incidents).toEqual({});
+  });
+
+  test('released after the hold limit: reported once, cursor moves on, still has syncError', async () => {
+    api.addOrder({ id: 'synth-stuck-send', completedAt: T0 - 10 * MIN });
+    ebsHooks.failIds.add('synth-stuck-send');
+    fakeState.store.state = { since: iso(T0 - 15 * MIN) };
+
+    const held = RETRY_HOLD_MAX_MS - 5 * MIN;
+    await runEvery5Min(T0, T0 + held, {});
+    expect(persisted().since).toBe(iso(T0 - 10 * MIN));
+    expect(alerts('send_failed')).toEqual([]);
+
+    // past the limit, but no other send has worked yet: still held
+    at(T0 + held + 5 * MIN);
+    expect((await scheduledRun({})).releasedFailedOrders).toBeUndefined();
+    expect(persisted().since).toBe(iso(T0 - 10 * MIN));
+
+    // another order goes through, so EBS works: released
+    api.addOrder({ id: 'synth-ok-later', completedAt: T0 + held + 7 * MIN });
+
+    const bodies = await runEvery5Min(T0 + held + 10 * MIN, T0 + held + 2 * 60 * MIN, {});
+    expect(bodies[0].releasedFailedOrders).toEqual(['synth-stuck-send']);
+    expect(api.opsLog.filter((e) => e.reason === 'send_failed')).toEqual([
+      expect.objectContaining({ orderIds: ['synth-stuck-send'], error: expect.stringContaining('orderId') }),
+    ]);
+    expect(Date.parse(persisted().since)).toBeGreaterThan(T0 + held);
+    expect(api.orders.get('synth-stuck-send').custom.syncError).toBeTruthy();
+    expect(sent).toEqual(['synth-ok-later']);
+
+    // once out of the journal window it is no longer retried; the incident clears
+    expect(persisted().sendFailures).toEqual({});
+    expect(persisted().incidents).toEqual({});
+  });
+
+  test('nothing is released during an EBS outage', async () => {
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    for (let t = T0; t < T0 + 6 * 60 * MIN; t += 10 * MIN) {
+      const id = `synth-down${(t - T0) / MIN}`;
+      api.addOrder({ id, completedAt: t });
+      ebsHooks.failIds.add(id);
+    }
+
+    const bodies = await runEvery5Min(T0, T0 + 6 * 60 * MIN, {});
+
+    expect(bodies.some((b) => b.releasedFailedOrders)).toBe(false);
+    expect(api.opsLog.filter((e) => e.reason === 'send_failed')).toEqual([]);
+    expect(persisted().since).toBe(iso(T0));
+    expect(incidentAlerts('send_failures').length).toBeGreaterThan(0);
   });
 });

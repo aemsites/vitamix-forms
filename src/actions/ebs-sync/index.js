@@ -21,9 +21,9 @@
  *     omit both to scan up to the current time.
  *     The persisted (scheduled) cursor is NOT changed unless `persistCursor` is
  *     true, in which case it is set to the response's `nextSince`. `nextSince`
- *     is where the window was fully handled up to: `until` when complete, the
- *     first unhandled order's terminal entry on the deadline, `since` on a
- *     max-retries halt. POST again from `nextSince` to finish a long backfill.
+ *     is where the window was fully handled up to: `until` when complete, else
+ *     the terminal entry of the first order not handled (deadline, failed
+ *     reads or send, halt). POST again from `nextSince` to finish a long backfill.
  *     Manual runs never run the reconciliation pass. Orders already synced are
  *     skipped; anything else in the window IS sent to EBS, which has no
  *     duplicate protection.
