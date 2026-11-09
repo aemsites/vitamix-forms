@@ -20,10 +20,13 @@
  *           the order is saved in state.pendingCustomUpdates so later runs retry
  *           only the patch and don't send the order to EBS again.
  *        e. On max-retries exhausted: patches custom.syncError with a short error
- *           code, records the error and halts
+ *           code, records the error and holds the cursor at the order (like a
+ *           read failure, see step 3 in run()); a second failed send in a row
+ *           halts the run
  *   5. Checks a 9.5-minute deadline before each order (see Time below)
- *   6. Cursor (see nextCursor): completed → the query's `until`; max-retries →
- *      unchanged; deadline → the terminal entry of the first order not handled
+ *   6. Cursor (see nextCursor): completed → the query's `until`; deadline,
+ *      held order or a halt on failed sends → the terminal entry of the first
+ *      order not handled
  *   7. Scheduled runs only, at most hourly, and only when EBS_RECONCILE_ENABLED
  *      is "true" (set per deploy environment): reconciliation (reconcile.js) lists
  *      recently completed orders without syncedAt / syncError straight from the
@@ -82,10 +85,11 @@ export const EBS_ATTEMPT_TIMEOUT_MS = 60_000;
 export const AFTER_SEND_RESERVE_MS = 60_000;
 const PENDING_SAVE_RETRIES = 2;
 /**
- * How long an order's reads may keep failing (measured from the first failure,
- * in state.readFailures) while it holds the cursor. Past this it is reported
- * once and the cursor moves on; a manual POST { orderId } sends it later.
- * Manual runs never release: their nextSince stays on the order.
+ * How long an order's reads or EBS sends may keep failing (measured from the
+ * first failure, in state.readFailures / state.sendFailures) while it holds
+ * the cursor. Past this it is reported once and the cursor moves on; a manual
+ * POST { orderId } sends it later. Manual runs never release: their nextSince
+ * stays on the order.
  */
 export const RETRY_HOLD_MAX_MS = 4 * 60 * 60 * 1000; // early alerts: INCIDENT_ALERT_AFTER_MS
 /**
@@ -225,12 +229,50 @@ export async function run(params) {
     );
 
     // ── 3. Process each order ──────────────────────────────────────────
-    let stoppedAt = -1; // index of the first order not handled on deadline
-    let firstRetryAt = -1; // index of the first order whose reads failed (held)
-    const released = []; // indexes of orders unreadable for RETRY_HOLD_MAX_MS, not reported yet
-    // Scheduled runs: when each order's reads started failing (state.readFailures).
-    const readFailures = manual ? {} : { ...(state.readFailures || {}) };
+    // An order whose reads fail ('retry') or whose EBS send fails ('failed')
+    // doesn't stop the others: the cursor is held at its entry so it is
+    // retried every run (scheduled runs: a failed send gets a single attempt
+    // after its first run), until it has failed for RETRY_HOLD_MAX_MS; then
+    // it is reported once and released. Manual runs never release.
+    //
+    // A failed send is only known to be the order's own problem once another
+    // send works after it in the same run (`confirmedAt`). Until then it may
+    // be an EBS outage: when an order that never failed before fails with
+    // another unconfirmed failure before it and no send working in between,
+    // the run stops, so an outage doesn't burn through the queue (each run
+    // tries at most one new order past the held ones). Orders that already
+    // failed in an earlier run never stop it: otherwise two adjacent failing
+    // orders would stop every run before a later send could confirm them.
+    // Confirmed orders say nothing about EBS: they don't count, and only they
+    // are released (RETRY_HOLD_MAX_MS after the first failure, not in a run
+    // that looks like an outage).
+    let stoppedAt = -1; // index of the first order not handled (deadline / outage stop)
+    let firstHoldAt = -1; // index of the first held order
+    // Scheduled runs: when each order started failing, per kind (state.readFailures / state.sendFailures).
+    const holds = {
+      read: { failures: manual ? {} : { ...(state.readFailures || {}) }, released: [] },
+      send: { failures: manual ? {} : { ...(state.sendFailures || {}) }, released: [] },
+    };
+    const now = () => new Date().toISOString();
+    const hold = (kind, i) => {
+      const { orderId } = queue[i];
+      const { failures, released } = holds[kind];
+      if (!manual) failures[orderId] ??= { since: now(), reportedAt: null };
+      const failure = failures[orderId];
+      if (manual
+        || Date.now() - Date.parse(failure.since) < RETRY_HOLD_MAX_MS
+        // A send failure is only released once known to be the order's own.
+        || (kind === 'send' && !failure.confirmedAt)) {
+        if (firstHoldAt < 0) firstHoldAt = i;
+      } else if (!failure.reportedAt) {
+        released.push(i);
+      } // else: released and reported earlier; don't hold, don't report again
+    };
     let failed = false;
+    let sendHalted = false; // stopped on unconfirmed failed sends (likely outage)
+    let unconfirmedStreak = 0; // unconfirmed failed sends since the last send that worked
+    const toConfirm = []; // orders whose send failed in this run since the last send that worked
+    let lastSendError = null;
     for (let i = 0; i < queue.length; i++) {
       if (Date.now() > deadlineAt) {
         log.info(`[ebs-sync] Approaching 10-minute deadline. Stopping with ${queue.length - i} order(s) left.`);
@@ -240,8 +282,22 @@ export async function run(params) {
         break;
       }
 
-      const { outcome, stopRun } = await processOrder(runCtx, queue[i].orderId);
-      if (outcome !== 'retry') delete readFailures[queue[i].orderId]; // readable again
+      const { orderId } = queue[i];
+      const knownSendFailure = holds.send.failures[orderId];
+      const { outcome, stopRun } = await processOrder(runCtx, orderId, {
+        // Already used its retries in an earlier run.
+        ...(knownSendFailure ? { maxAttempts: 1 } : {}),
+      });
+      if (outcome !== 'retry') delete holds.read.failures[orderId]; // readable again
+      if (outcome === 'synced' || outcome === 'skipped') delete holds.send.failures[orderId]; // sent, or no longer to send
+      if (outcome === 'synced') {
+        // EBS works: the failures before this one were the orders' own.
+        unconfirmedStreak = 0;
+        for (const id of toConfirm.splice(0)) {
+          const failure = holds.send.failures[id];
+          if (failure && !failure.confirmedAt) failure.confirmedAt = now();
+        }
+      }
       if (stopRun) {
         // EBS has the order but neither syncedAt nor the pending update could
         // be stored. Send nothing more; keep the cursor so it is re-read.
@@ -251,33 +307,33 @@ export async function run(params) {
         break;
       }
       if (outcome === 'retry') {
-        // Order or journal read failed: keep going, but the cursor must not
-        // pass this order's entry (or it would never be read again) until its
-        // reads have failed for RETRY_HOLD_MAX_MS (scheduled runs only): then
-        // it is reported once and released, so one unreadable order can't
-        // stop the sync. Its reads are still retried while it is in the window.
-        const { orderId } = queue[i];
+        // Order or journal read failed. Its reads are retried while it is in the window.
         summary.retryOrders = [...(summary.retryOrders ?? []), orderId];
-        if (!manual) {
-          readFailures[orderId] ??= { since: new Date().toISOString(), reportedAt: null };
-        }
-        const failure = readFailures[orderId];
-        if (manual || Date.now() - Date.parse(failure.since) < RETRY_HOLD_MAX_MS) {
-          if (firstRetryAt < 0) firstRetryAt = i;
-        } else if (!failure.reportedAt) {
-          released.push(i);
-        } // else: released and reported earlier; don't hold, don't report again
+        hold('read', i);
         continue;
       }
       if (outcome === 'failed') {
-        summary.halted = true;
-        summary.haltReason = 'max-retries';
-        failed = true;
-        break;
+        summary.failedOrders = [...(summary.failedOrders ?? []), orderId];
+        lastSendError = state.lastError;
+        hold('send', i);
+        if (!holds.send.failures[orderId]?.confirmedAt) {
+          toConfirm.push(orderId);
+          unconfirmedStreak += 1;
+          if (unconfirmedStreak >= 2 && !knownSendFailure) {
+            // A first failure, and no send has worked since the previous one: EBS is likely down.
+            log.error(`[ebs-sync] Order ${orderId} failed with no send working since the previous failure. Halting.`);
+            summary.halted = true;
+            summary.haltReason = 'max-retries';
+            sendHalted = true;
+            stoppedAt = i;
+            break;
+          }
+        }
+        continue;
       }
       if (outcome === 'deferred') {
         // Not enough time left to send it safely; it is first next run.
-        log.info(`[ebs-sync] Not enough time left to send ${queue[i].orderId}. Stopping with ${queue.length - i} order(s) left.`);
+        log.info(`[ebs-sync] Not enough time left to send ${orderId}. Stopping with ${queue.length - i} order(s) left.`);
         summary.halted = true;
         summary.haltReason = 'deadline';
         stoppedAt = i;
@@ -285,32 +341,41 @@ export async function run(params) {
       }
     }
 
-    if (released.length) {
-      // Release only once the report is delivered: past the cursor these
-      // orders are never read again. Otherwise keep holding and retry.
-      // At most one report per INCIDENT_REPEAT_MS: orders due in between
-      // keep holding the cursor and go out together in the next report.
-      const lastReport = Date.parse(state.releaseReportedAt);
-      const due = Number.isNaN(lastReport) || Date.now() - lastReport >= INCIDENT_REPEAT_MS;
+    // Release only once the report is delivered: past the cursor these
+    // orders are never read again. Otherwise keep holding and retry.
+    // At most one report per kind per INCIDENT_REPEAT_MS: orders due in
+    // between keep holding the cursor and go out together in the next report.
+    // Failed sends (confirmed ones, see hold) are not released in a run that
+    // looks like an EBS outage: a send failed with none working since.
+    const sendsWork = !sendHalted && unconfirmedStreak === 0;
+    for (const [kind, { failures, released }] of Object.entries(holds)) {
+      if (!released.length) continue;
+      const reportedAtKey = RELEASE_REPORTED_AT[kind];
+      const lastReport = Date.parse(state[reportedAtKey]);
+      const due = (kind !== 'send' || sendsWork)
+        && (Number.isNaN(lastReport) || Date.now() - lastReport >= INCIDENT_REPEAT_MS);
       const ids = released.map((i) => queue[i].orderId);
-      if (due && await reportReleased(runCtx, ids)) {
-        summary.releasedOrders = ids;
+      if (due && await reportReleased(runCtx, kind, ids)) {
+        summary[RELEASED_SUMMARY_KEY[kind]] = ids;
         const at = new Date().toISOString();
-        state.releaseReportedAt = at;
-        for (const id of ids) readFailures[id].reportedAt = at;
-      } else if (firstRetryAt < 0 || released[0] < firstRetryAt) {
-        [firstRetryAt] = released;
+        state[reportedAtKey] = at;
+        for (const id of ids) failures[id].reportedAt = at;
+      } else if (firstHoldAt < 0 || released[0] < firstHoldAt) {
+        [firstHoldAt] = released;
       }
     }
     if (!manual) {
       // Only orders still in the read window can fail again; forget the rest.
       const inQueue = new Set(queue.map((q) => q.orderId));
-      for (const id of Object.keys(readFailures)) if (!inQueue.has(id)) delete readFailures[id];
-      state.readFailures = readFailures;
+      for (const { failures } of Object.values(holds)) {
+        for (const id of Object.keys(failures)) if (!inQueue.has(id)) delete failures[id];
+      }
+      state.readFailures = holds.read.failures;
+      state.sendFailures = holds.send.failures;
     }
 
     // ── 4. Cursor ──────────────────────────────────────────────────────
-    const holdAt = [stoppedAt, firstRetryAt].filter((x) => x >= 0);
+    const holdAt = [stoppedAt, firstHoldAt].filter((x) => x >= 0);
     summary.nextSince = nextCursor({
       scanSince, batchUntil, failed, stoppedAt: holdAt.length ? Math.min(...holdAt) : -1, queue,
     });
@@ -324,8 +389,8 @@ export async function run(params) {
       summary.reconcile = { skipped: 'disabled' };
     } else if (manual) {
       summary.reconcile = { skipped: 'manual' };
-    } else if (failed) {
-      // EBS just failed for an order; don't send more until the next pass.
+    } else if (failed || sendHalted || unconfirmedStreak > 0) {
+      // A send failed with none working since; don't send more until the next pass.
       summary.reconcile = { skipped: 'journal-pass-failed' };
     } else if (summary.haltReason === 'deadline' || Date.now() > deadlineAt - RECONCILE_MIN_REMAINING_MS) {
       summary.reconcile = { skipped: 'deadline' };
@@ -347,6 +412,11 @@ export async function run(params) {
       state.lastRun = new Date().toISOString();
       if (failed) {
         state.status = 'error';
+      } else if (summary.failedOrders?.length) {
+        // A later success clears lastError; keep the failure visible in GET.
+        state.status = 'error';
+        state.lastError = lastSendError;
+        summary.lastError = lastSendError;
       } else if (summary.retryOrders?.length) {
         // Reads failed: visible in GET even when nothing else went wrong (an
         // expired orders token makes every order a retry and stops the cursor).
@@ -359,6 +429,10 @@ export async function run(params) {
       await trackIncident(runCtx, 'read_failures', summary.retryOrders?.length > 0, {
         error: `Order or order-journal reads have been failing for ebs-sync; affected orders are retried every run (cursor held up to ${RETRY_HOLD_MAX_MS / 3_600_000}h).`,
         orderIds: summary.retryOrders,
+      });
+      await trackIncident(runCtx, 'send_failures', summary.failedOrders?.length > 0, {
+        error: `EBS sends are failing for ${summary.failedOrders?.length} order(s)${sendHalted ? '; the sync is halted' : ''}: ${firstLine(lastSendError)}. Failed orders are retried every run (cursor held up to ${RETRY_HOLD_MAX_MS / 3_600_000}h).`,
+        orderIds: summary.failedOrders,
       });
       await trackIncident(runCtx, 'run_failing', false);
       await saveState(state);
@@ -390,7 +464,7 @@ export async function run(params) {
 function manualRunRecord(summary) {
   const keys = [
     'since', 'until', 'orderId', 'outcome', 'reason', 'nextSince', 'cursorPersisted',
-    'processedOrders', 'retryOrders', 'releasedOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
+    'processedOrders', 'retryOrders', 'releasedOrders', 'failedOrders', 'releasedFailedOrders', 'pendingCustomUpdates', 'halted', 'haltReason', 'lastError', 'startedAt',
   ];
   const record = Object.fromEntries(keys.filter((k) => k in summary).map((k) => [k, summary[k]]));
   record.finishedAt = new Date().toISOString();
@@ -449,10 +523,11 @@ export function terminalOrders(entries) {
  * Where the next run should start reading.
  *
  *   completed      → the queried `until`, even for an empty batch
- *   max-retries    → unchanged (`scanSince`): the batch is re-read next run
- *   deadline / read failure
+ *   failed         → unchanged (`scanSince`): the batch is re-read next run
+ *                    (state-unavailable stop)
+ *   deadline / held order / failed-send halt
  *                  → the terminal entry of the first unhandled order (stoppedAt:
- *                    deadline stop or the first order whose reads failed), so
+ *                    a stop, or the first order whose reads or send failed), so
  *                    the next run re-reads it; unchanged if its time is unknown
  *
  * @returns {string | null}
@@ -484,7 +559,7 @@ export function skipReason(state, orderId, order) {
  *
  * @returns {Promise<{ outcome: 'synced' | 'skipped' | 'retry' | 'failed' | 'deferred', reason?: string, stopRun?: boolean }>}
  */
-async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) {
+async function processOrder(runCtx, orderId, { requireCompleted = false, maxAttempts } = {}) {
   const { params, log, state } = runCtx;
 
   // Already accepted by EBS, custom patch still pending — don't even fetch.
@@ -537,7 +612,7 @@ async function processOrder(runCtx, orderId, { requireCompleted = false } = {}) 
     }
   }
 
-  return sendOrder(runCtx, orderId, order, orderJournal);
+  return sendOrder(runCtx, orderId, order, orderJournal, { maxAttempts });
 }
 
 /**
@@ -566,8 +641,9 @@ async function reportGwpProblems(runCtx, orderId, gwp) {
 }
 
 /**
- * Send one order to EBS (with retries) and record the outcome: syncedAt (or a
- * pending custom update), inventory outbox, counters; on failure syncError.
+ * Send one order to EBS (up to maxAttempts tries) and record the outcome:
+ * syncedAt (or a pending custom update), inventory outbox, counters; on
+ * failure syncError.
  * Callers must have checked skipReason() right before.
  *
  * 'deferred': an attempt could not start in time (runCtx.lastAttemptStartAt).
@@ -579,18 +655,20 @@ async function reportGwpProblems(runCtx, orderId, gwp) {
  *
  * @returns {Promise<{ outcome: 'synced' | 'failed' | 'deferred', syncError?: string, stopRun?: boolean }>}
  */
-async function sendOrder(runCtx, orderId, order, orderJournal) {
+async function sendOrder(runCtx, orderId, order, orderJournal, { maxAttempts = MAX_RETRIES } = {}) {
   const {
     params, ctx, log, state, summary, inventoryEnabled, lastAttemptStartAt,
   } = runCtx;
   let lastErr = null;
   let ebsResult = null;
+  let attempts = 0;
 
-  for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     if (Date.now() > lastAttemptStartAt) {
       log.info(`[ebs-sync] Order ${orderId}: no time left for attempt ${attempt}; leaving it for the next run.`);
       return { outcome: 'deferred' };
     }
+    attempts = attempt;
     try {
       ebsResult = await syncOrderToEbs(ctx, params, order, orderJournal, {
         signal: AbortSignal.timeout(EBS_ATTEMPT_TIMEOUT_MS),
@@ -601,7 +679,12 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
       lastErr = err;
 
       const errStatus = err?.ebsStatus ?? err?.response?.error?.statusCode ?? 0;
-      const syncLog = { action: 'order-sync', id: orderId, status: errStatus, error: err.message };
+      // `attemptError`, not `error`: the operations log alerts on `error`, and a
+      // failing order would alert on every attempt. Ongoing failures alert
+      // through the send_failures incident instead.
+      const syncLog = {
+        action: 'order-sync', id: orderId, attempt, status: errStatus, attemptError: err.message,
+      };
       // Set only on errors raised by proxyFetch. 'none' means the proxy rejected the
       // request itself; a status means the proxy forwarded that status from EBS.
       if (err?.upstreamStatus) syncLog.upstreamStatus = err.upstreamStatus;
@@ -615,16 +698,16 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
 
       if (!isRetriableError(err)) {
         log.warn(
-          `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed with non-retriable error`,
+          `[ebs-sync] Order ${orderId} attempt ${attempt}/${maxAttempts} failed with non-retriable error`,
           errorInfo(err),
         );
         break;
       }
       log.warn(
-        `[ebs-sync] Order ${orderId} attempt ${attempt}/${MAX_RETRIES} failed`,
+        `[ebs-sync] Order ${orderId} attempt ${attempt}/${maxAttempts} failed`,
         errorInfo(err),
       );
-      if (attempt < MAX_RETRIES) {
+      if (attempt < maxAttempts) {
         if (Date.now() + RETRY_BASE_DELAY_MS * attempt > lastAttemptStartAt) {
           log.info(`[ebs-sync] Order ${orderId}: no time left to retry; leaving it for the next run.`);
           return { outcome: 'deferred' };
@@ -725,7 +808,7 @@ async function sendOrder(runCtx, orderId, order, orderJournal) {
   });
 
   log.error(
-    `[ebs-sync] Order ${orderId} failed after ${MAX_RETRIES} attempts. Halting.`,
+    `[ebs-sync] Order ${orderId} failed after ${attempts} attempt(s).`,
     errorInfo(lastErr),
   );
   return { outcome: 'failed', syncError };
@@ -856,26 +939,36 @@ async function trackIncident({
   }
 }
 
+const RELEASE_REPORTED_AT = { read: 'releaseReportedAt', send: 'sendReleaseReportedAt' };
+const RELEASED_SUMMARY_KEY = { read: 'releasedOrders', send: 'releasedFailedOrders' };
+
 /**
- * Report unreadable orders released from the cursor hold: one operations-log
- * event per run (with `error`, so it alerts).
+ * Report orders released from the cursor hold: one operations-log event per
+ * kind and run (with `error`, so it alerts).
+ * @param {object} runCtx
+ * @param {'read' | 'send'} kind - reads failed ('unreadable') or EBS sends failed ('send_failed')
+ * @param {string[]} orderIds
  * @returns {Promise<boolean>} whether the report was delivered
  */
-async function reportReleased({ params, log }, orderIds) {
+async function reportReleased({ params, log }, kind, orderIds) {
+  const hours = RETRY_HOLD_MAX_MS / 3_600_000;
+  const [reason, error] = kind === 'read'
+    ? ['unreadable', `Could not read ${orderIds.length} completed order(s) or their journals for over ${hours}h; the sync moved on without them. Fix the cause, then send each with a manual POST { "orderId" }.`]
+    : ['send_failed', `Sending ${orderIds.length} completed order(s) to EBS has failed for over ${hours}h (see each order's custom.syncError); the sync moved on without them. Fix the cause, then send each with a manual POST { "orderId" }.`];
   try {
     await logOrderSync(params, {
-      action: 'order-sync',
-      id: orderIds[0],
-      orderIds,
-      source: 'ebs-sync',
-      reason: 'unreadable',
-      error: `Could not read ${orderIds.length} completed order(s) or their journals for over ${RETRY_HOLD_MAX_MS / 3_600_000}h; the sync moved on without them. Fix the cause, then send each with a manual POST { "orderId" }.`,
+      action: 'order-sync', id: orderIds[0], orderIds, source: 'ebs-sync', reason, error,
     });
     return true;
   } catch (err) {
-    log.warn('[ebs-sync] Failed to report unreadable orders; still holding the cursor', errorInfo(err));
+    log.warn(`[ebs-sync] Failed to report released orders (${reason}); still holding the cursor`, errorInfo(err));
     return false;
   }
+}
+
+/** First line of an error stack, for alert text. */
+function firstLine(text) {
+  return String(text ?? 'unknown error').split('\n')[0];
 }
 
 /**
