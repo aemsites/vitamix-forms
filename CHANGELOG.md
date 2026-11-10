@@ -1,3 +1,10 @@
+## [1.20.1](https://github.com/aemsites/vitamix-forms/compare/v1.20.0...v1.20.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ebs-sync:** add VBND17 and VBND18 bundle codes ([d346757](https://github.com/aemsites/vitamix-forms/commit/d346757dd388d608b9de2b93ba2b477da34271f4))
+
 # [1.20.0](https://github.com/aemsites/vitamix-forms/compare/v1.19.3...v1.20.0) (2026-11-10)
 
 
