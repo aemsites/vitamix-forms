@@ -78,6 +78,41 @@ describe('resolveVbndReasonCode', () => {
     })).toBe('VBND19.1');
   });
 
+  test.each([
+    ['071395-VB', 'VBND17'],
+    ['073294-VB', 'VBND17.1'],
+    ['073295-VB', 'VBND17.2'],
+    ['073296-VB', 'VBND17.3'],
+  ])('resolves Propel 750 + Stainless Steel Container variant %s to %s in the US and Canada', (sku, code) => {
+    ['us/en_us', 'ca/en_us', 'ca/fr_ca'].forEach((locale) => {
+      expect(resolveVbndReasonCode({
+        path: `/${locale}/products/propel-750-plus-stainless-steel-container`,
+        sku,
+      })).toBe(code);
+    });
+  });
+
+  test('Propel 750 + SS Container and the Classic Bundle share SKUs but keep distinct codes', () => {
+    // 071395-VB is Black in both bundles; only the bundle url-key differs.
+    expect(resolveVbndReasonCode({
+      path: '/us/en_us/products/propel-750-classic-bundle',
+      sku: '071395-VB',
+    })).toBe('VBND1');
+    expect(resolveVbndReasonCode({
+      path: '/us/en_us/products/propel-750-plus-stainless-steel-container',
+      sku: '071395-VB',
+    })).toBe('VBND17');
+  });
+
+  test('resolves the 2-Speed Immersion Blender 4-Piece Bundle to VBND18 in the US and Canada', () => {
+    ['us/en_us', 'ca/en_us', 'ca/fr_ca'].forEach((locale) => {
+      expect(resolveVbndReasonCode({
+        path: `/${locale}/products/2-speed-immersion-blender-4-piece-bundle`,
+        sku: '073511-VB',
+      })).toBe('VBND18');
+    });
+  });
+
   test('returns empty string for an unmapped variant', () => {
     expect(resolveVbndReasonCode({
       path: '/us/en_us/products/ascent-x5-smartprep-kitchen-system',
