@@ -1,3 +1,11 @@
+# [1.20.0](https://github.com/aemsites/vitamix-forms/compare/v1.19.3...v1.20.0) (2026-11-10)
+
+
+### Features
+
+* **ebs-sync:** keep a Free part of a coupon name and cap names at 50 characters ([ba1978f](https://github.com/aemsites/vitamix-forms/commit/ba1978f36a0080eea5c591396da29bf24687e197))
+* **ebs-sync:** shorten coupon and gift-with-purchase PromotionCodes ([5f8a57e](https://github.com/aemsites/vitamix-forms/commit/5f8a57e9ee0332891c8e1cc6e295de6fbc21c8ee)), closes [#id](https://github.com/aemsites/vitamix-forms/issues/id)
+
 ## [1.19.3](https://github.com/aemsites/vitamix-forms/compare/v1.19.2...v1.19.3) (2026-11-09)
 
 
