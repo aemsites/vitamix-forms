@@ -1004,6 +1004,35 @@ describe('ebs-sync e2e', () => {
       lines.forEach((line) => expect(promotionCodes(line)).toEqual([code]));
     });
 
+    // Propel 750 + Stainless Steel Container (VBND17*) and 2-Speed Immersion
+    // Blender 4-Piece Bundle (VBND18): the code goes on the header and on every
+    // bundle child line, in the US and Canada.
+    test.each([
+      ['Propel 750 + SS Container, Black', 'propel-750-plus-stainless-steel-container', '071395-VB', ['067891-VB', '071395-VB'], 'VBND17'],
+      ['Propel 750 + SS Container, Red', 'propel-750-plus-stainless-steel-container', '073294-VB', ['067891-VB', '073294-VB'], 'VBND17.1'],
+      ['Propel 750 + SS Container, White', 'propel-750-plus-stainless-steel-container', '073295-VB', ['067891-VB', '073295-VB'], 'VBND17.2'],
+      ['Propel 750 + SS Container, Slate', 'propel-750-plus-stainless-steel-container', '073296-VB', ['067891-VB', '073296-VB'], 'VBND17.3'],
+      ['2-Speed IB 4-Piece Bundle', '2-speed-immersion-blender-4-piece-bundle', '073511-VB', ['069812-VB', '069814-VB', '073511-VB'], 'VBND18'],
+    ])('stamps the %s VBND code on the header and every bundle line', async (_label, urlKey, sku, childSkus, code) => {
+      const order = bundleOrder();
+      order.items = ['us/en_us', 'ca/en_us'].map((locale) => ({
+        sku,
+        path: `/${locale}/products/${urlKey}`,
+        quantity: 1,
+        name: urlKey,
+        price: { final: '100.00', currency: 'USD' },
+        bundleItems: childSkus.map((childSku) => ({
+          sku: childSku, name: childSku, quantity: 1, price: { final: '10.00', currency: 'USD' }, taxAmount: '1.00',
+        })),
+      }));
+      const xml = await buildXml(order, bundleJournal);
+      // two bundle lines in the same cart share the code: one header entry
+      expect(promotionCodes(orderLevel(xml))).toEqual([code]);
+      const lines = lineItems(xml);
+      expect(lines).toHaveLength(childSkus.length * 2);
+      lines.forEach((line) => expect(promotionCodes(line)).toEqual([code]));
+    });
+
     test('emits no line-level PromotionCode when the order has no coupons', async () => {
       const lines = lineItems(await buildXml(orderWith({}), journal));
       lines.forEach((line) => expect(line).not.toContain('<ns2:PromotionCode>'));

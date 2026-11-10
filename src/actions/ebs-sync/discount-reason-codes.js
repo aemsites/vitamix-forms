@@ -82,6 +82,17 @@ export const VBND_REASON_CODES = {
   // Propel 510 + Simply Entertaining Cookbook (VBNDP510SEC)
   'propel-510-plus-simply-entertaining-cookbook|071394-VB': 'VBND16',
 
+  // Propel 750 + Stainless Steel Container (VBNDP750SS). Shares its variant SKUs
+  // with the Propel 750 Classic Bundle above; the bundle url-key disambiguates.
+  // Suffixes follow the Classic Bundle's colour order (base, .1, .2, .3).
+  'propel-750-plus-stainless-steel-container|071395-VB': 'VBND17', // Black
+  'propel-750-plus-stainless-steel-container|073294-VB': 'VBND17.1', // Red
+  'propel-750-plus-stainless-steel-container|073295-VB': 'VBND17.2', // White
+  'propel-750-plus-stainless-steel-container|073296-VB': 'VBND17.3', // Slate
+
+  // 2-Speed Immersion Blender 4-Piece Bundle (VBND2SIB). Single Black variant.
+  '2-speed-immersion-blender-4-piece-bundle|073511-VB': 'VBND18',
+
   // VX3 + 24-ounce Tumbler (US only). Created natively in Edge, so there is no
   // Magento rule; codes were assigned by the sales team.
   'vx3-plus-24-ounce-tumbler|075886-04-VB': 'VBND19', // Black
