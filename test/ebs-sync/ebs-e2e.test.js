@@ -10,7 +10,10 @@
  */
 
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
-import { syncOrderToEbs, buildPaymentSnapshot, resolveGwpPromotions } from '../../src/actions/ebs-sync/ebs.js';
+import {
+  syncOrderToEbs, buildPaymentSnapshot, resolveGwpPromotions, shortenCouponName,
+  COUPON_NAME_MAX_LENGTH,
+} from '../../src/actions/ebs-sync/ebs.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
 import { join, dirname } from 'path';
@@ -1074,20 +1077,18 @@ describe('ebs-sync e2e', () => {
       expect(xml).toContain('<ns2:PromotionCode>(A&amp;B)</ns2:PromotionCode>');
     });
 
-    // ── Magento "{description}({code})" coupon format ────────────────────────
-    // Magento sent each coupon as its cart rule description followed by the
-    // code in parentheses, on the header and every line. The coupon type name
-    // stored on the order's coupon discount entry stands in for the description.
+    // ── "{name} ({code})" coupon format ──────────────────────────────────────
+    // Each coupon goes out as its coupon type name, shortened to the discount it
+    // describes, followed by the code in parentheses, on the header and every
+    // line. The name is the one stored on the order's coupon discount entry.
 
     const couponDiscount = (code, name) => ({
       id: `coupon:${code}`, name, amount: 25, source: 'coupon',
     });
 
-    test('sends "{name}({code})" on the header and every line (Magento payload parity)', async () => {
-      // Real coupon type name from order om5290981272; this exact output was
-      // approved by the Vitamix EBS team.
+    test('sends "{short name} ({code})" on the header and every line', async () => {
       const name = '#974 US 2026 MAIN Email Offer - $25 off orders over $200 - WELCOME, TEXT (SMS)';
-      const expected = `${name}(WELCOME431705)`;
+      const expected = '$25 off orders over $200 (WELCOME431705)';
       const order = orderWith({
         couponCodes: ['WELCOME431705'],
         estimates: {
@@ -1103,6 +1104,72 @@ describe('ebs-sync e2e', () => {
       lines.forEach((line) => expect(promotionCodes(line)).toEqual([expected]));
     });
 
+    describe('shortenCouponName', () => {
+      test.each([
+        ['#974 US 2026 MAIN Email Offer - $25 off orders over $200 - WELCOME, TEXT (SMS)', '$25 off orders over $200'],
+        ['#971 CA 2026 MAIN Email Offer - $20 off orders over $300 - WEL (Welcome)', '$20 off orders over $300'],
+        ['#821 Anniversary Discount - $150 off order', '$150 off order'],
+        ['Staff Codes - 40% off New/Recons + Accessories', '40% off New/Recons + Accessories'],
+        ['#888 Spotlight Offer - US/CA $150 off VX1 PARTNER$', '$150 off VX1 PARTNER$'],
+        ['#955 Partners - Standard 15% off PARTNER@CODE$1', '15% off PARTNER@CODE$1'],
+        ['#1127 $25 off Cup/Bowl Starter Kit', '$25 off Cup/Bowl Starter Kit'],
+        ['#12 Big Sale - $1,000.50 Off a Blender', '$1,000.50 Off a Blender'],
+        ['#7 Promo - 12.5 % off everything', '12.5 % off everything'],
+        ['$25 Off $200', '$25 Off $200'],
+        ['#40 Rewards - Free Tumbler - RWD1 - US', 'Free Tumbler'],
+        ['#41 Spring - FREE shipping on blenders', 'FREE shipping on blenders'],
+        ['#42 Spring - Free Tumbler - $10 off a blender', '$10 off a blender'],
+      ])('keeps the discount part of %j', (name, expected) => {
+        expect(shortenCouponName(name)).toBe(expected);
+      });
+
+      test.each([
+        [
+          'at a word boundary',
+          '#43 Get a Tumbler for $5 when you buy a Blender and a Container',
+          'Get a Tumbler for $5 when you buy a Blender and a',
+        ],
+        [
+          'without a trailing separator',
+          '#44 Partner Accounts - Regional Portal Program -- Extra Words',
+          'Partner Accounts - Regional Portal Program',
+        ],
+        [
+          'mid-word when no space falls in the second half',
+          'Supercalifragilisticexpialidociously-long-single-word-coupon-name',
+          'Supercalifragilisticexpialidociously-long-single-w',
+        ],
+        [
+          'a long discount part',
+          '#45 Promo - $25 off any blender, container, accessory or cookbook in the store',
+          '$25 off any blender, container, accessory or',
+        ],
+      ])('caps a long name %s', (_label, name, expected) => {
+        const short = shortenCouponName(name);
+        expect(short).toBe(expected);
+        expect(short.length).toBeLessThanOrEqual(COUPON_NAME_MAX_LENGTH);
+      });
+
+      test('keeps a name of exactly the maximum length', () => {
+        const name = `Partner ${'x'.repeat(COUPON_NAME_MAX_LENGTH - 8)}`;
+        expect(shortenCouponName(name)).toBe(name);
+      });
+
+      test.each([
+        ['#253 Partner Accounts - US Portal PARTNERCODE', 'Partner Accounts - US Portal PARTNERCODE'],
+        ['#322 Partner $70 CODE3 abc123', 'Partner $70 CODE3 abc123'],
+        ['#669 Friends and Family', 'Friends and Family'],
+        ['#1124 Giveaway - VX3 (White)', 'Giveaway - VX3 (White)'],
+        ['Affiliates Deal Group', 'Affiliates Deal Group'],
+        ['IDME', 'IDME'],
+        ['#12', '#12'],
+        ['Offer - takeoff kit', 'Offer - takeoff kit'],
+        ['', ''],
+      ])('keeps %j without its id when no part names a discount', (name, expected) => {
+        expect(shortenCouponName(name)).toBe(expected);
+      });
+    });
+
     test('names each of several coupons, in the order applied', async () => {
       const order = orderWith({
         couponCodes: ['SAVE10', 'IDME20'],
@@ -1112,7 +1179,7 @@ describe('ebs-sync e2e', () => {
         },
       });
       const xml = await buildXml(order, journal);
-      expect(promotionCodes(orderLevel(xml))).toEqual(['$10 Off(SAVE10)', 'ID.me 20%(IDME20)']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['$10 Off (SAVE10)', 'ID.me 20% (IDME20)']);
     });
 
     test('sends "%" in coupon names through the proxy unchanged', async () => {
@@ -1124,7 +1191,7 @@ describe('ebs-sync e2e', () => {
         estimates: { ...CC_APPROVED_ORDER.estimates, discounts: [couponDiscount('PCT40', name)] },
       });
       const xml = await buildXml(order, journal);
-      expect(promotionCodes(orderLevel(xml))).toEqual([`${name}(PCT40)`]);
+      expect(promotionCodes(orderLevel(xml))).toEqual([`${name} (PCT40)`]);
     });
 
     test('names a coupon derived from estimates.discounts alone', async () => {
@@ -1134,7 +1201,7 @@ describe('ebs-sync e2e', () => {
         { id: 'free-shipping', name: 'Free Shipping', amount: 0, freeShipping: true, source: 'pricing_rule' },
       ];
       const xml = await buildXml(order, journal);
-      expect(promotionCodes(orderLevel(xml))).toEqual(['Affiliate 10%(06-LEGACY)']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['Affiliate 10% (06-LEGACY)']);
       // SalesPersonId keeps the bare code
       expect(xml).toContain('<ns2:SalesPersonId>06-LEGACY</ns2:SalesPersonId>');
     });
@@ -1160,7 +1227,7 @@ describe('ebs-sync e2e', () => {
         },
       });
       const xml = await buildXml(order, journal);
-      expect(xml).toContain('<ns2:PromotionCode>Buy 1 &amp; Get &lt;1&gt;(BOGO)</ns2:PromotionCode>');
+      expect(xml).toContain('<ns2:PromotionCode>Buy 1 &amp; Get &lt;1&gt; (BOGO)</ns2:PromotionCode>');
     });
 
     test('names the coupon after the VBND code on bundle children and on warranty lines', async () => {
@@ -1172,14 +1239,14 @@ describe('ebs-sync e2e', () => {
         },
       });
       const xml = await buildXml(order, bundleJournal);
-      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', '$25 Off $200(WELCOME1)']);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND10', '$25 Off $200 (WELCOME1)']);
       const lines = lineItems(xml);
       const warranty = lines.filter((line) => /UnitOfMeasure="Years"/.test(line));
       const children = lines.filter((line) => /UnitOfMeasure="Each"/.test(line));
       expect(warranty.length).toBeGreaterThan(0);
       expect(children.length).toBeGreaterThan(0);
-      warranty.forEach((line) => expect(promotionCodes(line)).toEqual(['$25 Off $200(WELCOME1)']));
-      children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', '$25 Off $200(WELCOME1)']));
+      warranty.forEach((line) => expect(promotionCodes(line)).toEqual(['$25 Off $200 (WELCOME1)']));
+      children.forEach((line) => expect(promotionCodes(line)).toEqual(['VBND10', '$25 Off $200 (WELCOME1)']));
     });
 
     // ── Gift-with-purchase (GWP) promotions ──────────────────────────────────
@@ -1240,6 +1307,81 @@ describe('ebs-sync e2e', () => {
       test('trims the promotion name', async () => {
         expect(await headerCodes(withGiftCustom(giftCustom({ promotionName: '  Free Cookbooks  ' }))))
           .toEqual(['Free Cookbooks']);
+      });
+
+      describe('spending threshold', () => {
+        test('sends "GWP {threshold}" from the grant, rounded down, instead of the name', async () => {
+          const xml = await buildXml(gwpOrder([freeItem({ minimumSubtotal: 299.95 })]), journal);
+          expect(promotionCodes(orderLevel(xml))).toEqual(['GWP 299']);
+          lineItems(xml).forEach((line) => expect(promotionCodes(line)).toEqual(['GWP 299']));
+        });
+
+        test('sends a whole-dollar threshold as is', async () => {
+          expect(await headerCodes(gwpOrder([freeItem({ minimumSubtotal: 400 })]))).toEqual(['GWP 400']);
+        });
+
+        test('does not need or check the client promotion name', async () => {
+          const order = gwpOrder([freeItem({ minimumSubtotal: 399.95 })], {
+            gifts: [giftLine({ custom: giftCustom({ promotionName: 'Free\nGift' }) })],
+          });
+          expect(resolveGwpPromotions(order)).toEqual({ codes: ['GWP 399'], issues: [], missing: [] });
+        });
+
+        test.each([
+          ['zero', 0],
+          ['below one dollar', 0.5],
+          ['negative', -5],
+          ['a string', '299.95'],
+          ['not finite', Infinity],
+          ['null', null],
+        ])('falls back to the promotion name when the threshold is %s', async (_label, minimumSubtotal) => {
+          expect(await headerCodes(gwpOrder([freeItem({ minimumSubtotal })]))).toEqual([GWP_NAME]);
+        });
+
+        test('sends one value for two promotions with the same name and no threshold', async () => {
+          const otherPath = '/us/en_us/products/tumbler';
+          const order = gwpOrder([freeItem(), freeItem({ path: otherPath, ruleId: 'second-gwp' })], {
+            gifts: [
+              giftLine(),
+              giftLine({ sku: 'tumbler-sku', path: otherPath, custom: giftCustom({ promotionId: 'second-gwp' }) }),
+            ],
+          });
+          expect(await headerCodes(order)).toEqual([GWP_NAME]);
+        });
+
+        test('sends one value for two promotions at the same threshold', async () => {
+          const otherPath = '/us/en_us/products/tumbler';
+          const order = gwpOrder([
+            freeItem({ minimumSubtotal: 299.95 }),
+            freeItem({ path: otherPath, ruleId: 'second-gwp', minimumSubtotal: 299 }),
+          ], {
+            gifts: [
+              giftLine(),
+              giftLine({ sku: 'tumbler-sku', path: otherPath, custom: giftCustom({ promotionId: 'second-gwp' }) }),
+            ],
+          });
+          expect(await headerCodes(order)).toEqual(['GWP 299']);
+        });
+
+        test('sends each tier, in freeItems order, ahead of the coupon', async () => {
+          const otherPath = '/us/en_us/products/tumbler';
+          const order = gwpOrder([
+            freeItem({ path: otherPath, ruleId: 'second-gwp', minimumSubtotal: 399.95 }),
+            freeItem({ minimumSubtotal: 299.95 }),
+          ], {
+            gifts: [
+              giftLine(),
+              giftLine({ sku: 'tumbler-sku', path: otherPath, custom: giftCustom({ promotionId: 'second-gwp' }) }),
+            ],
+            couponCodes: ['WELCOMEW84'],
+          });
+          order.estimates.discounts = [couponDiscount(
+            'WELCOMEW84',
+            '#974 US 2026 MAIN Email Offer - $25 off orders over $200 - WELCOME, TEXT (SMS)',
+          )];
+          expect(await headerCodes(order))
+            .toEqual(['GWP 399', 'GWP 299', '$25 off orders over $200 (WELCOMEW84)']);
+        });
       });
 
       test('ignores a name on the grant itself', async () => {
@@ -1422,7 +1564,7 @@ describe('ebs-sync e2e', () => {
         });
         order.estimates.discounts = [couponDiscount('WELCOMEW84', '$25 Off $200')];
         const xml = await buildXml(order, journal);
-        const expected = ['Free Cookbooks', '$25 Off $200(WELCOMEW84)'];
+        const expected = ['Free Cookbooks', '$25 Off $200 (WELCOMEW84)'];
         expect(promotionCodes(orderLevel(xml))).toEqual(expected);
         const lines = lineItems(xml);
         expect(lines.map(lineSku)).toEqual(['068051-04', 'gift-sku']);
@@ -1443,7 +1585,7 @@ describe('ebs-sync e2e', () => {
           giftLine(),
         );
         const xml = await buildXml(order, bundleJournal);
-        const coupon = '$25 Off $200(WELCOME1)';
+        const coupon = '$25 Off $200 (WELCOME1)';
 
         expect(promotionCodes(orderLevel(xml))).toEqual([GWP_NAME, 'VBND10', coupon]);
 
