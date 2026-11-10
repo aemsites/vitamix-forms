@@ -38,12 +38,13 @@
  *   paymentTerms override        OrderPayment/@PaymentTerms always 'Immediate'
  *   item.taxAmount               LineItem/Tax/@Amount       from item.taxAmount ('0.00' fallback)
  *   item.serialNumber            ns2:SerialNumber           links warranty to its product (generated)
- *   applied coupons              ns2:PromotionCode (order + item)  "{coupon name}({code})" on the
- *                                header and every line (Magento parity; see getCouponPromotionCodes)
- *   gift-with-purchase promos    ns2:PromotionCode (order + item)  the promotion name from the gift
- *                                line's custom.promotionName (the server's ruleId when missing or
- *                                invalid) on the header and every line, ahead of the VBND code and
- *                                coupons; only for gifts the server granted (see resolveGwpPromotions)
+ *   applied coupons              ns2:PromotionCode (order + item)  "{short coupon name} ({code})"
+ *                                on the header and every line (see getCouponPromotionCodes)
+ *   gift-with-purchase promos    ns2:PromotionCode (order + item)  "GWP {threshold}" from the
+ *                                server grant's minimumSubtotal, else the promotion name from the
+ *                                gift line's custom.promotionName (the server's ruleId when missing
+ *                                or invalid), on the header and every line, ahead of the VBND code
+ *                                and coupons; only for gifts the server granted (see resolveGwpPromotions)
  *   Chase cardId                 CreditCard/@CardId         hardcoded ''
  *   Chase storedCredentials      CreditCard/@StoredCredentials  hardcoded 'N'
  *   Chase mitMsgType             CreditCard/@MITMsgType     hardcoded 'CGEN'
@@ -963,16 +964,67 @@ function getBundleReasonCodes(order) {
   return codes;
 }
 
+/** A discount amount followed by "off": `$25 off`, `$1,000.00 Off`, `40% off`. */
+const DISCOUNT_PHRASE = /(?:\$\s?\d[\d,]*(?:\.\d+)?|\d+(?:\.\d+)?\s?%)\s+off\b/i;
+
+/** A part naming a free item: `Free Tumbler`, `FREE shipping`. */
+const FREE_PHRASE = /^free\s/i;
+
+/** The longest coupon name sent before the `({code})`; see {@link capCouponName}. */
+export const COUPON_NAME_MAX_LENGTH = 50;
+
 /**
- * The PromotionCode value for each applied coupon, in the order applied, in
- * the legacy Magento format `{description}({code})`, e.g.
- * `$25 Off $200(WELCOME117870)`.
+ * Cut a name to {@link COUPON_NAME_MAX_LENGTH} characters, at a word boundary
+ * when one falls in the second half, without trailing separators.
  *
- * Magento used the cart price rule's description; the commerce API's
- * equivalent is the coupon type name, stored on the order's coupon discount
- * entry (`estimates.discounts[]`, id `coupon:{code}`). When no name is
- * available the description part is empty, giving `({code})`, which is what
- * Magento sent for a rule without an order-level description.
+ * @param {string} name
+ * @returns {string}
+ */
+function capCouponName(name) {
+  if (name.length <= COUPON_NAME_MAX_LENGTH) return name;
+  const cut = name.slice(0, COUPON_NAME_MAX_LENGTH + 1);
+  const space = cut.lastIndexOf(' ');
+  const capped = space >= COUPON_NAME_MAX_LENGTH / 2 ? cut.slice(0, space) : cut.slice(0, -1);
+  return capped.replace(/[\s\-–,:;/]+$/, '');
+}
+
+/**
+ * Shorten a coupon type name to the part that says what the discount is.
+ * EBS shows all PromotionCodes in one field of limited length, so the
+ * bookkeeping parts of a name (the `#974` id, campaign, channel) crowd out
+ * other codes.
+ *
+ * Type names follow `[#{id} ]{part}[ - {part}…]`. The leading `#{id}` is
+ * dropped; then the first ` - `-separated part naming a discount
+ * (`$25 off …`, `40% off …`) is kept from the amount on, else the first part
+ * naming a free item (`Free …`). Otherwise the name is kept as it is (without
+ * the id). Either way the result is capped at {@link COUPON_NAME_MAX_LENGTH}
+ * characters, so one long name can't push the other codes out of the field:
+ *
+ *   `#974 US 2026 MAIN Email Offer - $25 off orders over $200 - WELCOME, TEXT (SMS)`
+ *     → `$25 off orders over $200`
+ *   `#253 Corporate Accounts - US Portal NEXTJUMPVITA`
+ *     → `Corporate Accounts - US Portal NEXTJUMPVITA`
+ *
+ * @param {string} name - the trimmed coupon type name.
+ * @returns {string} the short name, `''` for a blank name.
+ */
+export function shortenCouponName(name) {
+  const withoutId = name.replace(/^#\d+\s+/, '').trim() || name;
+  const parts = withoutId.split(/\s+-\s+/);
+  const discount = parts.find((p) => DISCOUNT_PHRASE.test(p));
+  if (discount) return capCouponName(discount.slice(discount.search(DISCOUNT_PHRASE)).trim());
+  return capCouponName(parts.find((p) => FREE_PHRASE.test(p)) ?? withoutId);
+}
+
+/**
+ * The PromotionCode value for each applied coupon, in the order applied, as
+ * `{name} ({code})`, e.g. `$25 off orders over $200 (WELCOME117870)`.
+ *
+ * The name is the coupon type name, stored on the order's coupon discount
+ * entry (`estimates.discounts[]`, id `coupon:{code}`), shortened by
+ * {@link shortenCouponName}. When no name is available the value is
+ * `({code})`, which is what Magento sent for a rule without a description.
  *
  * @param {object} order - the stored order.
  * @returns {string[]}
@@ -981,11 +1033,13 @@ function getCouponPromotionCodes(order) {
   const nameById = new Map();
   for (const d of (order.estimates?.discounts ?? [])) {
     if (d?.id?.startsWith('coupon:') && !nameById.has(d.id)) {
-      nameById.set(d.id, String(d.name ?? '').trim());
+      nameById.set(d.id, shortenCouponName(String(d.name ?? '').trim()));
     }
   }
-  return getAppliedCouponCodes(order)
-    .map((code) => `${nameById.get(`coupon:${code}`) ?? ''}(${code})`);
+  return getAppliedCouponCodes(order).map((code) => {
+    const name = nameById.get(`coupon:${code}`);
+    return name ? `${name} (${code})` : `(${code})`;
+  });
 }
 
 /**
@@ -1061,7 +1115,9 @@ function readGiftPromotionName(line, ruleId) {
  * order. Grants left without a line are not in the order.
  *
  * @param {object} order
- * @returns {{ ruleId: string, line: object }[]} in `freeItems` order, one per ruleId
+ * @returns {{ ruleId: string, line: object, minimumSubtotal: unknown }[]} in
+ *   `freeItems` order, one per ruleId; `minimumSubtotal` from the first grant
+ *   of that ruleId.
  */
 function matchGiftLines(order) {
   const freeItems = order?.estimates?.freeItems;
@@ -1085,7 +1141,9 @@ function matchGiftLines(order) {
     const lines = giftLinesByPath.get(normalizeItemPath(grant?.path));
     if (!ruleId || !lines || seen.has(ruleId)) continue;
     seen.add(ruleId);
-    grants.push({ ruleId, lines, line: null });
+    grants.push({
+      ruleId, lines, line: null, minimumSubtotal: grant.minimumSubtotal,
+    });
   }
 
   const used = new Set();
@@ -1098,7 +1156,20 @@ function matchGiftLines(order) {
     grant.line = grant.lines.find((l) => !used.has(l) && !l.custom?.promotionId) ?? null;
     if (grant.line) used.add(grant.line);
   }
-  return grants.filter((g) => g.line).map(({ ruleId, line }) => ({ ruleId, line }));
+  return grants.filter((g) => g.line)
+    .map(({ ruleId, line, minimumSubtotal }) => ({ ruleId, line, minimumSubtotal }));
+}
+
+/**
+ * A grant's spending threshold in whole dollars, rounded down.
+ *
+ * @param {unknown} minimumSubtotal - the grant's `minimumSubtotal`.
+ * @returns {number} the threshold, or 0 when absent, not a finite number or
+ *   below 1 (a promotion without a spending threshold).
+ */
+function gwpThreshold(minimumSubtotal) {
+  if (typeof minimumSubtotal !== 'number' || !Number.isFinite(minimumSubtotal)) return 0;
+  return Math.max(0, Math.floor(minimumSubtotal));
 }
 
 /**
@@ -1111,6 +1182,11 @@ function matchGiftLines(order) {
  * a cart *qualified* for, so a grant is reported only when the order holds a
  * $0 line at the granted `path` (see matchGiftLines).
  *
+ * The value is `GWP {threshold}`, the promotion's spending threshold in whole
+ * dollars (rounded down: `299.95` → `GWP 299`), taken from the grant's
+ * server-set `minimumSubtotal` (on orders since helix-commerce-api added it).
+ * Grants without a positive threshold fall back to the promotion name.
+ *
  * The name comes from that gift line's `custom.promotionName`, set by the
  * storefront. Custom data is client-supplied, so the name is used only when it
  * is a non-blank string without control characters, at most
@@ -1120,8 +1196,9 @@ function matchGiftLines(order) {
  * storefront recorded it and goes to `missing`; anything else goes to `issues`
  * so it can be alerted on. Nothing here ever fails the sync.
  *
- * One value per distinct promotion (by `ruleId`), in `freeItems` order. No
- * `({code})` suffix, since a GWP promotion is not a coupon.
+ * One value per distinct promotion (by `ruleId`), in `freeItems` order, with
+ * repeated values dropped (two promotions at one threshold both send
+ * `GWP 299`). No `({code})` suffix, since a GWP promotion is not a coupon.
  *
  * @param {object} order - the stored order.
  * @returns {{ codes: string[], issues: string[], missing: string[] }} codes to
@@ -1130,13 +1207,21 @@ function matchGiftLines(order) {
  */
 export function resolveGwpPromotions(order) {
   const result = { codes: [], issues: [], missing: [] };
-  for (const { ruleId, line } of matchGiftLines(order)) {
-    const read = readGiftPromotionName(line, ruleId);
-    if (read.name) {
-      result.codes.push(read.name);
+  const add = (code) => {
+    if (!result.codes.includes(code)) result.codes.push(code);
+  };
+  for (const { ruleId, line, minimumSubtotal } of matchGiftLines(order)) {
+    const threshold = gwpThreshold(minimumSubtotal);
+    if (threshold) {
+      add(`GWP ${threshold}`);
       continue;
     }
-    result.codes.push(ruleId);
+    const read = readGiftPromotionName(line, ruleId);
+    if (read.name) {
+      add(read.name);
+      continue;
+    }
+    add(ruleId);
     if (read.invalid) {
       result.issues.push(`gift-with-purchase ${ruleId} (${line.sku || line.path}): ${read.invalid}; sent the promotion id instead`);
     } else {
