@@ -7,18 +7,6 @@ const required = (params, name) => {
   return value;
 };
 
-/** @param {string} value */
-function sha256FingerprintToHex(value) {
-  const fingerprint = String(value || '').trim().replace(/^SHA256:/i, '');
-  if (/^[a-f\d]{64}$/i.test(fingerprint)) return fingerprint.toLowerCase();
-
-  const bytes = Buffer.from(fingerprint, 'base64');
-  if (bytes.length !== 32) {
-    throw new Error('OPENAI_SFTP_HOST_KEY_SHA256 must be a SHA-256 fingerprint');
-  }
-  return bytes.toString('hex');
-}
-
 /**
  * Validate SFTP runtime settings and build the remote target path.
  * Private key material is supplied base64-encoded to support multiline keys.
@@ -33,10 +21,9 @@ export function getSftpConfig(params) {
     throw new Error('OPENAI_SFTP_FILENAME must be a filename, not a path');
   }
 
-  const privateKeyBase64 = String(params.OPENAI_SFTP_PRIVATE_KEY_BASE64 || '').trim();
   const password = String(params.OPENAI_SFTP_PASSWORD || '');
-  if (!privateKeyBase64 && !password) {
-    throw new Error('Configure OPENAI_SFTP_PRIVATE_KEY_BASE64 or OPENAI_SFTP_PASSWORD');
+  if (!password) {
+    throw new Error('Configure OPENAI_SFTP_PASSWORD');
   }
 
   const directoryPath = directory === '/' ? '' : directory.replace(/\/+$/, '');
@@ -53,15 +40,7 @@ export function getSftpConfig(params) {
     username,
     readyTimeout: 30000,
   };
-  if (privateKeyBase64) {
-    connection.privateKey = Buffer.from(privateKeyBase64, 'base64').toString('utf8');
-    if (params.OPENAI_SFTP_PRIVATE_KEY_PASSPHRASE) {
-      connection.passphrase = params.OPENAI_SFTP_PRIVATE_KEY_PASSPHRASE;
-    }
-  } else {
-    connection.password = password;
-  }
-
+  connection.password = password;
   return { connection, remotePath, filename };
 }
 

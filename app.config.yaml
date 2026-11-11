@@ -297,7 +297,7 @@ application:
           feeds-push-openai:
             function: dist/actions/feeds-push-openai/index.js
             runtime: nodejs:22
-            web: 'yes'
+            web: false
             limits:
               timeout: 60000
               memory: 512
@@ -311,9 +311,6 @@ application:
               OPENAI_SFTP_PORT: $OPENAI_SFTP_PORT
               OPENAI_SFTP_USERNAME: $OPENAI_SFTP_USERNAME
               OPENAI_SFTP_PASSWORD: $OPENAI_SFTP_PASSWORD
-              OPENAI_SFTP_PRIVATE_KEY_BASE64: $OPENAI_SFTP_PRIVATE_KEY_BASE64
-              OPENAI_SFTP_PRIVATE_KEY_PASSPHRASE: $OPENAI_SFTP_PRIVATE_KEY_PASSPHRASE
-              OPENAI_SFTP_HOST_KEY_SHA256: $OPENAI_SFTP_HOST_KEY_SHA256
               OPENAI_SFTP_DIRECTORY: $OPENAI_SFTP_DIRECTORY
               OPENAI_SFTP_FILENAME: $OPENAI_SFTP_FILENAME
 

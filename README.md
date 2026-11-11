@@ -161,6 +161,14 @@ Supported providers:
 Not served separately: **Google Ads** — it serves from the linked Merchant
 Center account (i.e. the `merchant-center` feed).
 
+OpenAI also has a separate scheduled push action, `feeds-push-openai`. It rebuilds the
+US OpenAI CSV, gzips it, and overwrites one stable filename in OpenAI's SFTP
+directory. It is disabled unless `OPENAI_FEED_PUSH_ENABLED=true`. The default
+schedule is daily at 12:00 UTC; change the cron expression in `app.config.yaml`
+to `0 */12 * * *` for every 12 hours. Configure the SFTP endpoint and secrets
+from OpenAI onboarding before enabling it. The HTTP feed endpoint above remains
+available for manual inspection; it does not perform the SFTP upload.
+
 ### `feeds/feeds-push` (scheduled, non-web)
 
 Pushes feeds to providers that take an SFTP upload, nightly at **1:00 AM
@@ -467,6 +475,19 @@ All `RECIPE_*` value vars have in-code defaults (see `sync.js`); override only i
 | `FEED_SITE_BASE` | Base host serving the Merchant Center feed per locale | `https://www.vitamix.com` |
 | `FEED_CONTENT_BASE` | Host serving authored PDP content (`.plain.html`), used for missing descriptions | `https://main--vitamix--aemsites.aem.live` |
 | `FEEDS_TOKEN` | Optional bearer/token gate for the feed URLs. When unset, feeds are public. | unset (public) |
+
+### feeds-push-openai package
+
+| Variable | Description | Default |
+|---|---|---|
+| `ORG` / `SITE` | Org/site slug | `aemsites` / `vitamix` |
+| `LOG_LEVEL` | Logging level | `info` |
+| `OPENAI_FEED_PUSH_ENABLED` | Enables the scheduled SFTP upload only when set to `true` | `false` |
+| `OPENAI_SFTP_HOST` / `OPENAI_SFTP_PORT` | OpenAI-provided SFTP host and port | — / `443` |
+| `OPENAI_SFTP_USERNAME` | OpenAI-provided SFTP username | — |
+| `OPENAI_SFTP_PASSWORD` | SFTP password when using password authentication | — |
+| `OPENAI_SFTP_DIRECTORY` | OpenAI-provided remote feed directory | — |
+| `OPENAI_SFTP_FILENAME` | Stable remote snapshot filename | `vitamix-products-feed-gpt.csv.gz` |
 
 ### feeds package — `feeds-push` action
 
