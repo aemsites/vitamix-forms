@@ -32,6 +32,9 @@ const SELLER_URL = 'https://www.vitamix.com';
 const RETURN_POLICY = 'https://www.vitamix.com/us/en_us/returns';
 const TARGET_COUNTRIES = 'US';
 const STORE_COUNTRY = 'US';
+const STORE_CURRENCY = 'USD';
+const DEFAULT_PRICE = "500" + " " + STORE_CURRENCY;
+const DEFAULT_PRODUCT_INFO = "Vitamix-product";
 const IS_ELIGIBLE_SEARCH = 'true';
 const IS_ELIGIBLE_CHECKOUT = 'false'; // no in-chat checkout in beta
 const IS_ADS_ELIGIBLE = 'true';
@@ -68,13 +71,13 @@ function buildRows(feed) {
       : (it.additional_image_link || '');
 
     return csvRow([
-      it.id, // item_id
-      it.title,
-      it.description,
-      it.link, // url
-      it.brand,
-      it.image_link, // image_url
-      it.price,
+      it.id || DEFAULT_PRODUCT_INFO,
+      it.title || DEFAULT_PRODUCT_INFO,
+      it.description || DEFAULT_PRODUCT_INFO,
+      it.link || SELLER_URL,
+      it.brand || SELLER_NAME,
+      it.image_link || SELLER_URL + "/content/dam/vitamix/design-system/images/icons/logo/vitamix-logo.svg",
+      it.price || DEFAULT_PRICE,
       AVAILABILITY[/** @type {string} */ (it.availability)] || 'unknown',
       SELLER_NAME,
       SELLER_URL,
