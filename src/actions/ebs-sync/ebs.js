@@ -100,11 +100,12 @@ export function isRetriableError(err) {
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
  * @param {{ signal?: AbortSignal }} [opts] - signal aborts the EBS request (per-attempt timeout)
- * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] }, vbnd: { issues: string[], missing: string[] } }>}
+ * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] }, vbnd: { issues: string[], missing: string[], fallbacks: string[] } }>}
  *   gwp: gift-with-purchase data problems found while building the request
  *   (see resolveGwpPromotions); they never fail the sync.
  *   vbnd: virtual-bundle code problems (see resolveVbndCodes): product data that
- *   is not a VBND code, and bundle lines that have no code. They never fail the
+ *   is not a VBND code, bundle lines that have no code, and bundle lines sent with
+ *   the built-in code because their product could not be read. They never fail the
  *   sync either; only an unreadable product with no built-in code does (retriable).
  */
 export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal } = {}) {
@@ -149,7 +150,7 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
     status: res.status,
     xml,
     gwp: { issues: gwp.issues, missing: gwp.missing },
-    vbnd: { issues: vbnd.issues, missing: vbnd.missing },
+    vbnd: { issues: vbnd.issues, missing: vbnd.missing, fallbacks: vbnd.fallbacks },
   };
 }
 

@@ -421,7 +421,7 @@ describe('ebs-sync e2e', () => {
     // The proxy URL-decodes text/xml bodies before forwarding them; decode the
     // same way so tests assert against the XML the target receives.
     global.fetch = async (url, opts) => {
-      if (String(url).includes('.aem.network')) {
+      if (String(url).startsWith('https://www.vitamix.com/')) {
         const path = new URL(url).pathname.replace(/\.json$/, '');
         productLookups.push(path);
         const response = productResponses.get(path) ?? { status: 404 };
@@ -1127,10 +1127,25 @@ describe('ebs-sync e2e', () => {
       expect(promotionCodes(orderLevel(xml))).toEqual(['VBND17']);
     });
 
-    test('falls back to the built-in code when the product host fails, and still sends the order', async () => {
+    test('falls back to the built-in code when the product host fails, still sends the order, and reports it', async () => {
       productResponses.set(SS_PATH, { status: 503 });
-      const xml = await buildXml(bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB')), bundleJournal);
-      expect(allCodes(xml)).toEqual([['VBND17'], ['VBND17'], ['VBND17']]);
+      const order = bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB'));
+      const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
+      expect(allCodes(capturedXml)).toEqual([['VBND17'], ['VBND17'], ['VBND17']]);
+      expect(result.vbnd.fallbacks).toEqual([
+        `${SS_PATH} (071395-VB): product lookup ${SS_PATH} returned 503; sent the built-in code VBND17`,
+      ]);
+    });
+
+    test('a product host timeout with no built-in code is retriable and labelled as a lookup failure', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, {
+        error: new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      });
+      const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
+      const err = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal).catch((e) => e);
+      expect(err.vbndLookup).toBe(true);
+      expect(isRetriableError(err)).toBe(true);
+      expect(capturedXml).toBeNull();
     });
 
     test('falls back to the built-in code when the product host cannot be reached', async () => {
@@ -1152,7 +1167,7 @@ describe('ebs-sync e2e', () => {
       productResponses.set(NEW_BUNDLE_PATH, productWith([{ sku: 'new-VB' }]));
       const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
       const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
-      expect(result.vbnd).toEqual({ issues: [], missing: [`${NEW_BUNDLE_PATH} (new-VB)`] });
+      expect(result.vbnd).toEqual({ issues: [], missing: [`${NEW_BUNDLE_PATH} (new-VB)`], fallbacks: [] });
       expect(capturedXml).not.toContain('<ns2:PromotionCode>');
       expect(lineItems(capturedXml)).toHaveLength(2);
     });
@@ -1172,7 +1187,7 @@ describe('ebs-sync e2e', () => {
       productResponses.set(NEW_BUNDLE_PATH, productWith([variantCode('new-VB', 'VBND31')]));
       const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
       const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
-      expect(result.vbnd).toEqual({ issues: [], missing: [] });
+      expect(result.vbnd).toEqual({ issues: [], missing: [], fallbacks: [] });
     });
 
     test('reads each distinct bundle product once, and none for an order without a bundle', async () => {

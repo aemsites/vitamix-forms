@@ -404,6 +404,27 @@ describe('ebs-sync virtual-bundle code reporting', () => {
     expect(alerts('missing_vbnd_code')).toEqual([]);
   });
 
+  test('alerts once when an order was sent with a built-in code because the product could not be read', async () => {
+    const FALLBACK = '/us/en_us/products/x (x-VB): product lookup returned 503; sent the built-in code VBND17';
+    syncOrderToEbs.mockResolvedValue({
+      status: 200, xml: '<xml/>', vbnd: { issues: [], missing: [], fallbacks: [FALLBACK] },
+    });
+    updateOrderCustom.mockResolvedValue({});
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(alerts('vbnd_lookup_fallback')).toEqual([{
+      action: 'order-sync',
+      id: ORDER_ID,
+      source: 'ebs-sync',
+      reason: 'vbnd_lookup_fallback',
+      error: `Order sent to EBS with a built-in VBND code because the bundle product could not be read: ${FALLBACK}`,
+    }]);
+    expect(alerts('missing_vbnd_code')).toEqual([]);
+    expect(alerts('invalid_vbnd_code')).toEqual([]);
+  });
+
   test('raises both alerts when both problems are present', async () => {
     syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [ISSUE], missing: [MISSING] } });
     updateOrderCustom.mockResolvedValue({});
@@ -428,11 +449,14 @@ describe('ebs-sync virtual-bundle code reporting', () => {
   });
 
   test('sends no alert when syncOrderToEbs reports nothing', async () => {
-    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [], missing: [] } });
+    syncOrderToEbs.mockResolvedValue({
+      status: 200, xml: '<xml/>', vbnd: { issues: [], missing: [], fallbacks: [] },
+    });
     updateOrderCustom.mockResolvedValue({});
     await runSync();
     expect(alerts('missing_vbnd_code')).toEqual([]);
     expect(alerts('invalid_vbnd_code')).toEqual([]);
+    expect(alerts('vbnd_lookup_fallback')).toEqual([]);
   });
 
   test('sends no alert when the result has no vbnd data', async () => {

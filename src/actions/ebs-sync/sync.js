@@ -643,14 +643,17 @@ async function reportGwpProblems(runCtx, orderId, gwp) {
 /**
  * Report virtual-bundle (VBND) code problems on an order EBS accepted. The order
  * was sent, so nothing is retried; each kind of problem raises one alert for a
- * person to fix the product data (and, if needed, the EBS order):
+ * person to look at:
  *   - missing: a bundle line had no code anywhere, so it went to EBS without one;
- *   - issues: a product's `custom.vbndCode` is not a VBND code (the built-in code,
- *     if any, was used instead).
+ *   - issues: a product's `custom.vbndCode` is not a VBND code, or an order line
+ *     path is not a product path (the built-in code, if any, was used instead);
+ *   - fallbacks: the bundle product could not be read, so the built-in code was
+ *     sent. Harmless while the built-in map matches the product data, but it means
+ *     the product host is not being read and a newer product code was not used.
  *
  * @param {object} runCtx
  * @param {string} orderId
- * @param {{ issues?: string[], missing?: string[] }} [vbnd] from syncOrderToEbs
+ * @param {{ issues?: string[], missing?: string[], fallbacks?: string[] }} [vbnd] from syncOrderToEbs
  */
 async function reportVbndProblems(runCtx, orderId, vbnd) {
   const { params, log } = runCtx;
@@ -665,6 +668,12 @@ async function reportVbndProblems(runCtx, orderId, vbnd) {
     problems.push({
       reason: 'invalid_vbnd_code',
       error: `Order sent to EBS; check its VBND code: ${vbnd.issues.join('; ')}`,
+    });
+  }
+  if (vbnd?.fallbacks?.length) {
+    problems.push({
+      reason: 'vbnd_lookup_fallback',
+      error: `Order sent to EBS with a built-in VBND code because the bundle product could not be read: ${vbnd.fallbacks.join('; ')}`,
     });
   }
   for (const { reason, error } of problems) {

@@ -2,18 +2,20 @@
  * Unit tests for the virtual-bundle VBND product lookup used by the EBS sync.
  */
 
-import { describe, test, expect, jest, afterEach } from '@jest/globals';
+import { describe, test, expect, jest } from '@jest/globals';
 import {
   VBND_CODE_PATTERN,
   PRODUCT_LOOKUP_TIMEOUT_MS,
+  PRODUCT_HOST,
   normalizeProductPath,
+  isProductPath,
   fetchBundleProduct,
   readVbndCode,
   resolveVbndCodes,
 } from '../../src/actions/ebs-sync/vbnd-codes.js';
 import { isRetriableError } from '../../src/actions/ebs-sync/ebs.js';
 
-const CTX = { env: { ORG: 'aemsites', SITE: 'vitamix' }, log: { warn: jest.fn() } };
+const CTX = { env: { ORG: 'aemsites', SITE: 'vitamix' } };
 const SS_PATH = '/us/en_us/products/propel-750-plus-stainless-steel-container';
 const NEW_PATH = '/us/en_us/products/brand-new-bundle';
 
@@ -29,10 +31,6 @@ const order = (...items) => ({ id: 'om1', items });
 const product = ({ variants, custom } = {}) => ({ variants, ...(custom ? { custom } : {}) });
 const withCode = (sku, code) => ({ sku, custom: { vbndCode: code } });
 
-afterEach(() => {
-  CTX.log.warn.mockClear();
-});
-
 describe('normalizeProductPath', () => {
   test.each([
     ['/us/en_us/products/x', '/us/en_us/products/x'],
@@ -43,6 +41,34 @@ describe('normalizeProductPath', () => {
     [null, ''],
   ])('%s -> %s', (input, expected) => {
     expect(normalizeProductPath(input)).toBe(expected);
+  });
+});
+
+describe('isProductPath', () => {
+  test.each([
+    '/us/en_us/products/propel-750-classic-bundle',
+    '/ca/fr_ca/products/ascent-x5-deluxe-smartprep-kitchen-system',
+    '/us/en_us/products/x.y_z-1',
+  ])('accepts %s', (path) => {
+    expect(isProductPath(path)).toBe(true);
+  });
+
+  test.each([
+    // would change the host the product is read from
+    ['a host suffix', '.attacker.example/x'],
+    ['credentials', '@attacker.example/x'],
+    ['a protocol-relative path', '//attacker.example/x'],
+    ['a port', ':8080/x'],
+    // would leave the product directory
+    ['a parent segment', '/us/en_us/products/../../x'],
+    ['an encoded parent segment', '/us/%2e%2e/x'],
+    ['a backslash', '/us\\..\\x'],
+    // not a path
+    ['no leading slash', 'us/en_us/products/x'],
+    ['whitespace', '/us/en_us/products/a b'],
+    ['an empty string', ''],
+  ])('rejects %s', (_label, path) => {
+    expect(isProductPath(path)).toBe(false);
   });
 });
 
@@ -119,14 +145,16 @@ describe('fetchBundleProduct', () => {
     json: async () => body,
   }));
 
-  test('reads the product from the public product host, cache-busted', async () => {
+  test('reads the product from www.vitamix.com, cache-busted', async () => {
     const fetchImpl = respond(200, { sku: 'VBND' });
     const result = await fetchBundleProduct(CTX, `${SS_PATH}.json`, fetchImpl);
     expect(result).toEqual({ sku: 'VBND' });
     const [url, init] = fetchImpl.mock.calls[0];
+    expect(PRODUCT_HOST).toBe('https://www.vitamix.com');
     expect(url).toMatch(
-      new RegExp(`^https://main--vitamix--aemsites\\.aem\\.network${SS_PATH}\\.json\\?_=\\d+$`),
+      new RegExp(`^https://www\\.vitamix\\.com${SS_PATH}\\.json\\?_=\\d+$`),
     );
+    expect(new URL(url).host).toBe('www.vitamix.com');
     expect(init.headers['Cache-Control']).toBe('no-cache');
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
@@ -134,6 +162,15 @@ describe('fetchBundleProduct', () => {
   test('returns null for a product that does not exist', async () => {
     expect(await fetchBundleProduct(CTX, SS_PATH, respond(404))).toBeNull();
   });
+
+  test.each(['.attacker.example/x', '@attacker.example/x', '//attacker.example/x', '/us/../x'])(
+    'never requests a path that is not a product path (%s)',
+    async (path) => {
+      const fetchImpl = respond(200, { custom: { vbndCode: 'VBND99' } });
+      expect(await fetchBundleProduct(CTX, path, fetchImpl)).toBeNull();
+      expect(fetchImpl).not.toHaveBeenCalled();
+    },
+  );
 
   test.each([500, 502, 503, 429, 403])('throws on HTTP %s, carrying the status', async (status) => {
     const err = await fetchBundleProduct(CTX, SS_PATH, respond(status)).catch((e) => e);
@@ -154,9 +191,11 @@ describe('fetchBundleProduct', () => {
 });
 
 describe('resolveVbndCodes', () => {
+  // DOMException (what a fetch timeout rejects with) is not an instance of the
+  // test realm's Error, so it is checked separately.
   const productFetch = (products) => jest.fn(async (_ctx, path) => {
     const entry = products[path];
-    if (entry instanceof Error) throw entry;
+    if (entry instanceof Error || entry instanceof DOMException) throw entry;
     return entry ?? null;
   });
 
@@ -164,7 +203,9 @@ describe('resolveVbndCodes', () => {
     const fetchProduct = jest.fn();
     const simple = { sku: '068051-04', path: '/us/en_us/products/x', quantity: 1, price: { final: '1' } };
     const result = await resolveVbndCodes(CTX, order(simple), { fetchProduct });
-    expect(result).toEqual({ codes: new Map(), issues: [], missing: [] });
+    expect(result).toEqual({
+      codes: new Map(), issues: [], missing: [], fallbacks: [],
+    });
     expect(fetchProduct).not.toHaveBeenCalled();
   });
 
@@ -249,26 +290,38 @@ describe('resolveVbndCodes', () => {
     expect(missing).toEqual([`${NEW_PATH} (new-VB)`]);
   });
 
-  test('uses the built-in code and warns when the product cannot be read', async () => {
+  test('uses the built-in code and reports the fallback when the product cannot be read', async () => {
     const line = bundleLine();
     const err = Object.assign(new Error('product lookup returned 503'), { response: { statusCode: 503 } });
-    const { codes, issues, missing } = await resolveVbndCodes(CTX, order(line), {
+    const {
+      codes, issues, missing, fallbacks,
+    } = await resolveVbndCodes(CTX, order(line), {
       fetchProduct: productFetch({ [SS_PATH]: err }),
     });
     expect(codes.get(line)).toBe('VBND17');
     expect(issues).toEqual([]);
     expect(missing).toEqual([]);
-    expect(CTX.log.warn).toHaveBeenCalledTimes(1);
-    expect(CTX.log.warn.mock.calls[0][0]).toContain('using the built-in VBND code VBND17');
+    expect(fallbacks).toEqual([
+      `${SS_PATH} (071395-VB): product lookup returned 503; sent the built-in code VBND17`,
+    ]);
   });
 
-  test('does not need a logger to fall back', async () => {
+  test('reports a fallback after a timeout (a read-only DOMException) without throwing', async () => {
     const line = bundleLine();
-    const err = new Error('fetch failed');
-    const { codes } = await resolveVbndCodes({ env: CTX.env }, order(line), {
-      fetchProduct: productFetch({ [SS_PATH]: err }),
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    const { codes, fallbacks } = await resolveVbndCodes(CTX, order(line), {
+      fetchProduct: productFetch({ [SS_PATH]: timeout }),
     });
     expect(codes.get(line)).toBe('VBND17');
+    expect(fallbacks).toHaveLength(1);
+    expect(fallbacks[0]).toContain('aborted due to timeout');
+  });
+
+  test('reports no fallback when the product was read', async () => {
+    const line = bundleLine();
+    const fetchProduct = productFetch({ [SS_PATH]: product({ variants: [{ sku: '071395-VB' }] }) });
+    const { fallbacks } = await resolveVbndCodes(CTX, order(line), { fetchProduct });
+    expect(fallbacks).toEqual([]);
   });
 
   test.each([
@@ -281,10 +334,40 @@ describe('resolveVbndCodes', () => {
     const thrown = await resolveVbndCodes(CTX, order(line), {
       fetchProduct: productFetch({ [NEW_PATH]: err }),
     }).catch((e) => e);
-    expect(thrown).toBe(err);
-    expect(thrown.message).toContain(`Order om1: VBND lookup for ${NEW_PATH} (new-VB) failed`);
+    expect(thrown).toBeInstanceOf(Error);
+    expect(thrown.cause).toBe(err);
+    expect(thrown.message).toBe(`Order om1: VBND lookup for ${NEW_PATH} (new-VB) failed: ${err.message}`);
     expect(isRetriableError(thrown)).toBe(true);
     expect(thrown.vbndLookup).toBe(true);
+    // the caught error is never modified
+    expect(err.vbndLookup).toBeUndefined();
+    expect(err.message).not.toContain('VBND lookup');
+  });
+
+  test('a real fetch timeout (read-only DOMException) is wrapped into a retriable vbnd_lookup error', async () => {
+    const line = bundleLine({ path: NEW_PATH, sku: 'new-VB' });
+    const timeout = new DOMException('The operation was aborted due to timeout', 'TimeoutError');
+    // the bug this guards against: DOMException.message cannot be assigned
+    expect(() => { 'use strict'; timeout.message = 'x'; }).toThrow(TypeError);
+    const thrown = await resolveVbndCodes(CTX, order(line), {
+      fetchProduct: productFetch({ [NEW_PATH]: timeout }),
+    }).catch((e) => e);
+    expect(thrown).not.toBeInstanceOf(TypeError);
+    expect(thrown.cause).toBe(timeout);
+    expect(thrown.vbndLookup).toBe(true);
+    expect(thrown.message).toContain('aborted due to timeout');
+    expect(isRetriableError(thrown)).toBe(true);
+  });
+
+  test('keeps the HTTP status on the wrapped error, so a 403 is not retried', async () => {
+    const line = bundleLine({ path: NEW_PATH, sku: 'new-VB' });
+    const err = Object.assign(new Error('product lookup returned 403'), { response: { statusCode: 403 } });
+    const thrown = await resolveVbndCodes(CTX, order(line), {
+      fetchProduct: productFetch({ [NEW_PATH]: err }),
+    }).catch((e) => e);
+    expect(thrown.response).toEqual({ statusCode: 403 });
+    expect(thrown.vbndLookup).toBe(true);
+    expect(isRetriableError(thrown)).toBe(false);
   });
 
   test('reads each distinct product once, however many lines of it are ordered', async () => {
@@ -314,6 +397,19 @@ describe('resolveVbndCodes', () => {
     const fetchProduct = productFetch({ [SS_PATH]: product({ variants: [withCode('071395-VB', 'VBND17')] }) });
     const { codes } = await resolveVbndCodes(CTX, order(warranty, empty, line), { fetchProduct });
     expect([...codes.keys()]).toEqual([line]);
+  });
+
+  test('never reads a path that is not a product path; reports it and uses the built-in code', async () => {
+    // the built-in map has a code for this url-key, so the order still gets it
+    const line = bundleLine({ path: '.attacker.example/products/propel-750-plus-stainless-steel-container' });
+    const fetchProduct = jest.fn();
+    const { codes, issues, missing } = await resolveVbndCodes(CTX, order(line), { fetchProduct });
+    expect(fetchProduct).not.toHaveBeenCalled();
+    expect(codes.get(line)).toBe('VBND17');
+    expect(issues).toEqual([
+      '.attacker.example/products/propel-750-plus-stainless-steel-container (071395-VB): the order line path is not a product path; not looked up',
+    ]);
+    expect(missing).toEqual([]);
   });
 
   test('a bundle line without a path falls back to the built-in map, which has no entry for it', async () => {
