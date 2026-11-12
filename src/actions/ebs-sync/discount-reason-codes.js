@@ -23,6 +23,12 @@
  *
  * Source of truth: Magento Admin -> Marketing -> Cart Price Rules, the active
  * rules whose Description matches /^VBND/ with `order_level_promotion = 1`.
+ *
+ * FALLBACK ONLY. The code now lives with the bundle in the Product Bus
+ * (`custom.vbndCode`, see vbnd-codes.js), which the sync reads first. This map
+ * covers bundles whose product data has no code yet, and the case where the
+ * product host cannot be reached. Once every bundle's product carries its code
+ * (the vitamix-catalog-sync `refresh-vbnd` script writes them), this file can go.
  */
 
 /**

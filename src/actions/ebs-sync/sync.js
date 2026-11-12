@@ -641,6 +641,44 @@ async function reportGwpProblems(runCtx, orderId, gwp) {
 }
 
 /**
+ * Report virtual-bundle (VBND) code problems on an order EBS accepted. The order
+ * was sent, so nothing is retried; each kind of problem raises one alert for a
+ * person to fix the product data (and, if needed, the EBS order):
+ *   - missing: a bundle line had no code anywhere, so it went to EBS without one;
+ *   - issues: a product's `custom.vbndCode` is not a VBND code (the built-in code,
+ *     if any, was used instead).
+ *
+ * @param {object} runCtx
+ * @param {string} orderId
+ * @param {{ issues?: string[], missing?: string[] }} [vbnd] from syncOrderToEbs
+ */
+async function reportVbndProblems(runCtx, orderId, vbnd) {
+  const { params, log } = runCtx;
+  const problems = [];
+  if (vbnd?.missing?.length) {
+    problems.push({
+      reason: 'missing_vbnd_code',
+      error: `Order sent to EBS without a VBND code for ${vbnd.missing.join(', ')}; set custom.vbndCode on the bundle product`,
+    });
+  }
+  if (vbnd?.issues?.length) {
+    problems.push({
+      reason: 'invalid_vbnd_code',
+      error: `Order sent to EBS; check its VBND code: ${vbnd.issues.join('; ')}`,
+    });
+  }
+  for (const { reason, error } of problems) {
+    log.warn(`[ebs-sync] Order ${orderId}: ${error}`);
+    // eslint-disable-next-line no-await-in-loop
+    await logOrderSync(params, {
+      action: 'order-sync', id: orderId, source: 'ebs-sync', reason, error,
+    }).catch((logErr) => {
+      log.warn(`[ebs-sync] Failed to report VBND code data for ${orderId}`, errorInfo(logErr));
+    });
+  }
+}
+
+/**
  * Send one order to EBS (up to maxAttempts tries) and record the outcome:
  * syncedAt (or a pending custom update), inventory outbox, counters; on
  * failure syncError.
@@ -785,6 +823,7 @@ async function sendOrder(runCtx, orderId, order, orderJournal, { maxAttempts = M
 
     // After the inventory queueing so the alert can't widen that window.
     await reportGwpProblems(runCtx, orderId, ebsResult.gwp);
+    await reportVbndProblems(runCtx, orderId, ebsResult.vbnd);
 
     state.lastProcessedOrderId = orderId;
     state.processedCount = (state.processedCount || 0) + 1;
@@ -1032,6 +1071,12 @@ function describeSyncError(err) {
 
   if (/cannot build payment snapshot/i.test(message)) {
     return 'payment_snapshot_missing';
+  }
+
+  // The bundle's product could not be read; this says nothing about EBS, so it
+  // must not fall through to the ebs_* labels below.
+  if (err.vbndLookup) {
+    return 'vbnd_lookup_failed';
   }
 
   if (err.ebsStatus != null || /EBS rejected order/i.test(message)) {

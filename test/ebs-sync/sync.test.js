@@ -355,6 +355,119 @@ describe('ebs-sync managed inventory outbox', () => {
   });
 });
 
+describe('ebs-sync virtual-bundle code reporting', () => {
+  const MISSING = '/us/en_us/products/new-bundle (new-VB)';
+  const ISSUE = '/us/en_us/products/new-bundle (new-VB): variant custom.vbndCode "oops" is not a VBND code';
+  const alerts = (reason) => logOrderSync.mock.calls
+    .map(([, payload]) => payload)
+    .filter((payload) => payload.reason === reason);
+
+  afterEach(() => {
+    syncOrderToEbs.mockImplementation(async () => ({ status: 200, xml: '<xml/>' }));
+    logOrderSync.mockImplementation(async () => {});
+    getOrder.mockImplementation(async (_p, id) => ({ id, state: 'payment_completed', custom: {} }));
+  });
+
+  test('alerts once when a bundle went to EBS without a code, and still marks the order synced', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [], missing: [MISSING] } });
+    updateOrderCustom.mockResolvedValue({});
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(updateOrderCustom).toHaveBeenCalledWith(expect.anything(), ORDER_ID, expect.objectContaining({ syncedAt: expect.any(String) }));
+    expect(alerts('missing_vbnd_code')).toEqual([{
+      action: 'order-sync',
+      id: ORDER_ID,
+      source: 'ebs-sync',
+      reason: 'missing_vbnd_code',
+      error: `Order sent to EBS without a VBND code for ${MISSING}; set custom.vbndCode on the bundle product`,
+    }]);
+    expect(alerts('invalid_vbnd_code')).toEqual([]);
+    expect(logLines.some((l) => l.startsWith('warn:') && l.includes('without a VBND code'))).toBe(true);
+  });
+
+  test('alerts once when a product declares a value that is not a VBND code', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [ISSUE], missing: [] } });
+    updateOrderCustom.mockResolvedValue({});
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(alerts('invalid_vbnd_code')).toEqual([{
+      action: 'order-sync',
+      id: ORDER_ID,
+      source: 'ebs-sync',
+      reason: 'invalid_vbnd_code',
+      error: `Order sent to EBS; check its VBND code: ${ISSUE}`,
+    }]);
+    expect(alerts('missing_vbnd_code')).toEqual([]);
+  });
+
+  test('raises both alerts when both problems are present', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [ISSUE], missing: [MISSING] } });
+    updateOrderCustom.mockResolvedValue({});
+
+    await runSync();
+
+    expect(alerts('missing_vbnd_code')).toHaveLength(1);
+    expect(alerts('invalid_vbnd_code')).toHaveLength(1);
+  });
+
+  test('a failed alert does not fail the sync', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [], missing: [MISSING] } });
+    updateOrderCustom.mockResolvedValue({});
+    logOrderSync.mockImplementation(async (_p, payload) => {
+      if (payload.reason === 'missing_vbnd_code') throw new Error('ops log down');
+    });
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([ORDER_ID]);
+    expect(logLines.some((l) => l.startsWith('warn:') && l.includes('Failed to report VBND code data'))).toBe(true);
+  });
+
+  test('sends no alert when syncOrderToEbs reports nothing', async () => {
+    syncOrderToEbs.mockResolvedValue({ status: 200, xml: '<xml/>', vbnd: { issues: [], missing: [] } });
+    updateOrderCustom.mockResolvedValue({});
+    await runSync();
+    expect(alerts('missing_vbnd_code')).toEqual([]);
+    expect(alerts('invalid_vbnd_code')).toEqual([]);
+  });
+
+  test('sends no alert when the result has no vbnd data', async () => {
+    updateOrderCustom.mockResolvedValue({});
+    await runSync();
+    expect(alerts('missing_vbnd_code')).toEqual([]);
+    expect(alerts('invalid_vbnd_code')).toEqual([]);
+  });
+
+  test('does not mark an order synced when its bundle product could not be read', async () => {
+    const err = Object.assign(new Error('Order o: VBND lookup for /x (y) failed: product lookup returned 503'), {
+      response: { statusCode: 503 },
+      vbndLookup: true,
+    });
+    syncOrderToEbs.mockRejectedValue(err);
+    updateOrderCustom.mockResolvedValue({});
+
+    const { body } = await runSync();
+
+    expect(body.processedOrders).toEqual([]);
+    expect(updateOrderCustom).toHaveBeenCalledWith(
+      expect.anything(),
+      ORDER_ID,
+      // labelled as a product lookup failure, not as an EBS 503
+      { syncError: 'vbnd_lookup_failed' },
+    );
+    expect(updateOrderCustom).not.toHaveBeenCalledWith(
+      expect.anything(),
+      ORDER_ID,
+      expect.objectContaining({ syncedAt: expect.any(String) }),
+    );
+    expect(alerts('missing_vbnd_code')).toEqual([]);
+  });
+});
+
 describe('ebs-sync gift-with-purchase reporting', () => {
   const ISSUE = 'gift-with-purchase gwp-1 (gift-sku): custom.promotionName is blank; sent the promotion id instead';
   const alerts = () => logOrderSync.mock.calls

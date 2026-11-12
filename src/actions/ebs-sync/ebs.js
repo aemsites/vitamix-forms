@@ -56,7 +56,7 @@
  */
 
 import { proxyFetch } from '../../proxy.js';
-import { resolveVbndReasonCode } from './discount-reason-codes.js';
+import { resolveVbndCodes } from './vbnd-codes.js';
 
 const TRANSIENT_ERROR_PATTERN = /timeout|timed out|aborted|fetch failed|network|ECONNRESET|ENOTFOUND|ETIMEDOUT|EAI_AGAIN/i;
 
@@ -100,9 +100,12 @@ export function isRetriableError(err) {
  * @param {object}   order        - Full StoredOrder from the commerce API
  * @param {object[]} orderJournal - All journal entries for this order
  * @param {{ signal?: AbortSignal }} [opts] - signal aborts the EBS request (per-attempt timeout)
- * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] } }>}
+ * @returns {Promise<{ status: number, xml: string, gwp: { issues: string[], missing: string[] }, vbnd: { issues: string[], missing: string[] } }>}
  *   gwp: gift-with-purchase data problems found while building the request
  *   (see resolveGwpPromotions); they never fail the sync.
+ *   vbnd: virtual-bundle code problems (see resolveVbndCodes): product data that
+ *   is not a VBND code, and bundle lines that have no code. They never fail the
+ *   sync either; only an unreadable product with no built-in code does (retriable).
  */
 export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal } = {}) {
   const paymentSnapshot = buildPaymentSnapshot(order, orderJournal);
@@ -113,7 +116,10 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
   }
 
   const gwp = resolveGwpPromotions(order);
-  const xml = buildCreateOrderXml(order, paymentSnapshot, gwp.codes);
+  // Reads the product of each virtual bundle on the order; throws a retriable
+  // error if one cannot be read and has no built-in code to fall back on.
+  const vbnd = await resolveVbndCodes(ctx, order);
+  const xml = buildCreateOrderXml(order, paymentSnapshot, gwp.codes, vbnd.codes);
 
   const res = await proxyFetch(ctx, `${params.EBS_BASE_URL}/VITOTCCreateWebOrder`, {
     method: 'POST',
@@ -139,7 +145,12 @@ export async function syncOrderToEbs(ctx, params, order, orderJournal, { signal 
     throw err;
   }
 
-  return { status: res.status, xml, gwp: { issues: gwp.issues, missing: gwp.missing } };
+  return {
+    status: res.status,
+    xml,
+    gwp: { issues: gwp.issues, missing: gwp.missing },
+    vbnd: { issues: vbnd.issues, missing: vbnd.missing },
+  };
 }
 
 /** Returns true when the EBS response indicates success. */
@@ -334,8 +345,9 @@ export function buildPaymentSnapshot(order, orderJournal) {
  * @param {object} order
  * @param {object} paymentSnapshot
  * @param {string[]} [gwpCodes] gift-with-purchase PromotionCode values (resolveGwpPromotions)
+ * @param {Map<object, string>} [vbndCodes] bundle parent line -> VBND code (resolveVbndCodes)
  */
-function buildCreateOrderXml(order, paymentSnapshot, gwpCodes = []) {
+function buildCreateOrderXml(order, paymentSnapshot, gwpCodes = [], vbndCodes = new Map()) {
   const country = resolveCountry(order);
   const source = countryToSource(country);
   const priceList = countryToPriceList(country);
@@ -393,9 +405,9 @@ function buildCreateOrderXml(order, paymentSnapshot, gwpCodes = []) {
         <ns2:Tax Amount="${escapeXml(taxAmount)}" Provisional="true" />
         ${giftMessage}
         ${salesPersonId ? `<ns2:SalesPersonId>${escapeXml(salesPersonId)}</ns2:SalesPersonId>` : ''}
-        ${buildPromotionsXml(order, gwpCodes)}
+        ${buildPromotionsXml(order, gwpCodes, vbndCodes)}
         <ns2:Charge Type="Shipping" Value="${escapeXml(shippingAmount)}" />
-        ${buildLineItemsXml(order, gwpCodes)}
+        ${buildLineItemsXml(order, gwpCodes, vbndCodes)}
       </ns2:Order>
     </ns2:CreateRequest>
   </soapenv:Body>
@@ -752,7 +764,7 @@ function effectiveItemUnitPrice(item) {
   return unitSellingPrice(effectiveLineTotalCents(item), lineQuantity(item));
 }
 
-function buildLineItemsXml(order, gwpCodes = []) {
+function buildLineItemsXml(order, gwpCodes = [], vbndCodes = new Map()) {
   const orderKey = order.friendlyId || order.id;
   // Magento stamped every applied order-level promotion on every line item
   // (simple, bundle child, warranty and the gift itself), regardless of which
@@ -783,7 +795,7 @@ function buildLineItemsXml(order, gwpCodes = []) {
       // The bundle's Discount Reason Code (VBND) is resolved once from the
       // parent line and stamped on every child line, mirroring the legacy
       // Magento sync. Warranty lines below intentionally omit it.
-      const reasonCode = resolveVbndReasonCode(item);
+      const reasonCode = vbndCodes.get(item);
       const childPromotionCodes = reasonCode
         ? [...gwpCodes, reasonCode, ...couponCodes]
         : sharedPromotionCodes;
@@ -949,16 +961,17 @@ function resolveSalesPersonId(order) {
 /**
  * Collect the VBND Discount Reason Codes of the order's virtual bundles, in
  * line order and de-duplicated (two lines of one bundle share a code). Bundles
- * with no mapped code contribute nothing.
+ * with no code contribute nothing.
  *
  * @param {object} order - the stored order.
+ * @param {Map<object, string>} vbndCodes - bundle parent line -> VBND code (resolveVbndCodes).
  * @returns {string[]}
  */
-function getBundleReasonCodes(order) {
+function getBundleReasonCodes(order, vbndCodes) {
   const codes = [];
   for (const item of (order.items || [])) {
     if (item.custom?.linkedTo || !item.bundleItems?.length) continue;
-    const code = resolveVbndReasonCode(item);
+    const code = vbndCodes.get(item);
     if (code && !codes.includes(code)) codes.push(code);
   }
   return codes;
@@ -1238,10 +1251,10 @@ export function resolveGwpPromotions(order) {
  * Matches the ordering used on bundle child lines. Emits nothing when the order
  * has no gift, no bundle with a code and no coupons.
  */
-function buildPromotionsXml(order, gwpCodes = []) {
+function buildPromotionsXml(order, gwpCodes = [], vbndCodes = new Map()) {
   return [
     ...gwpCodes,
-    ...getBundleReasonCodes(order),
+    ...getBundleReasonCodes(order, vbndCodes),
     ...getCouponPromotionCodes(order),
   ]
     .map((code) => `<ns2:PromotionCode>${escapeXml(code)}</ns2:PromotionCode>`)
