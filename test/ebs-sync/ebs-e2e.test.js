@@ -12,7 +12,7 @@
 import { describe, test, expect, beforeAll, afterAll, beforeEach } from '@jest/globals';
 import {
   syncOrderToEbs, buildPaymentSnapshot, resolveGwpPromotions, shortenCouponName,
-  COUPON_NAME_MAX_LENGTH,
+  COUPON_NAME_MAX_LENGTH, isRetriableError,
 } from '../../src/actions/ebs-sync/ebs.js';
 import { XMLParser, XMLValidator } from 'fast-xml-parser';
 import { readFileSync, writeFileSync, existsSync } from 'fs';
@@ -409,6 +409,10 @@ const MOCK_CTX = {
 
 describe('ebs-sync e2e', () => {
   let capturedXml;
+  // Product host (virtual-bundle VBND lookup): product path -> { status, body } or
+  // { error }; paths with no entry answer 404, so bundles fall back to the built-in map.
+  let productResponses;
+  let productLookups;
   const origFetch = global.fetch;
 
   beforeAll(() => {
@@ -416,7 +420,18 @@ describe('ebs-sync e2e', () => {
     //   POST <proxy>  body: { url, method, headers, body: <SOAP XML> }
     // The proxy URL-decodes text/xml bodies before forwarding them; decode the
     // same way so tests assert against the XML the target receives.
-    global.fetch = async (_url, opts) => {
+    global.fetch = async (url, opts) => {
+      if (String(url).startsWith('https://www.vitamix.com/')) {
+        const path = new URL(url).pathname.replace(/\.json$/, '');
+        productLookups.push(path);
+        const response = productResponses.get(path) ?? { status: 404 };
+        if (response.error) throw response.error;
+        return {
+          ok: response.status >= 200 && response.status < 300,
+          status: response.status,
+          json: async () => response.body,
+        };
+      }
       const wrapped = JSON.parse(opts.body);
       capturedXml = decodeURIComponent(wrapped.body);
       return { ok: true, status: 200, text: async () => '<Response Succeeded="true" />' };
@@ -429,6 +444,8 @@ describe('ebs-sync e2e', () => {
 
   beforeEach(() => {
     capturedXml = null;
+    productResponses = new Map();
+    productLookups = [];
   });
 
   /**
@@ -1031,6 +1048,162 @@ describe('ebs-sync e2e', () => {
       const lines = lineItems(xml);
       expect(lines).toHaveLength(childSkus.length * 2);
       lines.forEach((line) => expect(promotionCodes(line)).toEqual([code]));
+    });
+
+    // ── VBND code read from the bundle's product data ────────────────────────
+    // The sync reads `custom.vbndCode` (ordered variant, then product) from the
+    // product host; the built-in map is the fallback.
+
+    const NEW_BUNDLE_PATH = '/us/en_us/products/brand-new-bundle';
+    const SS_PATH = '/us/en_us/products/propel-750-plus-stainless-steel-container';
+    const bundleAt = (path, sku, childSkus = ['child-a-VB', 'child-b-VB']) => ({
+      sku,
+      path,
+      quantity: 1,
+      name: path,
+      price: { final: '100.00', currency: 'USD' },
+      bundleItems: childSkus.map((childSku) => ({
+        sku: childSku, name: childSku, quantity: 1, price: { final: '10.00', currency: 'USD' }, taxAmount: '1.00',
+      })),
+    });
+    const bundleOnlyOrder = (...items) => {
+      const order = bundleOrder();
+      order.items = items;
+      return order;
+    };
+    const productWith = (variants, custom) => ({
+      status: 200,
+      body: { variants, ...(custom ? { custom } : {}) },
+    });
+    const variantCode = (sku, code) => ({ sku, custom: { vbndCode: code } });
+    const allCodes = (xml) => [
+      promotionCodes(orderLevel(xml)),
+      ...lineItems(xml).map((line) => promotionCodes(line)),
+    ];
+
+    test('takes the VBND code from the bundle product, for a bundle that has no built-in code', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, productWith([variantCode('new-VB', 'VBND31')]));
+      const xml = await buildXml(bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB')), bundleJournal);
+      expect(productLookups).toEqual([NEW_BUNDLE_PATH]);
+      // header, then the two bundle child lines
+      expect(allCodes(xml)).toEqual([['VBND31'], ['VBND31'], ['VBND31']]);
+    });
+
+    test('uses the code of the ordered variant', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, productWith([
+        variantCode('black-VB', 'VBND40'),
+        variantCode('red-VB', 'VBND40.1'),
+      ]));
+      const xml = await buildXml(bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'red-VB')), bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND40.1']);
+    });
+
+    test('uses a product-level code when the variant declares none', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, productWith([{ sku: 'new-VB' }], { vbndCode: 'VBND32' }));
+      const xml = await buildXml(bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB')), bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND32']);
+    });
+
+    test('product data wins over the built-in code', async () => {
+      // VBND17 is the built-in code for this variant
+      productResponses.set(SS_PATH, productWith([variantCode('071395-VB', 'VBND77')]));
+      const xml = await buildXml(bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB')), bundleJournal);
+      expect(allCodes(xml)).toEqual([['VBND77'], ['VBND77'], ['VBND77']]);
+    });
+
+    test('puts the VBND code ahead of the coupon when the code comes from the product', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, productWith([variantCode('new-VB', 'VBND31')]));
+      const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
+      order.couponCodes = ['WELCOME1'];
+      order.estimates = { ...order.estimates, discounts: [couponDiscount('WELCOME1', '$25 Off $200')] };
+      const xml = await buildXml(order, bundleJournal);
+      const expected = ['VBND31', '$25 Off $200 (WELCOME1)'];
+      expect(allCodes(xml)).toEqual([expected, expected, expected]);
+    });
+
+    test('falls back to the built-in code when the product has no code', async () => {
+      productResponses.set(SS_PATH, productWith([{ sku: '071395-VB' }]));
+      const xml = await buildXml(bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB')), bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND17']);
+    });
+
+    test('falls back to the built-in code when the product host fails, still sends the order, and reports it', async () => {
+      productResponses.set(SS_PATH, { status: 503 });
+      const order = bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB'));
+      const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
+      expect(allCodes(capturedXml)).toEqual([['VBND17'], ['VBND17'], ['VBND17']]);
+      expect(result.vbnd.fallbacks).toEqual([
+        `${SS_PATH} (071395-VB): product lookup ${SS_PATH} returned 503; sent the built-in code VBND17`,
+      ]);
+    });
+
+    test('a product host timeout with no built-in code is retriable and labelled as a lookup failure', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, {
+        error: new DOMException('The operation was aborted due to timeout', 'TimeoutError'),
+      });
+      const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
+      const err = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal).catch((e) => e);
+      expect(err.vbndLookup).toBe(true);
+      expect(isRetriableError(err)).toBe(true);
+      expect(capturedXml).toBeNull();
+    });
+
+    test('falls back to the built-in code when the product host cannot be reached', async () => {
+      productResponses.set(SS_PATH, { error: new TypeError('fetch failed') });
+      const xml = await buildXml(bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB')), bundleJournal);
+      expect(promotionCodes(orderLevel(xml))).toEqual(['VBND17']);
+    });
+
+    test('does not send the order, and signals a retry, when the product cannot be read and has no built-in code', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, { status: 503 });
+      const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
+      const err = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal).catch((e) => e);
+      expect(err).toBeInstanceOf(Error);
+      expect(isRetriableError(err)).toBe(true);
+      expect(capturedXml).toBeNull();
+    });
+
+    test('sends the order without a code and reports the bundle when no code can be found', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, productWith([{ sku: 'new-VB' }]));
+      const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
+      const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
+      expect(result.vbnd).toEqual({ issues: [], missing: [`${NEW_BUNDLE_PATH} (new-VB)`], fallbacks: [] });
+      expect(capturedXml).not.toContain('<ns2:PromotionCode>');
+      expect(lineItems(capturedXml)).toHaveLength(2);
+    });
+
+    test('reports a product value that is not a VBND code, and uses the built-in code', async () => {
+      productResponses.set(SS_PATH, productWith([variantCode('071395-VB', 'VBNDP750SS')]));
+      const order = bundleOnlyOrder(bundleAt(SS_PATH, '071395-VB'));
+      const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
+      expect(result.vbnd.issues).toEqual([
+        `${SS_PATH} (071395-VB): variant custom.vbndCode "VBNDP750SS" is not a VBND code`,
+      ]);
+      expect(result.vbnd.missing).toEqual([]);
+      expect(promotionCodes(orderLevel(capturedXml))).toEqual(['VBND17']);
+    });
+
+    test('reports nothing for a bundle whose code was found', async () => {
+      productResponses.set(NEW_BUNDLE_PATH, productWith([variantCode('new-VB', 'VBND31')]));
+      const order = bundleOnlyOrder(bundleAt(NEW_BUNDLE_PATH, 'new-VB'));
+      const result = await syncOrderToEbs(MOCK_CTX, MOCK_PARAMS, order, bundleJournal);
+      expect(result.vbnd).toEqual({ issues: [], missing: [], fallbacks: [] });
+    });
+
+    test('reads each distinct bundle product once, and none for an order without a bundle', async () => {
+      productResponses.set(SS_PATH, productWith([
+        variantCode('071395-VB', 'VBND17'),
+        variantCode('073294-VB', 'VBND17.1'),
+      ]));
+      await buildXml(bundleOnlyOrder(
+        bundleAt(SS_PATH, '071395-VB'),
+        bundleAt(SS_PATH, '073294-VB'),
+      ), bundleJournal);
+      expect(productLookups).toEqual([SS_PATH]);
+
+      productLookups.length = 0;
+      await buildXml(orderWith({}), journal);
+      expect(productLookups).toEqual([]);
     });
 
     test('emits no line-level PromotionCode when the order has no coupons', async () => {
