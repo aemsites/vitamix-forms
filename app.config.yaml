@@ -294,6 +294,9 @@ application:
               BV_SCHEDULE_ENABLED: $BV_SCHEDULE_ENABLED
               BV_SFTP_USERNAME: $BV_SFTP_USERNAME
               BV_SFTP_PASSWORD: $BV_SFTP_PASSWORD
+              OPENAI_SCHEDULE_ENABLED: $OPENAI_SCHEDULE_ENABLED
+              OPENAI_SFTP_USERNAME: $OPENAI_SFTP_USERNAME
+              OPENAI_SFTP_PASSWORD: $OPENAI_SFTP_PASSWORD
 
         triggers:
           feeds-push-schedule:

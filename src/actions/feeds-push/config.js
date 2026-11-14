@@ -141,6 +141,27 @@ const BV_SFTP = {
   },
 };
 
+/**
+ * OpenAI product feed SFTP destination.
+ * - Uses OpenAI's SFTP endpoint on port 443 and uploads to the root directory.
+ * - The nightly run pushes only when OPENAI_SCHEDULE_ENABLED is "true";
+ *   manual runs are not gated by this switch.
+ * - Uses OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD credentials and the
+ *   stable `vitamix-products-feed-gpt.csv.gz` filename.
+ * - Uploads directly to the final filename, without a temp-file rename.
+ */
+const OPENAI_SFTP = {
+  provider: 'openai',
+  scheduleEnabledBy: 'OPENAI_SCHEDULE_ENABLED',
+  port: 443,
+  remoteDir: '/',
+  credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
+  atomicUpload: false,
+  locales: {
+    'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz' }
+  },
+};
+
 /** @type {Record<string, EnvConfig>} */
 export const CONFIG = {
   stage: {
@@ -168,6 +189,14 @@ export const CONFIG = {
         host: 'sftp-stg.bazaarvoice.com',
         hostFingerprints: ['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI'],
       },
+      openai: {
+        ...OPENAI_SFTP,
+        locales: {
+          'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 1 }
+        },
+        host: 'sftp.commerce.openai.com',
+        credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
+      }
     },
   },
   prod: {
@@ -193,6 +222,14 @@ export const CONFIG = {
         ...BV_SFTP,
         host: 'sftp.bazaarvoice.com',
         hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
+      },
+      openai: {
+        ...OPENAI_SFTP,
+        locales: {
+          'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 1 }
+        },
+        host: 'sftp.commerce.openai.com',
+        credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
       },
     },
   },
