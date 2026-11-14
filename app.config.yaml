@@ -131,7 +131,7 @@ application:
               # hourly reconciliation against the orders listing (needs orders:list
               # on the orders token). "true" to enable; unset = off
               EBS_RECONCILE_ENABLED: $EBS_RECONCILE_ENABLED
-              
+
         triggers:
           ebs-sync-schedule:
             feed: /whisk.system/alarms/alarm
