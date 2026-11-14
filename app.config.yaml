@@ -131,7 +131,6 @@ application:
               # hourly reconciliation against the orders listing (needs orders:list
               # on the orders token). "true" to enable; unset = off
               EBS_RECONCILE_ENABLED: $EBS_RECONCILE_ENABLED
-
         triggers:
           ebs-sync-schedule:
             feed: /whisk.system/alarms/alarm
@@ -294,25 +293,9 @@ application:
               BV_SCHEDULE_ENABLED: $BV_SCHEDULE_ENABLED
               BV_SFTP_USERNAME: $BV_SFTP_USERNAME
               BV_SFTP_PASSWORD: $BV_SFTP_PASSWORD
-          feeds-push-openai:
-            function: dist/actions/feeds-push-openai/index.js
-            runtime: nodejs:22
-            web: false
-            limits:
-              timeout: 60000
-              memory: 512
-              concurrency: 1
-            inputs:
-              LOG_LEVEL: $LOG_LEVEL
-              OPENAI_FEED_PUSH_ENABLED: $OPENAI_FEED_PUSH_ENABLED
-              FEED_SITE_BASE: $FEED_SITE_BASE
-              FEED_CONTENT_BASE: $FEED_CONTENT_BASE
-              OPENAI_SFTP_HOST: $OPENAI_SFTP_HOST
-              OPENAI_SFTP_PORT: $OPENAI_SFTP_PORT
+              OPENAI_SCHEDULE_ENABLED: $OPENAI_SCHEDULE_ENABLED
               OPENAI_SFTP_USERNAME: $OPENAI_SFTP_USERNAME
               OPENAI_SFTP_PASSWORD: $OPENAI_SFTP_PASSWORD
-              OPENAI_SFTP_DIRECTORY: $OPENAI_SFTP_DIRECTORY
-              OPENAI_SFTP_FILENAME: $OPENAI_SFTP_FILENAME
 
         triggers:
           feeds-push-schedule:
@@ -323,16 +306,8 @@ application:
               # only pushes on the run that is 1 AM in America/New_York.
               cron: '0 5,6 * * *'
               timezone: UTC
-          openai-feed-schedule:
-            feed: /whisk.system/alarms/alarm
-            inputs:
-              cron: '0 12 * * *'  # daily at 12:00 UTC; use '0 */12 * * *' for every 12 hours
-              timezone: UTC
 
         rules:
           feeds-push-rule:
             trigger: feeds-push-schedule
             action: feeds-push
-          openai-feed-rule:
-            trigger: openai-feed-schedule
-            action: feeds-push-openai

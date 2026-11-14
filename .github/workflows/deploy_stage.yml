@@ -129,6 +129,9 @@ jobs:
           # feeds-push — Bazaarvoice staging SFTP credentials (manual runs only)
           BV_SFTP_USERNAME: ${{ secrets.BV_SFTP_USERNAME_STAGE }}
           BV_SFTP_PASSWORD: ${{ secrets.BV_SFTP_PASSWORD_STAGE }}
+          # feeds-push — Open AI SFTP credentials
+          OPENAI_SFTP_USERNAME: ${{ secrets.OPENAI_SFTP_USERNAME_STAGE }}
+          OPENAI_SFTP_PASSWORD: ${{ secrets.OPENAI_SFTP_PASSWORD_STAGE }}
           ALERT_FEED_FAIL_EMAILS: ${{ secrets.ALERT_FEED_FAIL_EMAILS }}
 
         uses: adobe/aio-apps-action@3.3.0
