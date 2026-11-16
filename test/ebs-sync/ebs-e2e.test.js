@@ -1008,11 +1008,16 @@ describe('ebs-sync e2e', () => {
     // Blender 4-Piece Bundle (VBND18): the code goes on the header and on every
     // bundle child line, in the US and Canada.
     test.each([
+      ['Propel 750 Classic Bundle, White', 'propel-750-classic-bundle', '073295-VB', ['073295-VB', 'child-b-VB'], 'VBND1.2'],
       ['Propel 750 + SS Container, Black', 'propel-750-plus-stainless-steel-container', '071395-VB', ['067891-VB', '071395-VB'], 'VBND17'],
       ['Propel 750 + SS Container, Red', 'propel-750-plus-stainless-steel-container', '073294-VB', ['067891-VB', '073294-VB'], 'VBND17.1'],
       ['Propel 750 + SS Container, White', 'propel-750-plus-stainless-steel-container', '073295-VB', ['067891-VB', '073295-VB'], 'VBND17.2'],
       ['Propel 750 + SS Container, Slate', 'propel-750-plus-stainless-steel-container', '073296-VB', ['067891-VB', '073296-VB'], 'VBND17.3'],
       ['2-Speed IB 4-Piece Bundle', '2-speed-immersion-blender-4-piece-bundle', '073511-VB', ['069812-VB', '069814-VB', '073511-VB'], 'VBND18'],
+      ['X5 Deluxe SmartPrep, Brushed Stainless', 'ascent-x5-deluxe-smartprep-kitchen-system', '073495-04-VB', ['073495-04-VB', 'child-b-VB'], 'VBND15'],
+      ['X5 Deluxe SmartPrep, Graphite', 'ascent-x5-deluxe-smartprep-kitchen-system', '074104-04-VB', ['074104-04-VB', 'child-b-VB'], 'VBND15.1'],
+      ['X5 Deluxe SmartPrep, Shadow Black', 'ascent-x5-deluxe-smartprep-kitchen-system', '075805-04-VB', ['075805-04-VB', 'child-b-VB'], 'VBND15.2'],
+      ['X5 Deluxe SmartPrep, Polar White', 'ascent-x5-deluxe-smartprep-kitchen-system', '075807-04-VB', ['075807-04-VB', 'child-b-VB'], 'VBND15.3'],
     ])('stamps the %s VBND code on the header and every bundle line', async (_label, urlKey, sku, childSkus, code) => {
       const order = bundleOrder();
       order.items = ['us/en_us', 'ca/en_us'].map((locale) => ({

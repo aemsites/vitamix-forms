@@ -113,6 +113,51 @@ describe('resolveVbndReasonCode', () => {
     });
   });
 
+  test.each([
+    ['071395-VB', 'VBND1'],
+    ['073294-VB', 'VBND1.1'],
+    ['073295-VB', 'VBND1.2'],
+    ['073296-VB', 'VBND1.3'],
+  ])('resolves Propel 750 Classic Bundle variant %s to %s in the US and Canada', (sku, code) => {
+    ['us/en_us', 'ca/en_us', 'ca/fr_ca'].forEach((locale) => {
+      expect(resolveVbndReasonCode({
+        path: `/${locale}/products/propel-750-classic-bundle`,
+        sku,
+      })).toBe(code);
+    });
+  });
+
+  test('the White Classic Bundle (VBND1.2) and the White SS Container bundle (VBND17.2) keep distinct codes', () => {
+    const code = (urlKey) => resolveVbndReasonCode({ path: `/us/en_us/products/${urlKey}`, sku: '073295-VB' });
+    expect(code('propel-750-classic-bundle')).toBe('VBND1.2');
+    expect(code('propel-750-plus-stainless-steel-container')).toBe('VBND17.2');
+  });
+
+  test.each([
+    ['073495-04-VB', 'VBND15'],
+    ['074104-04-VB', 'VBND15.1'],
+    ['075805-04-VB', 'VBND15.2'],
+    ['075807-04-VB', 'VBND15.3'],
+  ])('resolves X5 Deluxe SmartPrep Kitchen System variant %s to %s in the US and Canada', (sku, code) => {
+    ['us/en_us', 'ca/en_us', 'ca/fr_ca'].forEach((locale) => {
+      expect(resolveVbndReasonCode({
+        path: `/${locale}/products/ascent-x5-deluxe-smartprep-kitchen-system`,
+        sku,
+      })).toBe(code);
+    });
+  });
+
+  test('the X5 Deluxe SmartPrep, X5 SmartPrep and X5 + Stainless Steel bundles share SKUs but keep distinct codes', () => {
+    // 073495-04-VB is the Brushed Stainless blender in all three bundles
+    const code = (urlKey) => resolveVbndReasonCode({
+      path: `/us/en_us/products/${urlKey}`,
+      sku: '073495-04-VB',
+    });
+    expect(code('ascent-x5-smartprep-kitchen-system')).toBe('VBND8');
+    expect(code('ascent-x5-plus-stainless-steel-container')).toBe('VBND12');
+    expect(code('ascent-x5-deluxe-smartprep-kitchen-system')).toBe('VBND15');
+  });
+
   test('returns empty string for an unmapped variant', () => {
     expect(resolveVbndReasonCode({
       path: '/us/en_us/products/ascent-x5-smartprep-kitchen-system',
