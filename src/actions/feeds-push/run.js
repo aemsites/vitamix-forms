@@ -14,6 +14,7 @@
  */
 
 import { Core } from '@adobe/aio-sdk';
+import { gzipSync } from 'node:zlib';
 import { buildProviderFeed, resolveFeedEnv } from '../feeds/build.js';
 import {
   CONFIG, MIN_ITEMS, SCHEDULE_TIMEZONE, SCHEDULE_HOUR, resolveEnvironment, resolveCredentials,
@@ -212,7 +213,6 @@ export async function run(params, options = {}) {
   const results = [];
   /** @type {import('./state.js').Counts} */
   const newCounts = {};
-
   try {
     for (const job of jobs) {
       const result = await pushOne(ctx, job, {
@@ -378,7 +378,10 @@ async function pushOne(ctx, job, {
   }
 
   try {
-    const { bytes, rename } = await sftp.upload(client, built.body, path, { atomic: target.atomicUpload });
+    const uploadBody = target.provider === 'openai'
+      ? gzipSync(Buffer.from(built.body, 'utf-8'))
+      : built.body;
+    const { bytes, rename } = await sftp.upload(client, uploadBody, path, { atomic: target.atomicUpload });
     return {
       ...result, status: 'uploaded', bytes, ...(rename ? { rename } : {}),
     };

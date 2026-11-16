@@ -1,6 +1,7 @@
 import {
   describe, test, expect, jest, beforeEach, afterEach,
 } from '@jest/globals';
+import { gunzipSync } from 'node:zlib';
 
 // In-memory aio-lib-state so the shrink guard's counts persist across runs.
 const store = new Map();
@@ -79,6 +80,7 @@ function mockSftp({
   connectError, putError, renameError, posixRename = true, shortWrite = false, files = new Map(),
 } = {}) {
   const uploads = [];
+  const payloads = [];
   const connects = [];
   const ops = [];
   let ended = 0;
@@ -93,6 +95,7 @@ function mockSftp({
     }),
     put: jest.fn(async (buf, path) => {
       ops.push(['put', path]);
+      payloads.push({ path, body: Buffer.from(buf) });
       if (putError) {
         files.set(path, '<partial');
         throw putError;
@@ -129,7 +132,7 @@ function mockSftp({
     end: jest.fn(async () => { ended += 1; }),
   });
   return {
-    createClient, uploads, connects, ops, files, ended: () => ended,
+    createClient, uploads, payloads, connects, ops, files, ended: () => ended,
   };
 }
 
@@ -139,6 +142,8 @@ const SECRETS = {
   CJ_SFTP_PASSWORD: 'cj-pass',
   BV_SFTP_USERNAME: 'bv-user',
   BV_SFTP_PASSWORD: 'bv-pass',
+  OPENAI_SFTP_USERNAME: 'openai-user',
+  OPENAI_SFTP_PASSWORD: 'openai-pass',
   ALERT_FEED_FAIL_EMAILS: 'a@example.com, b@example.com',
   EMAIL_TOKEN: 'email-token',
 };
@@ -373,6 +378,7 @@ describe('run — gating', () => {
       scheduleOff: [
         'cj (CJ_SCHEDULE_ENABLED is not "true")',
         'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+        'openai (OPENAI_SCHEDULE_ENABLED is not "true")',
       ],
     });
     expect(spy).not.toHaveBeenCalled();
@@ -392,13 +398,44 @@ describe('run — gating', () => {
     const res = await run(on, { ...opts, now: new Date('2026-07-01T05:00:03Z') });
     expect(res.ok).toBe(true);
     expect(res.environment).toBe('prod');
-    expect(res.scheduleOff).toEqual(['cj (CJ_SCHEDULE_ENABLED is not "true")']);
+    expect(res.scheduleOff).toEqual([
+      'cj (CJ_SCHEDULE_ENABLED is not "true")',
+      'openai (OPENAI_SCHEDULE_ENABLED is not "true")',
+    ]);
     expect(sftp.connects.map((c) => c.host)).toEqual(['sftp.bazaarvoice.com']);
     expect(sftp.uploads.map((u) => u.path)).toEqual([
       '/import-inbox/productfeed-en_US.xml',
       '/import-inbox/productfeed-en_CA.xml',
       '/import-inbox/productfeed-en_MX.xml',
     ]);
+  });
+
+  test('prod with OPENAI_SCHEDULE_ENABLED: the 1 AM run pushes the OpenAI feed', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+    const sftp = mockSftp();
+    const opts = { namespace: PROD_NS, scheduled: true, sftpDeps: { createClient: sftp.createClient } };
+    const on = { ...SECRETS, OPENAI_SCHEDULE_ENABLED: 'true' };
+    // outside 1 AM ET: nothing
+    expect(await run(on, { ...opts, now: new Date('2026-07-01T15:00:00Z') }))
+      .toMatchObject({ skipped: true, reason: 'outside-schedule' });
+    expect(sftp.connects).toHaveLength(0);
+
+    const res = await run(on, { ...opts, now: new Date('2026-07-01T05:00:03Z') });
+    expect(res.ok).toBe(true);
+    expect(res.environment).toBe('prod');
+    expect(res.scheduleOff).toEqual([
+      'cj (CJ_SCHEDULE_ENABLED is not "true")',
+      'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+    ]);
+    expect(sftp.connects.map((c) => [c.host, c.port, c.username])).toEqual([
+      ['sftp.commerce.openai.com', 443, 'openai-user'],
+    ]);
+    expect(sftp.uploads.map((u) => u.path)).toEqual([
+      '/vitamix-products-feed-gpt.csv.gz',
+    ]);
+    const uploaded = sftp.payloads.find((p) => p.path === '/vitamix-products-feed-gpt.csv.gz');
+    expect(gunzipSync(uploaded.body).toString('utf-8'))
+      .toMatch(/^\uFEFFitem_id,title,description,url,brand,image_url,price,/);
   });
 
   test('prod with CJ_SCHEDULE_ENABLED: the 1 AM run pushes the CJ live feeds', async () => {
@@ -408,7 +445,10 @@ describe('run — gating', () => {
       namespace: PROD_NS, scheduled: true, now: new Date('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
     });
     expect(res.ok).toBe(true);
-    expect(res.scheduleOff).toEqual(['bazaarvoice (BV_SCHEDULE_ENABLED is not "true")']);
+    expect(res.scheduleOff).toEqual([
+      'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+      'openai (OPENAI_SCHEDULE_ENABLED is not "true")',
+    ]);
     expect(sftp.connects.map((c) => [c.host, c.username])).toEqual([['datatransfer.cj.com', 'cj-user']]);
     expect(res.results.map((r) => [r.locale, r.status, r.remotePath])).toEqual([
       ['us/en_us', 'uploaded', '/Shopping-Feed-US.xml'],
@@ -645,7 +685,9 @@ describe('run — shrink guard', () => {
   test('the real US floor (minItems 100) blocks a small feed even without a baseline', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
+    const res = await run(SECRETS, {
+      namespace: STAGE_NS, target: 'cj', sftpDeps: { createClient: sftp.createClient },
+    });
     expect(res.results[0]).toMatchObject({ status: 'failed', step: 'validate', error: 'only 3 items (minimum 100)' });
     expect(sftp.connects).toHaveLength(0);
   });
@@ -1118,10 +1160,15 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
       '/import-inbox/productfeed-en_US.xml',
       '/import-inbox/productfeed-en_CA.xml',
       '/import-inbox/productfeed-en_MX.xml',
+      '/vitamix-products-feed-gpt.csv.gz',
     ]);
     // one shared connection per target
     expect(sftp.connects.map((c) => [c.host, c.username]))
-      .toEqual([['datatransfer.cj.com', 'cj-user'], ['sftp-stg.bazaarvoice.com', 'bv-user']]);
+      .toEqual([
+        ['datatransfer.cj.com', 'cj-user'],
+        ['sftp-stg.bazaarvoice.com', 'bv-user'],
+        ['sftp.commerce.openai.com', 'openai-user'],
+      ]);
   });
 
   test('main: a bare invoke is treated as scheduled; manual params bypass the check', async () => {
