@@ -34,11 +34,11 @@
  * @type {Record<string, string>}
  */
 export const VBND_REASON_CODES = {
-  // Propel 750 Classic Bundle (VBNDP750). White (073295-VB / VBND1.2) is an
-  // inactive rule and intentionally omitted.
-  'propel-750-classic-bundle|071395-VB': 'VBND1',
-  'propel-750-classic-bundle|073294-VB': 'VBND1.1',
-  'propel-750-classic-bundle|073296-VB': 'VBND1.3',
+  // Propel 750 Classic Bundle (VBNDP750).
+  'propel-750-classic-bundle|071395-VB': 'VBND1', // Black
+  'propel-750-classic-bundle|073294-VB': 'VBND1.1', // Red
+  'propel-750-classic-bundle|073295-VB': 'VBND1.2', // White
+  'propel-750-classic-bundle|073296-VB': 'VBND1.3', // Slate
 
   // E310 + Personal Cup Adapter (VBNDE310)
   'e310-and-pca-bundle|065971-VB': 'VBND5',
@@ -78,6 +78,13 @@ export const VBND_REASON_CODES = {
   // VX1 + Personal Cup Adapter (VBNDVX1). Both variants map to VBND13.
   'vx1-and-pca-bundle|075804-04-VB': 'VBND13',
   'vx1-and-pca-bundle|075861-04-VB': 'VBND13',
+
+  // X5 Deluxe SmartPrep Kitchen System (VBNDAX5DSPKS). Shares variant SKUs with the X5
+  // SmartPrep Kitchen System above; the bundle url-key disambiguates.
+  'ascent-x5-deluxe-smartprep-kitchen-system|073495-04-VB': 'VBND15', // Brushed Stainless
+  'ascent-x5-deluxe-smartprep-kitchen-system|074104-04-VB': 'VBND15.1', // Graphite
+  'ascent-x5-deluxe-smartprep-kitchen-system|075805-04-VB': 'VBND15.2', // Shadow Black
+  'ascent-x5-deluxe-smartprep-kitchen-system|075807-04-VB': 'VBND15.3', // Polar White
 
   // Propel 510 + Simply Entertaining Cookbook (VBNDP510SEC)
   'propel-510-plus-simply-entertaining-cookbook|071394-VB': 'VBND16',
