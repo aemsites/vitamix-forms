@@ -354,10 +354,14 @@ async function pushOne(ctx, job, {
     return fail('validate', problems.join('; '));
   }
 
+  const uploadBody = target.gzip
+    ? gzipSync(Buffer.from(built.body, 'utf-8'))
+    : built.body;
   const path = sftp.remotePath(target.remoteDir, file);
   result.remotePath = path;
   if (dryRun) {
-    return { ...result, status: 'validated', bytes: Buffer.byteLength(built.body, 'utf-8') };
+    const bytes = Buffer.isBuffer(uploadBody) ? uploadBody.length : Buffer.byteLength(uploadBody, 'utf-8');
+    return { ...result, status: 'validated', bytes };
   }
 
   const connKey = `${target.host}:${target.port}:${job.credentials}`;
@@ -378,9 +382,6 @@ async function pushOne(ctx, job, {
   }
 
   try {
-    const uploadBody = target.provider === 'openai'
-      ? gzipSync(Buffer.from(built.body, 'utf-8'))
-      : built.body;
     const { bytes, rename } = await sftp.upload(client, uploadBody, path, { atomic: target.atomicUpload });
     return {
       ...result, status: 'uploaded', bytes, ...(rename ? { rename } : {}),

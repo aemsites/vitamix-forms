@@ -83,9 +83,11 @@ function mockSftp({
   const payloads = [];
   const connects = [];
   const ops = [];
+  const sizes = new Map([...files.entries()].map(([path, body]) => [path, Buffer.byteLength(body, 'utf-8')]));
   let ended = 0;
-  const land = (path, body) => {
+  const land = (path, body, size = Buffer.byteLength(body, 'utf-8')) => {
     files.set(path, body);
+    sizes.set(path, size);
     if (!path.endsWith('.part')) uploads.push({ path, body });
   };
   const createClient = () => ({
@@ -95,39 +97,46 @@ function mockSftp({
     }),
     put: jest.fn(async (buf, path) => {
       ops.push(['put', path]);
-      payloads.push({ path, body: Buffer.from(buf) });
+      const payload = Buffer.from(buf);
+      payloads.push({ path, body: payload });
       if (putError) {
         files.set(path, '<partial');
+        sizes.set(path, Buffer.byteLength('<partial', 'utf-8'));
         throw putError;
       }
-      land(path, buf.toString('utf-8'));
+      land(path, payload.toString('utf-8'), payload.length);
     }),
     stat: jest.fn(async (path) => {
       ops.push(['stat', path]);
       const body = files.get(path);
       if (body === undefined) throw new Error(`No such file: ${path}`);
-      return { size: Buffer.byteLength(body, 'utf-8') - (shortWrite ? 1 : 0) };
+      return { size: sizes.get(path) - (shortWrite ? 1 : 0) };
     }),
     posixRename: jest.fn(async (from, to) => {
       ops.push(['posixRename', from, to]);
       if (!posixRename) throw new Error('Server does not support this extended request');
       if (renameError) throw renameError;
       const body = files.get(from);
+      const size = sizes.get(from);
       files.delete(from);
-      land(to, body);
+      sizes.delete(from);
+      land(to, body, size);
     }),
     rename: jest.fn(async (from, to) => {
       ops.push(['rename', from, to]);
       if (renameError) throw renameError;
       if (files.has(to)) throw new Error('Failure: file exists');
       const body = files.get(from);
+      const size = sizes.get(from);
       files.delete(from);
-      land(to, body);
+      sizes.delete(from);
+      land(to, body, size);
     }),
     delete: jest.fn(async (path, notFoundOK) => {
       ops.push(['delete', path]);
       if (!files.has(path) && !notFoundOK) throw new Error(`No such file: ${path}`);
       files.delete(path);
+      sizes.delete(path);
     }),
     end: jest.fn(async () => { ended += 1; }),
   });
@@ -224,6 +233,7 @@ describe('config', () => {
   test('stage pushes the CJ US and CA test feeds on demand only', () => {
     expect(CONFIG.stage.enabled).toBe(true);
     expect(CONFIG.stage.scheduled).toBe(false);
+    expect(CONFIG.stage.targets.openai.enabled).toBe(false);
     const { locales } = CONFIG.stage.targets.cj;
     expect(Object.keys(locales)).toEqual(['us/en_us', 'ca/en_us']);
     expect(locales['us/en_us']).toMatchObject({ file: 'vitamix_us_edge.xml', minItems: 100 });
@@ -410,32 +420,40 @@ describe('run — gating', () => {
     ]);
   });
 
-  test('prod with OPENAI_SCHEDULE_ENABLED: the 1 AM run pushes the OpenAI feed', async () => {
-    mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
+  test('production OpenAI upload gzips the CSV and atomically uploads the configured file', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(100) } });
     const sftp = mockSftp();
-    const opts = { namespace: PROD_NS, scheduled: true, sftpDeps: { createClient: sftp.createClient } };
-    const on = { ...SECRETS, OPENAI_SCHEDULE_ENABLED: 'true' };
-    // outside 1 AM ET: nothing
-    expect(await run(on, { ...opts, now: new Date('2026-07-01T15:00:00Z') }))
-      .toMatchObject({ skipped: true, reason: 'outside-schedule' });
-    expect(sftp.connects).toHaveLength(0);
+    const options = { namespace: PROD_NS, target: 'openai', sftpDeps: { createClient: sftp.createClient } };
 
-    const res = await run(on, { ...opts, now: new Date('2026-07-01T05:00:03Z') });
-    expect(res.ok).toBe(true);
-    expect(res.environment).toBe('prod');
-    expect(res.scheduleOff).toEqual([
-      'cj (CJ_SCHEDULE_ENABLED is not "true")',
-      'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+    const uploaded = await run(SECRETS, options);
+    expect(uploaded.results).toEqual([expect.objectContaining({
+      target: 'openai',
+      locale: 'us/en_us',
+      file: 'vitamix-products-feed-gpt.csv.gz',
+      status: 'uploaded',
+      itemCount: 100,
+      remotePath: '/vitamix-products-feed-gpt.csv.gz',
+      rename: 'posix-rename',
+    })]);
+    expect(sftp.connects).toEqual([expect.objectContaining({
+      host: 'sftp.commerce.openai.com', port: 443, username: 'openai-user', password: 'openai-pass',
+    })]);
+    expect(sftp.ops).toEqual([
+      ['put', '/vitamix-products-feed-gpt.csv.gz.part'],
+      ['stat', '/vitamix-products-feed-gpt.csv.gz.part'],
+      ['posixRename', '/vitamix-products-feed-gpt.csv.gz.part', '/vitamix-products-feed-gpt.csv.gz'],
     ]);
-    expect(sftp.connects.map((c) => [c.host, c.port, c.username])).toEqual([
-      ['sftp.commerce.openai.com', 443, 'openai-user'],
-    ]);
-    expect(sftp.uploads.map((u) => u.path)).toEqual([
-      '/vitamix-products-feed-gpt.csv.gz',
-    ]);
-    const uploaded = sftp.payloads.find((p) => p.path === '/vitamix-products-feed-gpt.csv.gz');
-    expect(gunzipSync(uploaded.body).toString('utf-8'))
-      .toMatch(/^\uFEFFitem_id,title,description,url,brand,image_url,price,/);
+
+    const compressed = sftp.payloads[0].body;
+    const csv = gunzipSync(compressed).toString('utf-8');
+    expect(csv).toMatch(/^\uFEFFitem_id,title,description,url,brand,image_url,price,/);
+    expect(csv).toContain('SKU0');
+    expect(uploaded.results[0].bytes).toBe(compressed.length);
+    expect(sftp.files.has('/vitamix-products-feed-gpt.csv.gz')).toBe(true);
+
+    const dryRun = await run(SECRETS, { ...options, dryRun: true });
+    expect(dryRun.results[0]).toMatchObject({ status: 'validated', bytes: compressed.length });
+    expect(sftp.connects).toHaveLength(1);
   });
 
   test('prod with CJ_SCHEDULE_ENABLED: the 1 AM run pushes the CJ live feeds', async () => {
@@ -685,9 +703,7 @@ describe('run — shrink guard', () => {
   test('the real US floor (minItems 100) blocks a small feed even without a baseline', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(3) } });
     const sftp = mockSftp();
-    const res = await run(SECRETS, {
-      namespace: STAGE_NS, target: 'cj', sftpDeps: { createClient: sftp.createClient },
-    });
+    const res = await run(SECRETS, { namespace: STAGE_NS, sftpDeps: { createClient: sftp.createClient } });
     expect(res.results[0]).toMatchObject({ status: 'failed', step: 'validate', error: 'only 3 items (minimum 100)' });
     expect(sftp.connects).toHaveLength(0);
   });
@@ -1160,15 +1176,10 @@ describe('schedule (1:00 AM America/New_York from a 05:00 + 06:00 UTC cron)', ()
       '/import-inbox/productfeed-en_US.xml',
       '/import-inbox/productfeed-en_CA.xml',
       '/import-inbox/productfeed-en_MX.xml',
-      '/vitamix-products-feed-gpt.csv.gz',
     ]);
     // one shared connection per target
     expect(sftp.connects.map((c) => [c.host, c.username]))
-      .toEqual([
-        ['datatransfer.cj.com', 'cj-user'],
-        ['sftp-stg.bazaarvoice.com', 'bv-user'],
-        ['sftp.commerce.openai.com', 'openai-user'],
-      ]);
+      .toEqual([['datatransfer.cj.com', 'cj-user'], ['sftp-stg.bazaarvoice.com', 'bv-user']]);
   });
 
   test('main: a bare invoke is treated as scheduled; manual params bypass the check', async () => {

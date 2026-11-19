@@ -161,14 +161,6 @@ Supported providers:
 Not served separately: **Google Ads** — it serves from the linked Merchant
 Center account (i.e. the `merchant-center` feed).
 
-OpenAI uploads are handled by the shared `feeds-push` action below. It rebuilds
-the US OpenAI CSV from the same feed pipeline, validates it, and writes it to
-the configured OpenAI SFTP destination. The current target writes CSV bytes
-directly (including the UTF-8 BOM) to the stable filename
-`vitamix-products-feed-gpt.csv.gz`; despite the `.gz` suffix, this shared upload
-path does **not** gzip the file. Confirm that this is the expected format for
-the OpenAI destination before enabling scheduled uploads.
-
 ### `feeds/feeds-push` (scheduled, non-web)
 
 Pushes feeds to providers that take an SFTP upload, nightly at **1:00 AM
@@ -193,11 +185,13 @@ is `"true"` (GitHub secrets `CJ_SCHEDULE_ENABLED_PROD` /
 `BV_SCHEDULE_ENABLED_PROD` / `OPENAI_SCHEDULE_ENABLED_PROD`; change + redeploy).
 Otherwise it skips the target
 (`scheduleOff` in the result; `reason: 'target-schedule-disabled'` when
-nothing else runs). Manual runs always push. Stage has no schedule at all.
+nothing else runs). Manual runs push enabled targets. Stage has no schedule at
+all, and its OpenAI target is disabled to protect the shared production
+destination.
 
 | Environment | Status | Schedule | Targets |
 |---|---|---|---|
-| stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml`. Bazaarvoice **staging**: `us/en_us` → `/import-inbox/productfeed-en_US.xml`, `ca/en_us` → `/import-inbox/productfeed-en_CA.xml`, `mx/es_mx` → `/import-inbox/productfeed-en_MX.xml`. OpenAI: `us/en_us` → `/vitamix-products-feed-gpt.csv.gz` using stage SFTP credentials. |
+| stage | enabled | **on demand only** (`scheduled: false`) | CJ **test** feeds: `Vitamix_US_Edge_Test` (323567) `us/en_us` → `/vitamix_us_edge.xml`; `Vitamix_CA_Edge_Test` (323619) `ca/en_us` → `/vitamix_ca_edge.xml`. Bazaarvoice **staging**: `us/en_us` → `/import-inbox/productfeed-en_US.xml`, `ca/en_us` → `/import-inbox/productfeed-en_CA.xml`, `mx/es_mx` → `/import-inbox/productfeed-en_MX.xml`. OpenAI target disabled: no separate test destination is configured, and the production host/file are shared. |
 | prod | enabled | nightly 1 AM ET, per-target switch | CJ **live** feeds: `Vitamix Shopping Feed` (222147) `us/en_us` → `/Shopping-Feed-US.xml`; `Shopping Feed - CA` (222149) `ca/en_us` → `/Shopping-Feed-CA.xml`; nightly only when `CJ_SCHEDULE_ENABLED` is `"true"`. Bazaarvoice **production**, same files as stage; nightly only when `BV_SCHEDULE_ENABLED` is `"true"`. OpenAI: `us/en_us` → `/vitamix-products-feed-gpt.csv.gz`, nightly only when `OPENAI_SCHEDULE_ENABLED` is `"true"`. Manual runs push selected targets. |
 
 The alarm is defined once in `app.config.yaml`, so it fires in every
@@ -262,21 +256,19 @@ prod: `sftp.bazaarvoice.com:22`, nightly):
   blocks that locale's upload.
 - The upload only confirms delivery; Bazaarvoice reports the import result itself.
 
-OpenAI specifics (both environments: `sftp.commerce.openai.com:443`):
+OpenAI specifics (production destination: `sftp.commerce.openai.com:443`):
 - **Schedule switch:** `OPENAI_SCHEDULE_ENABLED`; only the production deploy
-  maps `OPENAI_SCHEDULE_ENABLED_PROD`. Stage is on-demand only and receives
-  stage-specific SFTP credentials.
+  maps `OPENAI_SCHEDULE_ENABLED_PROD`. Stage's target is disabled because no
+  separate test destination is configured.
 - The destination directory is `/`, and the configured filename is
-  `vitamix-products-feed-gpt.csv.gz` in both environments. These are code
-  settings in `src/actions/feeds-push/config.js`, not runtime inputs.
-- The shared action uploads the BOM-prefixed CSV directly to the final name;
-  it does not gzip, use a temporary `.part` file, or rename atomically. The
-  `.gz` suffix does not describe the current payload encoding.
-- The current OpenAI target has no configured host-key fingerprint pin, unlike
-  the CJ and Bazaarvoice targets.
-- The current minimum item floor is 1. The shared shrink guard also blocks a
-  feed below 50% of the previous successful count unless the manual run uses
-  `force: true`.
+  `vitamix-products-feed-gpt.csv.gz`. These are code settings in
+  `src/actions/feeds-push/config.js`, not runtime inputs; stage does not upload.
+- The shared action gzips the BOM-prefixed CSV and uploads it directly to the
+  final name atomically: it writes a temporary `.part` file, verifies its size,
+  then renames it into place.
+- **Minimum item floor:** 100. The shared shrink guard also blocks a feed below
+  50% of the previous successful count unless the manual run uses `force: true`.
+- **Host-key pin:** not configured for this target.
 
 Manual runs (namespace credentials; there is no web URL):
 
@@ -507,16 +499,13 @@ vars provide credentials, alert settings, and nightly schedule switches:
 | `CJ_SFTP_USERNAME` / `CJ_SFTP_PASSWORD` | CJ SFTP credentials for this environment (GitHub secrets `CJ_SFTP_*_STAGE` / `_PROD`) | unset — CJ uploads fail and alert |
 | `BV_SCHEDULE_ENABLED` | `"true"` lets the nightly run push Bazaarvoice (prod; GitHub secret `BV_SCHEDULE_ENABLED_PROD`). Manual runs don't need it. | unset — manual runs only |
 | `BV_SFTP_USERNAME` / `BV_SFTP_PASSWORD` | Bazaarvoice SFTP credentials for this environment (GitHub secrets `BV_SFTP_*_STAGE` / `_PROD`) | unset — Bazaarvoice uploads fail and alert |
-| `OPENAI_SCHEDULE_ENABLED` | `"true"` lets the production nightly run push OpenAI (GitHub secret `OPENAI_SCHEDULE_ENABLED_PROD`). Manual runs don't need it; stage is on demand only. | unset — production manual runs only |
-| `OPENAI_SFTP_USERNAME` / `OPENAI_SFTP_PASSWORD` | OpenAI SFTP credentials for the environment (GitHub secrets `OPENAI_SFTP_*_STAGE` / `_PROD`) | unset — OpenAI uploads fail and alert |
+| `OPENAI_SCHEDULE_ENABLED` | `"true"` lets the production nightly run push OpenAI (GitHub secret `OPENAI_SCHEDULE_ENABLED_PROD`). Manual production runs don't need it; stage is disabled. | unset — production manual runs only |
+| `OPENAI_SFTP_USERNAME` / `OPENAI_SFTP_PASSWORD` | OpenAI production SFTP credentials (GitHub secrets `OPENAI_SFTP_*_PROD`); stage credentials are not configured | unset — OpenAI uploads fail and alert |
 | `ALERT_FEED_FAIL_EMAILS` | Comma-separated alert recipients for any failed feed push | unset (log only) |
 | `EMAIL_TOKEN` | Productbus token used to send the alert | — |
 
-The OpenAI destination is configured in code: `sftp.commerce.openai.com:443`,
-directory `/`, and filename `vitamix-products-feed-gpt.csv.gz`. Production
-receives the production credentials and schedule-switch secret; stage receives
-stage credentials but never runs from the nightly schedule. Manual OpenAI runs
-can target either environment:
+Manual OpenAI uploads are production-only; the stage target is disabled. Run
+these from the production namespace:
 
 ```sh
 aio rt action invoke feeds/feeds-push -p now true -p target openai --result

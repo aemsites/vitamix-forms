@@ -63,6 +63,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   algorithms?: Record<string, unknown>,
  *   hostFingerprints?: string[],
  *   atomicUpload?: boolean,
+ *   gzip?: boolean,
  *   idPattern?: RegExp,
  *   minItems?: number,
  *   locales: Record<string, LocaleConfig>,
@@ -148,7 +149,8 @@ const BV_SFTP = {
  *   manual runs are not gated by this switch.
  * - Uses OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD credentials and the
  *   stable `vitamix-products-feed-gpt.csv.gz` filename.
- * - Uploads directly to the final filename, without a temp-file rename.
+ * - Gzips the CSV before upload.
+ * - Uses an atomic temp-file upload and rename.
  */
 const OPENAI_SFTP = {
   provider: 'openai',
@@ -156,7 +158,8 @@ const OPENAI_SFTP = {
   port: 443,
   remoteDir: '/',
   credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
-  atomicUpload: false,
+  atomicUpload: true,
+  gzip: true,
   locales: {
     'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz' }
   },
@@ -191,8 +194,10 @@ export const CONFIG = {
       },
       openai: {
         ...OPENAI_SFTP,
+        // Stage shares the production host and filename, so never upload from stage.
+        enabled: false,
         locales: {
-          'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 1 }
+          'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 100 }
         },
         host: 'sftp.commerce.openai.com',
         credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
@@ -226,7 +231,7 @@ export const CONFIG = {
       openai: {
         ...OPENAI_SFTP,
         locales: {
-          'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 1 }
+          'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 100 }
         },
         host: 'sftp.commerce.openai.com',
         credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD

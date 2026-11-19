@@ -153,9 +153,9 @@ jobs:
           BV_SCHEDULE_ENABLED: ${{ secrets.BV_SCHEDULE_ENABLED_PROD }}
           BV_SFTP_USERNAME: ${{ secrets.BV_SFTP_USERNAME_PROD }}
           BV_SFTP_PASSWORD: ${{ secrets.BV_SFTP_PASSWORD_PROD }}
-          # OpenAI snapshot push: runs only when OPENAI_SCHEDULE_ENABLED
-          # is explicitly set to "true". Keep stage disabled unless it has a
-          # separate OpenAI destination and is intentionally enabled.
+          # feeds-push — OpenAI SFTP credentials; targets/files live in code.
+          # The nightly OpenAI push runs only when the OPENAI_SCHEDULE_ENABLED_PROD
+          # secret is "true"; unset = manual runs only.
           OPENAI_SCHEDULE_ENABLED: ${{ secrets.OPENAI_SCHEDULE_ENABLED_PROD }}
           OPENAI_SFTP_USERNAME: ${{ secrets.OPENAI_SFTP_USERNAME_PROD }}
           OPENAI_SFTP_PASSWORD: ${{ secrets.OPENAI_SFTP_PASSWORD_PROD }}
