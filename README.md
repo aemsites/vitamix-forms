@@ -268,7 +268,9 @@ OpenAI specifics (production destination: `sftp.commerce.openai.com:443`):
   then renames it into place.
 - **Minimum item floor:** 100. The shared shrink guard also blocks a feed below
   50% of the previous successful count unless the manual run uses `force: true`.
-- **Host-key pin:** not configured for this target.
+- **Host-key pins:** ECDSA and RSA fingerprints are pinned in
+  `src/actions/feeds-push/config.js` (seen 2026-11-19). Verify any rotated key
+  with OpenAI before updating the pins.
 
 Manual runs (namespace credentials; there is no web URL):
 

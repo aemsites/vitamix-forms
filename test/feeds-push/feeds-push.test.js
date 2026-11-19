@@ -295,6 +295,25 @@ describe('config', () => {
     expect(CONFIG.prod.enabled).toBe(true);
   });
 
+  test('OpenAI settings are shared, pinned, and disabled on stage', () => {
+    const shared = {
+      provider: 'openai',
+      host: 'sftp.commerce.openai.com',
+      port: 443,
+      remoteDir: '/',
+      credentials: 'OPENAI',
+      atomicUpload: true,
+      gzip: true,
+      locales: { 'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 100 } },
+      hostFingerprints: [
+        'SHA256:o4b781YGT+hMvlT8XB8bF9I2eVAxgako71AjvmOz+Ac',
+        'SHA256:uZU77ZzgkNi0E/bc4BhE4YEjRkGGZRnRXb5T9jeK2lo',
+      ],
+    };
+    expect(CONFIG.prod.targets.openai).toMatchObject(shared);
+    expect(CONFIG.stage.targets.openai).toMatchObject({ ...shared, enabled: false });
+  });
+
   test('every target\'s nightly push has its own switch', () => {
     expect(CONFIG.stage.targets.cj.scheduleEnabledBy).toBe('CJ_SCHEDULE_ENABLED');
     for (const env of Object.values(NAMESPACES)) {
@@ -1080,6 +1099,25 @@ describe('sftp host key pinning', () => {
       { host: 'sftp-stg.bazaarvoice.com', port: 22, hostFingerprints: [bvFp] },
       { log, createClient: clientSeeing(cjHashHex), retries: 0 },
     )).rejects.toThrow(/host key mismatch for sftp-stg\.bazaarvoice\.com/);
+  });
+
+  test.each([
+    ['ECDSA', CONFIG.prod.targets.openai.hostFingerprints[0]],
+    ['RSA', CONFIG.prod.targets.openai.hostFingerprints[1]],
+  ])('accepts the pinned OpenAI %s key', async (_algorithm, pin) => {
+    const hashHex = Buffer.from(pin.replace(/^SHA256:/, ''), 'base64').toString('hex');
+    await expect(sftpModule.connect(
+      CONFIG.prod.targets.openai,
+      { log, createClient: clientSeeing(hashHex), retries: 0 },
+    )).resolves.toBeDefined();
+  });
+
+  test('rejects an unpinned OpenAI host key', async () => {
+    const other = 'ab'.repeat(32);
+    await expect(sftpModule.connect(
+      CONFIG.prod.targets.openai,
+      { log, createClient: clientSeeing(other), retries: 0 },
+    )).rejects.toThrow(/host key mismatch for sftp\.commerce\.openai\.com/);
   });
 
   test('does not verify when no fingerprints are configured', async () => {
