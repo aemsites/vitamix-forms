@@ -63,6 +63,7 @@ export const SFTP_CONNECT_RETRIES = 1;
  *   algorithms?: Record<string, unknown>,
  *   hostFingerprints?: string[],
  *   atomicUpload?: boolean,
+ *   gzip?: boolean,
  *   idPattern?: RegExp,
  *   minItems?: number,
  *   locales: Record<string, LocaleConfig>,
@@ -141,6 +142,37 @@ const BV_SFTP = {
   },
 };
 
+/**
+ * OpenAI product feed SFTP destination.
+ * - Uses OpenAI's SFTP endpoint on port 443 and uploads to the root directory.
+ * - The nightly run pushes only when OPENAI_SCHEDULE_ENABLED is "true";
+ *   manual runs are not gated by this switch.
+ * - Uses OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD credentials and the
+ *   stable `vitamix-products-feed-gpt.csv.gz` filename.
+ * - Gzips the CSV to match the `.gz` filename and reduce transfer size.
+ * - Uses an atomic temp-file upload and rename.
+ * - Pins both SSH host keys returned by `ssh-keyscan` and supplied in the
+ *   review (2026-11-19); verify them against OpenAI's setup details. ssh2
+ *   prefers ECDSA when offered.
+ */
+const OPENAI_SFTP = {
+  provider: 'openai',
+  scheduleEnabledBy: 'OPENAI_SCHEDULE_ENABLED',
+  host: 'sftp.commerce.openai.com',
+  port: 443,
+  remoteDir: '/',
+  credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
+  atomicUpload: true,
+  gzip: true,
+  hostFingerprints: [
+    'SHA256:o4b781YGT+hMvlT8XB8bF9I2eVAxgako71AjvmOz+Ac', // ECDSA
+    'SHA256:uZU77ZzgkNi0E/bc4BhE4YEjRkGGZRnRXb5T9jeK2lo', // RSA
+  ],
+  locales: {
+    'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 100 },
+  },
+};
+
 /** @type {Record<string, EnvConfig>} */
 export const CONFIG = {
   stage: {
@@ -168,6 +200,11 @@ export const CONFIG = {
         host: 'sftp-stg.bazaarvoice.com',
         hostFingerprints: ['SHA256:t/uFhJvmc7afOctQfLpTWHCt9QqEePvWSIYkICMVxiI'],
       },
+      openai: {
+        ...OPENAI_SFTP,
+        // Stage shares the production host and filename, so never upload from stage.
+        enabled: false,
+      },
     },
   },
   prod: {
@@ -193,6 +230,9 @@ export const CONFIG = {
         ...BV_SFTP,
         host: 'sftp.bazaarvoice.com',
         hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
+      },
+      openai: {
+        ...OPENAI_SFTP,
       },
     },
   },
