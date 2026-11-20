@@ -439,6 +439,36 @@ describe('run — gating', () => {
     ]);
   });
 
+  test('prod with OPENAI_SCHEDULE_ENABLED: the 1 AM run pushes the OpenAI feed', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(100) } });
+    const sftp = mockSftp();
+    const options = { namespace: PROD_NS, scheduled: true, sftpDeps: { createClient: sftp.createClient } };
+    const on = { ...SECRETS, OPENAI_SCHEDULE_ENABLED: 'true' };
+
+    // Outside 1 AM ET, the scheduled invocation does not build or connect.
+    expect(await run(on, { ...options, now: new Date('2026-07-01T15:00:00Z') }))
+      .toMatchObject({ skipped: true, reason: 'outside-schedule' });
+    expect(sftp.connects).toHaveLength(0);
+
+    const res = await run(on, { ...options, now: new Date('2026-07-01T05:00:03Z') });
+    expect(res.ok).toBe(true);
+    expect(res.results).toEqual([expect.objectContaining({
+      target: 'openai',
+      status: 'uploaded',
+      itemCount: 100,
+      remotePath: '/vitamix-products-feed-gpt.csv.gz',
+      rename: 'posix-rename',
+    })]);
+    expect(res.scheduleOff).toEqual([
+      'cj (CJ_SCHEDULE_ENABLED is not "true")',
+      'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+    ]);
+    expect(sftp.connects.map((c) => [c.host, c.port, c.username])).toEqual([
+      ['sftp.commerce.openai.com', 443, 'openai-user'],
+    ]);
+    expect(sftp.uploads.map((u) => u.path)).toEqual(['/vitamix-products-feed-gpt.csv.gz']);
+  });
+
   test('production OpenAI upload gzips the CSV and atomically uploads the configured file', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(100) } });
     const sftp = mockSftp();
