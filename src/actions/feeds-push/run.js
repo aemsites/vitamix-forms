@@ -213,6 +213,7 @@ export async function run(params, options = {}) {
   const results = [];
   /** @type {import('./state.js').Counts} */
   const newCounts = {};
+  
   try {
     for (const job of jobs) {
       const result = await pushOne(ctx, job, {

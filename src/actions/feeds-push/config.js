@@ -204,7 +204,7 @@ export const CONFIG = {
         ...OPENAI_SFTP,
         // Stage shares the production host and filename, so never upload from stage.
         enabled: false,
-      }
+      },
     },
   },
   prod: {
