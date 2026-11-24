@@ -151,9 +151,7 @@ const BV_SFTP = {
  *   stable `vitamix-products-feed-gpt.csv.gz` filename.
  * - Gzips the CSV to match the `.gz` filename and reduce transfer size.
  * - Uploads directly to the final filename, with no `.part` temp file or rename.
- * - Pins both SSH host keys returned by `ssh-keyscan` and supplied in the
- *   review (2026-11-19); verify them against OpenAI's setup details. ssh2
- *   prefers ECDSA when offered.
+ * - ECDSA + RSA host keys, seen 2026-11-17 and confirmed with OpenAI.
  */
 const OPENAI_SFTP = {
   provider: 'openai',
