@@ -302,7 +302,7 @@ describe('config', () => {
       port: 443,
       remoteDir: '/',
       credentials: 'OPENAI',
-      atomicUpload: true,
+      atomicUpload: false,
       gzip: true,
       locales: { 'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 100 } },
       hostFingerprints: [
@@ -457,7 +457,6 @@ describe('run — gating', () => {
       status: 'uploaded',
       itemCount: 100,
       remotePath: '/vitamix-products-feed-gpt.csv.gz',
-      rename: 'posix-rename',
     })]);
     expect(res.scheduleOff).toEqual([
       'cj (CJ_SCHEDULE_ENABLED is not "true")',
@@ -469,7 +468,7 @@ describe('run — gating', () => {
     expect(sftp.uploads.map((u) => u.path)).toEqual(['/vitamix-products-feed-gpt.csv.gz']);
   });
 
-  test('production OpenAI upload gzips the CSV and atomically uploads the configured file', async () => {
+  test('production OpenAI upload gzips the CSV and writes it directly to the configured file', async () => {
     mockFetch({ feeds: { 'us/en_us': sourceFeed(100) } });
     const sftp = mockSftp();
     const options = { namespace: PROD_NS, target: 'openai', sftpDeps: { createClient: sftp.createClient } };
@@ -482,15 +481,12 @@ describe('run — gating', () => {
       status: 'uploaded',
       itemCount: 100,
       remotePath: '/vitamix-products-feed-gpt.csv.gz',
-      rename: 'posix-rename',
     })]);
     expect(sftp.connects).toEqual([expect.objectContaining({
       host: 'sftp.commerce.openai.com', port: 443, username: 'openai-user', password: 'openai-pass',
     })]);
     expect(sftp.ops).toEqual([
-      ['put', '/vitamix-products-feed-gpt.csv.gz.part'],
-      ['stat', '/vitamix-products-feed-gpt.csv.gz.part'],
-      ['posixRename', '/vitamix-products-feed-gpt.csv.gz.part', '/vitamix-products-feed-gpt.csv.gz'],
+      ['put', '/vitamix-products-feed-gpt.csv.gz'],
     ]);
 
     const compressed = sftp.payloads[0].body;

@@ -150,7 +150,7 @@ const BV_SFTP = {
  * - Uses OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD credentials and the
  *   stable `vitamix-products-feed-gpt.csv.gz` filename.
  * - Gzips the CSV to match the `.gz` filename and reduce transfer size.
- * - Uses an atomic temp-file upload and rename.
+ * - Uploads directly to the final filename, with no `.part` temp file or rename.
  * - Pins both SSH host keys returned by `ssh-keyscan` and supplied in the
  *   review (2026-11-19); verify them against OpenAI's setup details. ssh2
  *   prefers ECDSA when offered.
@@ -162,7 +162,7 @@ const OPENAI_SFTP = {
   port: 443,
   remoteDir: '/',
   credentials: 'OPENAI', // OPENAI_SFTP_USERNAME / OPENAI_SFTP_PASSWORD
-  atomicUpload: true,
+  atomicUpload: false,
   gzip: true,
   hostFingerprints: [
     'SHA256:o4b781YGT+hMvlT8XB8bF9I2eVAxgako71AjvmOz+Ac', // ECDSA

@@ -263,8 +263,8 @@ OpenAI specifics (production destination: `sftp.commerce.openai.com:443`):
 - The destination directory is `/`, and the configured filename is
   `vitamix-products-feed-gpt.csv.gz`. These are code settings in
   `src/actions/feeds-push/config.js`, not runtime inputs; stage does not upload.
-- The shared action gzips the BOM-prefixed CSV and uploads it atomically using
-  a temporary `.part` file, a size check, and a rename into place.
+- The shared action gzips the BOM-prefixed CSV and writes it directly to the
+  final filename, with no `.part` temp file or rename.
 - **Minimum item floor:** 100. The shared shrink guard also blocks a feed below
   50% of the previous successful count unless the manual run uses `force: true`.
 - **Host-key pins:** ECDSA and RSA fingerprints are pinned in
