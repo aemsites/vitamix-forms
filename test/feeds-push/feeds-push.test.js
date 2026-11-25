@@ -1,6 +1,7 @@
 import {
   describe, test, expect, jest, beforeEach, afterEach,
 } from '@jest/globals';
+import { gunzipSync } from 'node:zlib';
 
 // In-memory aio-lib-state so the shrink guard's counts persist across runs.
 const store = new Map();
@@ -79,11 +80,14 @@ function mockSftp({
   connectError, putError, renameError, posixRename = true, shortWrite = false, files = new Map(),
 } = {}) {
   const uploads = [];
+  const payloads = [];
   const connects = [];
   const ops = [];
+  const sizes = new Map([...files.entries()].map(([path, body]) => [path, Buffer.byteLength(body, 'utf-8')]));
   let ended = 0;
-  const land = (path, body) => {
+  const land = (path, body, size = Buffer.byteLength(body, 'utf-8')) => {
     files.set(path, body);
+    sizes.set(path, size);
     if (!path.endsWith('.part')) uploads.push({ path, body });
   };
   const createClient = () => ({
@@ -93,43 +97,51 @@ function mockSftp({
     }),
     put: jest.fn(async (buf, path) => {
       ops.push(['put', path]);
+      const payload = Buffer.from(buf);
+      payloads.push({ path, body: payload });
       if (putError) {
         files.set(path, '<partial');
+        sizes.set(path, Buffer.byteLength('<partial', 'utf-8'));
         throw putError;
       }
-      land(path, buf.toString('utf-8'));
+      land(path, payload.toString('utf-8'), payload.length);
     }),
     stat: jest.fn(async (path) => {
       ops.push(['stat', path]);
       const body = files.get(path);
       if (body === undefined) throw new Error(`No such file: ${path}`);
-      return { size: Buffer.byteLength(body, 'utf-8') - (shortWrite ? 1 : 0) };
+      return { size: sizes.get(path) - (shortWrite ? 1 : 0) };
     }),
     posixRename: jest.fn(async (from, to) => {
       ops.push(['posixRename', from, to]);
       if (!posixRename) throw new Error('Server does not support this extended request');
       if (renameError) throw renameError;
       const body = files.get(from);
+      const size = sizes.get(from);
       files.delete(from);
-      land(to, body);
+      sizes.delete(from);
+      land(to, body, size);
     }),
     rename: jest.fn(async (from, to) => {
       ops.push(['rename', from, to]);
       if (renameError) throw renameError;
       if (files.has(to)) throw new Error('Failure: file exists');
       const body = files.get(from);
+      const size = sizes.get(from);
       files.delete(from);
-      land(to, body);
+      sizes.delete(from);
+      land(to, body, size);
     }),
     delete: jest.fn(async (path, notFoundOK) => {
       ops.push(['delete', path]);
       if (!files.has(path) && !notFoundOK) throw new Error(`No such file: ${path}`);
       files.delete(path);
+      sizes.delete(path);
     }),
     end: jest.fn(async () => { ended += 1; }),
   });
   return {
-    createClient, uploads, connects, ops, files, ended: () => ended,
+    createClient, uploads, payloads, connects, ops, files, ended: () => ended,
   };
 }
 
@@ -139,6 +151,8 @@ const SECRETS = {
   CJ_SFTP_PASSWORD: 'cj-pass',
   BV_SFTP_USERNAME: 'bv-user',
   BV_SFTP_PASSWORD: 'bv-pass',
+  OPENAI_SFTP_USERNAME: 'openai-user',
+  OPENAI_SFTP_PASSWORD: 'openai-pass',
   ALERT_FEED_FAIL_EMAILS: 'a@example.com, b@example.com',
   EMAIL_TOKEN: 'email-token',
 };
@@ -219,6 +233,7 @@ describe('config', () => {
   test('stage pushes the CJ US and CA test feeds on demand only', () => {
     expect(CONFIG.stage.enabled).toBe(true);
     expect(CONFIG.stage.scheduled).toBe(false);
+    expect(CONFIG.stage.targets.openai.enabled).toBe(false);
     const { locales } = CONFIG.stage.targets.cj;
     expect(Object.keys(locales)).toEqual(['us/en_us', 'ca/en_us']);
     expect(locales['us/en_us']).toMatchObject({ file: 'vitamix_us_edge.xml', minItems: 100 });
@@ -278,6 +293,25 @@ describe('config', () => {
       hostFingerprints: ['SHA256:yEGwcR7htSTYWCWtT5mLkC/vryF8B7jFtTIaX2xZLMM'],
     });
     expect(CONFIG.prod.enabled).toBe(true);
+  });
+
+  test('OpenAI settings are shared, pinned, and disabled on stage', () => {
+    const shared = {
+      provider: 'openai',
+      host: 'sftp.commerce.openai.com',
+      port: 443,
+      remoteDir: '/',
+      credentials: 'OPENAI',
+      atomicUpload: false,
+      gzip: true,
+      locales: { 'us/en_us': { file: 'vitamix-products-feed-gpt.csv.gz', minItems: 100 } },
+      hostFingerprints: [
+        'SHA256:o4b781YGT+hMvlT8XB8bF9I2eVAxgako71AjvmOz+Ac',
+        'SHA256:uZU77ZzgkNi0E/bc4BhE4YEjRkGGZRnRXb5T9jeK2lo',
+      ],
+    };
+    expect(CONFIG.prod.targets.openai).toMatchObject(shared);
+    expect(CONFIG.stage.targets.openai).toMatchObject({ ...shared, enabled: false });
   });
 
   test('every target\'s nightly push has its own switch', () => {
@@ -373,6 +407,7 @@ describe('run — gating', () => {
       scheduleOff: [
         'cj (CJ_SCHEDULE_ENABLED is not "true")',
         'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+        'openai (OPENAI_SCHEDULE_ENABLED is not "true")',
       ],
     });
     expect(spy).not.toHaveBeenCalled();
@@ -392,13 +427,78 @@ describe('run — gating', () => {
     const res = await run(on, { ...opts, now: new Date('2026-07-01T05:00:03Z') });
     expect(res.ok).toBe(true);
     expect(res.environment).toBe('prod');
-    expect(res.scheduleOff).toEqual(['cj (CJ_SCHEDULE_ENABLED is not "true")']);
+    expect(res.scheduleOff).toEqual([
+      'cj (CJ_SCHEDULE_ENABLED is not "true")',
+      'openai (OPENAI_SCHEDULE_ENABLED is not "true")',
+    ]);
     expect(sftp.connects.map((c) => c.host)).toEqual(['sftp.bazaarvoice.com']);
     expect(sftp.uploads.map((u) => u.path)).toEqual([
       '/import-inbox/productfeed-en_US.xml',
       '/import-inbox/productfeed-en_CA.xml',
       '/import-inbox/productfeed-en_MX.xml',
     ]);
+  });
+
+  test('prod with OPENAI_SCHEDULE_ENABLED: the 1 AM run pushes the OpenAI feed', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(100) } });
+    const sftp = mockSftp();
+    const options = { namespace: PROD_NS, scheduled: true, sftpDeps: { createClient: sftp.createClient } };
+    const on = { ...SECRETS, OPENAI_SCHEDULE_ENABLED: 'true' };
+
+    // Outside 1 AM ET, the scheduled invocation does not build or connect.
+    expect(await run(on, { ...options, now: new Date('2026-07-01T15:00:00Z') }))
+      .toMatchObject({ skipped: true, reason: 'outside-schedule' });
+    expect(sftp.connects).toHaveLength(0);
+
+    const res = await run(on, { ...options, now: new Date('2026-07-01T05:00:03Z') });
+    expect(res.ok).toBe(true);
+    expect(res.results).toEqual([expect.objectContaining({
+      target: 'openai',
+      status: 'uploaded',
+      itemCount: 100,
+      remotePath: '/vitamix-products-feed-gpt.csv.gz',
+    })]);
+    expect(res.scheduleOff).toEqual([
+      'cj (CJ_SCHEDULE_ENABLED is not "true")',
+      'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+    ]);
+    expect(sftp.connects.map((c) => [c.host, c.port, c.username])).toEqual([
+      ['sftp.commerce.openai.com', 443, 'openai-user'],
+    ]);
+    expect(sftp.uploads.map((u) => u.path)).toEqual(['/vitamix-products-feed-gpt.csv.gz']);
+  });
+
+  test('production OpenAI upload gzips the CSV and writes it directly to the configured file', async () => {
+    mockFetch({ feeds: { 'us/en_us': sourceFeed(100) } });
+    const sftp = mockSftp();
+    const options = { namespace: PROD_NS, target: 'openai', sftpDeps: { createClient: sftp.createClient } };
+
+    const uploaded = await run(SECRETS, options);
+    expect(uploaded.results).toEqual([expect.objectContaining({
+      target: 'openai',
+      locale: 'us/en_us',
+      file: 'vitamix-products-feed-gpt.csv.gz',
+      status: 'uploaded',
+      itemCount: 100,
+      remotePath: '/vitamix-products-feed-gpt.csv.gz',
+    })]);
+    expect(sftp.connects).toEqual([expect.objectContaining({
+      host: 'sftp.commerce.openai.com', port: 443, username: 'openai-user', password: 'openai-pass',
+    })]);
+    expect(sftp.ops).toEqual([
+      ['put', '/vitamix-products-feed-gpt.csv.gz'],
+    ]);
+
+    const compressed = sftp.payloads[0].body;
+    const csv = gunzipSync(compressed).toString('utf-8');
+    expect(csv).toMatch(/^\uFEFFitem_id,title,description,url,brand,image_url,price,/);
+    expect(csv).toContain('SKU0');
+    expect(uploaded.results[0].bytes).toBe(compressed.length);
+    expect(sftp.files.has('/vitamix-products-feed-gpt.csv.gz')).toBe(true);
+
+    const dryRun = await run(SECRETS, { ...options, dryRun: true });
+    expect(dryRun.results[0]).toMatchObject({ status: 'validated', bytes: compressed.length });
+    expect(sftp.connects).toHaveLength(1);
   });
 
   test('prod with CJ_SCHEDULE_ENABLED: the 1 AM run pushes the CJ live feeds', async () => {
@@ -408,7 +508,10 @@ describe('run — gating', () => {
       namespace: PROD_NS, scheduled: true, now: new Date('2026-07-01T05:00:03Z'), sftpDeps: { createClient: sftp.createClient },
     });
     expect(res.ok).toBe(true);
-    expect(res.scheduleOff).toEqual(['bazaarvoice (BV_SCHEDULE_ENABLED is not "true")']);
+    expect(res.scheduleOff).toEqual([
+      'bazaarvoice (BV_SCHEDULE_ENABLED is not "true")',
+      'openai (OPENAI_SCHEDULE_ENABLED is not "true")',
+    ]);
     expect(sftp.connects.map((c) => [c.host, c.username])).toEqual([['datatransfer.cj.com', 'cj-user']]);
     expect(res.results.map((r) => [r.locale, r.status, r.remotePath])).toEqual([
       ['us/en_us', 'uploaded', '/Shopping-Feed-US.xml'],
@@ -1022,6 +1125,25 @@ describe('sftp host key pinning', () => {
       { host: 'sftp-stg.bazaarvoice.com', port: 22, hostFingerprints: [bvFp] },
       { log, createClient: clientSeeing(cjHashHex), retries: 0 },
     )).rejects.toThrow(/host key mismatch for sftp-stg\.bazaarvoice\.com/);
+  });
+
+  test.each([
+    ['ECDSA', CONFIG.prod.targets.openai.hostFingerprints[0]],
+    ['RSA', CONFIG.prod.targets.openai.hostFingerprints[1]],
+  ])('accepts the pinned OpenAI %s key', async (_algorithm, pin) => {
+    const hashHex = Buffer.from(pin.replace(/^SHA256:/, ''), 'base64').toString('hex');
+    await expect(sftpModule.connect(
+      CONFIG.prod.targets.openai,
+      { log, createClient: clientSeeing(hashHex), retries: 0 },
+    )).resolves.toBeDefined();
+  });
+
+  test('rejects an unpinned OpenAI host key', async () => {
+    const other = 'ab'.repeat(32);
+    await expect(sftpModule.connect(
+      CONFIG.prod.targets.openai,
+      { log, createClient: clientSeeing(other), retries: 0 },
+    )).rejects.toThrow(/host key mismatch for sftp\.commerce\.openai\.com/);
   });
 
   test('does not verify when no fingerprints are configured', async () => {

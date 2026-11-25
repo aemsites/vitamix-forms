@@ -110,13 +110,13 @@ export async function replace(client, from, to) {
  * file is removed (best effort) and the error is rethrown.
  *
  * @param {SftpClient} client
- * @param {string} body
+ * @param {string | Buffer} body
  * @param {string} remotePath
  * @param {{ atomic?: boolean }} [opts]
  * @returns {Promise<{ bytes: number, rename?: 'posix-rename' | 'delete+rename' }>}
  */
 export async function upload(client, body, remotePath, { atomic = false } = {}) {
-  const buffer = Buffer.from(body, 'utf-8');
+  const buffer = Buffer.isBuffer(body) ? body : Buffer.from(body, 'utf-8');
   if (!atomic) {
     await client.put(buffer, remotePath);
     return { bytes: buffer.length };
