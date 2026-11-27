@@ -109,6 +109,9 @@ export const VBND_REASON_CODES = {
 export const VBND_REASON_CODES_BY_BUNDLE = {
   // Immersion Blender Complete Bundle (VBNDIBCB)
   '5-speed-immersion-blender-complete-bundle': 'VBND7',
+
+  // Deluxe Container Collection (VBNDDCC). Fixed contents, no variants.
+  'deluxe-container-collection': 'VBND14',
 };
 
 /**
