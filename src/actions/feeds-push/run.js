@@ -14,6 +14,7 @@
  */
 
 import { Core } from '@adobe/aio-sdk';
+import { gzipSync } from 'node:zlib';
 import { buildProviderFeed, resolveFeedEnv } from '../feeds/build.js';
 import {
   CONFIG, MIN_ITEMS, SCHEDULE_TIMEZONE, SCHEDULE_HOUR, resolveEnvironment, resolveCredentials,
@@ -212,7 +213,7 @@ export async function run(params, options = {}) {
   const results = [];
   /** @type {import('./state.js').Counts} */
   const newCounts = {};
-
+  
   try {
     for (const job of jobs) {
       const result = await pushOne(ctx, job, {
@@ -354,10 +355,14 @@ async function pushOne(ctx, job, {
     return fail('validate', problems.join('; '));
   }
 
+  const uploadBody = target.gzip
+    ? gzipSync(Buffer.from(built.body, 'utf-8'))
+    : built.body;
   const path = sftp.remotePath(target.remoteDir, file);
   result.remotePath = path;
   if (dryRun) {
-    return { ...result, status: 'validated', bytes: Buffer.byteLength(built.body, 'utf-8') };
+    const bytes = Buffer.isBuffer(uploadBody) ? uploadBody.length : Buffer.byteLength(uploadBody, 'utf-8');
+    return { ...result, status: 'validated', bytes };
   }
 
   const connKey = `${target.host}:${target.port}:${job.credentials}`;
@@ -378,7 +383,7 @@ async function pushOne(ctx, job, {
   }
 
   try {
-    const { bytes, rename } = await sftp.upload(client, built.body, path, { atomic: target.atomicUpload });
+    const { bytes, rename } = await sftp.upload(client, uploadBody, path, { atomic: target.atomicUpload });
     return {
       ...result, status: 'uploaded', bytes, ...(rename ? { rename } : {}),
     };

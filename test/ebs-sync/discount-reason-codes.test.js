@@ -198,6 +198,19 @@ describe('resolveVbndReasonCode', () => {
     })).toBe('VBND7');
   });
 
+  test('maps every Deluxe Container Collection child line to VBND14', () => {
+    ['063126-VB', '075754-40-VB', '069834-VB', '064584-VB'].forEach((sku) => {
+      expect(resolveVbndReasonCode({
+        path: '/us/en_us/products/deluxe-container-collection',
+        sku,
+      })).toBe('VBND14');
+    });
+    expect(resolveVbndReasonCode({
+      path: '/ca/en_us/products/deluxe-container-collection',
+      sku: '063126-VB',
+    })).toBe('VBND14');
+  });
+
   test('returns empty string when path or sku is missing', () => {
     expect(resolveVbndReasonCode({ sku: '074104-04-VB' })).toBe('');
     expect(resolveVbndReasonCode({ path: '/us/en_us/products/5200-legacy-bundle' })).toBe('');
