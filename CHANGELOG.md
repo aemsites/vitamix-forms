@@ -1,3 +1,15 @@
+# [1.21.0](https://github.com/aemsites/vitamix-forms/compare/v1.20.2...v1.21.0) (2026-11-27)
+
+
+### Bug Fixes
+
+* **ebs-sync:** map Deluxe Container Collection to VBND14 ([61f906a](https://github.com/aemsites/vitamix-forms/commit/61f906a60e4bd72f2610fb80fc0e1b3530659c0c))
+
+
+### Features
+
+* **feeds-push:** upload OpenAI product feed over SFTP ([133d580](https://github.com/aemsites/vitamix-forms/commit/133d5806d64db21cd4c0912900a2cce972951162))
+
 ## [1.20.2](https://github.com/aemsites/vitamix-forms/compare/v1.20.1...v1.20.2) (2026-11-16)
 
 
