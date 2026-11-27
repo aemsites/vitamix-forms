@@ -236,6 +236,17 @@ describe('missing journal entries', () => {
     expect(api.orders.get('synth-jff').custom).toMatchObject({ syncError: null, syncedAt: expect.any(String) });
   });
 
+  test('vbnd_lookup_failed is not an EBS failure, so reconciliation retries it', async () => {
+    // A reconcile-sent bundle order whose product could not be read for its VBND
+    // code: EBS was never called, so a later pass sends it once the host recovers.
+    const completedAt = T0 - 2 * 60 * MIN;
+    api.addOrder({ id: 'synth-vbnd', completedAt, custom: { syncError: 'vbnd_lookup_failed' } });
+    fakeState.store.state = { since: iso(T0 - 5 * MIN) };
+    await scheduledRun();
+    expect(sent).toEqual(['synth-vbnd']);
+    expect(api.orders.get('synth-vbnd').custom).toMatchObject({ syncError: null, syncedAt: expect.any(String) });
+  });
+
   test('a listing failure is reported and retried on the next hourly pass, not every run', async () => {
     api.failures.list = 403;
     await runEvery5Min(T0, T0 + 55 * MIN);

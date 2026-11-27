@@ -56,10 +56,12 @@ export const RECONCILE_MIN_REMAINING_MS = 2 * 60 * 1000;
 const ALERT_SOURCE = 'ebs-sync-reconcile';
 
 /**
- * syncError codes that mean "not attempted yet" rather than "EBS failed":
- * the per-order journal couldn't be read. These stay reconciliation candidates.
+ * syncError codes that mean "not attempted yet" rather than "EBS failed": the
+ * per-order journal couldn't be read, or a virtual bundle's product couldn't be
+ * read for its VBND code. EBS was not called in either case, so these stay
+ * reconciliation candidates.
  */
-const RETRYABLE_SYNC_ERRORS = new Set(['journal_fetch_failed']);
+const RETRYABLE_SYNC_ERRORS = new Set(['journal_fetch_failed', 'vbnd_lookup_failed']);
 const blocksReconcile = (syncError) => Boolean(syncError) && !RETRYABLE_SYNC_ERRORS.has(syncError);
 
 /**
